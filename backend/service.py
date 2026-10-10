@@ -9,7 +9,7 @@ from sqlalchemy import select
 from .models import LessonJob, User, UserContainer, VideoDelivery
 
 log = logging.getLogger(__name__)
-TERMINAL = {'needs_breakdown', 'accepted', 'delivered', 'failed', 'cancelled'}
+TERMINAL = {'needs_breakdown', 'accepted', 'failed', 'cancelled'}
 
 
 class Service:
@@ -58,7 +58,7 @@ class Service:
             job = db.scalar(select(LessonJob).where(LessonJob.id == job_id, LessonJob.user_id == identity))
             if job is None:
                 return None
-            accepted = next((d for d in job.deliveries if d.status in ('accepted', 'delivered') and d.accepted_at is not None and d.provider_message_id), None)
+            accepted = next((d for d in job.deliveries if d.status == 'accepted' and d.accepted_at is not None and d.provider_message_id), None)
             return {'id': str(job.id), 'status': job.status,
                     'estimated_duration_seconds': job.estimated_duration_seconds,
                     'feedback': job.scope_feedback, 'failure_reason': job.failure_reason,
@@ -129,9 +129,11 @@ class Service:
                 with self.sessions() as db:
                     delivery = db.get(VideoDelivery, delivery_id)
                     delivery.status, delivery.provider_message_id = 'accepted', message_id
-                    delivery.accepted_at = self.clock()
+                    accepted_at = self.clock()
+                    delivery.accepted_at = accepted_at
                     job = db.get(LessonJob, job_id)
-                    job.status, job.completed_at = 'accepted', self.clock()
+                    job.status, job.completed_at = 'accepted', accepted_at
+                    # Acceptance and pipeline completion must become visible together.
                     db.commit()
             except Exception:
                 log.exception('Lesson %s failed during %s', job_id, stage)

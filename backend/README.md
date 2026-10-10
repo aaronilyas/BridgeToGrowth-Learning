@@ -67,6 +67,32 @@ Admission and shutdown share a user lock. Cleanup failure retains protection
 and subsequent sweeps retry cleanup. Stopped containers restart on demand;
 tmpfs contents disappear on stop.
 
+## Delivery status and existing databases
+
+Successful jobs and send attempts both store `accepted`. Job `completed_at`
+and delivery `accepted_at` are saved with the provider message ID in one
+transaction. Completion means the pipeline has confirmed Photon acceptance;
+it does not establish delivery to the device or that the user saw the message.
+Polling keeps the same response fields and terminal `accepted` status.
+A rejection or timeout records `failed` with acceptance unconfirmed, without
+an automatic retry. A timeout can still have caused a provider-side send.
+
+For an existing database, stop the API coordinator and apply
+[migrations/001_delivery_acceptance.sql](migrations/001_delivery_acceptance.sql)
+before starting this version. Fresh databases use `schema.sql` directly and
+must not run the migration. The migration converts legacy job `delivered` to
+`accepted` only with associated acceptance metadata, otherwise to `failed`.
+It also normalizes legacy delivery `delivered` using the same evidence rule
+and marks malformed legacy acceptance records failed.
+Existing timestamps and message IDs are retained. The unused `delivered_at`
+column remains historical metadata; it is never written or used as receipt
+proof by this backend.
+
+Confirmed user receipt remains unresolved. The product describes updating the
+UI after receipt, but the implemented Node contract reports only acceptance
+and a message ID. No supported receipt mechanism is established here; receipt
+callbacks and a received/read status require a separate confirmed contract.
+
 ## External contracts and unresolved product choices
 
 The product does not specify an identity provider, phone verification flow,

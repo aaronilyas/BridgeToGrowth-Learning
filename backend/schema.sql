@@ -42,7 +42,7 @@ CREATE TABLE lesson_jobs (
     completed_at TIMESTAMPTZ,
     CONSTRAINT ck_lesson_jobs_status CHECK (status IN (
         'requested', 'validating', 'needs_breakdown', 'queued', 'generating',
-        'rendering', 'evaluating', 'delivering', 'accepted', 'delivered', 'failed', 'cancelled'
+        'rendering', 'evaluating', 'delivering', 'accepted', 'failed', 'cancelled'
     )),
     CONSTRAINT ck_lesson_jobs_estimated_duration_nonnegative
         CHECK (estimated_duration_seconds IS NULL OR estimated_duration_seconds >= 0)
@@ -59,9 +59,9 @@ CREATE TABLE video_deliveries (
     failure_reason TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     accepted_at TIMESTAMPTZ,
-    delivered_at TIMESTAMPTZ,
+    delivered_at TIMESTAMPTZ, -- Legacy metadata; not receipt evidence.
     CONSTRAINT ck_video_deliveries_status
-        CHECK (status IN ('pending', 'accepted', 'delivered', 'failed'))
+        CHECK (status IN ('pending', 'accepted', 'failed'))
 );
 
 CREATE INDEX ix_video_deliveries_job_created ON video_deliveries (lesson_job_id, created_at);
