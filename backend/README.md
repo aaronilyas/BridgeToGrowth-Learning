@@ -16,6 +16,8 @@ There are three application routes (plus FastAPI's generated API docs):
 
 All routes require `Authorization: Bearer <session>`. Owner IDs and recipients
 are derived from authentication, never accepted in a lesson request.
+See [authentication and onboarding](AUTHENTICATION.md) for the client sequence,
+identity validation, dedicated tests, and the provider-selection blocker.
 Poll until `needs_breakdown`, `failed`, or `accepted`. `accepted` means Photon
 accepted the message, not that the user received it. Earlier stages are
 `queued`, `validating`, `generating`, `rendering`, `evaluating`, `delivering`.
