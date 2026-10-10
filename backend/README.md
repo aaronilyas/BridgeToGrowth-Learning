@@ -81,8 +81,8 @@ not implemented credential or Photon services:
   bearer `MESSAGING_TOKEN`, `X-Lesson-Job`, and `X-Recipient` headers. Node must
   authenticate the request, consume the video, send via Photon, and return
   `{ "accepted": true, "message_id": "..." }` only after provider acceptance.
-  It must not retain the video. The existing messaging echo scaffold does not
-  implement this contract yet. No Photon dependency is added to Python.
+  It must not retain the video. The [messaging service](../services/messaging/README.md)
+  implements this contract at `/video`. No Photon dependency is added to Python.
 
 Run exactly one API process. A PostgreSQL advisory lock rejects a second
 coordinator. FastAPI background tasks provide a simple in-process worker;

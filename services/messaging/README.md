@@ -1,25 +1,29 @@
 # BridgeToGrowth messaging service
 
-The Bun/TypeScript boundary for Photon Spectrum, configured for iMessage.
-This scaffold currently echoes incoming text. It does not yet accept lesson
-jobs from FastAPI or send generated videos.
-
-The Python API, user-container lifecycle, Gemini/Manim pipeline, and React
-Native application are separate components. See
-[product-overview.md](../../product-overview.md) and
-[agents.md](../../agents.md).
+The Bun/TypeScript HTTP boundary for Photon Spectrum iMessage delivery. It
+accepts lesson videos from the Python API and sends them to the requested
+recipient. Videos stay in request-local memory; no video files are written.
 
 ## Environment
 
-The initializer populated the local, gitignored `.env`. On a fresh checkout,
-copy `.env.example` to `.env` and configure the project credentials:
+On a fresh checkout, copy `.env.example` to `.env` and configure:
 
-From your project Settings on the [Photon dashboard](https://app.photon.codes):
+- `PROJECT_ID` and `PROJECT_SECRET`: Spectrum project credentials from the
+  [Photon dashboard](https://app.photon.codes).
+- `MESSAGING_TOKEN`: a strong random shared secret, identical to the Python
+  API's `MESSAGING_TOKEN`. Startup refuses an empty or missing token.
+- `HOST` / `PORT`: defaults to `127.0.0.1:3001`. Set the host for your service
+  network if Python runs in a separate container.
+- `MAX_VIDEO_BYTES`: maximum upload size, defaulting to 50 MiB. Both declared
+  lengths and chunked uploads are bounded.
 
-- `PROJECT_ID`: `a96c8fdb-17f1-4c49-94f6-3ec6e12f565e`
-- `PROJECT_SECRET`: the project's secret; never commit it.
+Set the Python API's `MESSAGING_URL` to this service's full `/video` URL, for
+example `http://127.0.0.1:3001/video`. Use HTTPS for remote service URLs.
+Keep credentials out of version control.
 
-## Run
+## Run and verify
+
+From `services/messaging/`:
 
 ```sh
 bun install --frozen-lockfile
@@ -27,17 +31,55 @@ bun run typecheck
 bun start
 ```
 
-Run these commands from `services/messaging/` so Bun loads the service's
-`.env`. `bun start` connects to Spectrum and sends echo replies to incoming
-text messages; use it only when that behavior is wanted. `bun run dev` enables
-watch mode. Type checking does not connect to Photon or send messages.
+Bun loads the local `.env`. `bun run dev` enables watch mode. The service
+replaces the scaffold's echo loop with HTTP delivery. Shutdown finishes active
+HTTP requests before disconnecting Photon.
 
-## Where to go next
+Run the offline tests with Node 22.6+ (TypeScript stripping) and npm:
 
-- [Spectrum docs](https://photon.codes/docs/spectrum-ts)
-- Define the authenticated FastAPI-to-service delivery contract before
-  replacing the echo loop with lesson-video delivery.
-- Keep Photon SDK calls here. Never execute generated Manim code in this
-  service or retain generated videos persistently.
-- Use the installed SDK's provider exports and the bundled Spectrum reference
-  under `.agents/skills/spectrum/` when extending the integration.
+```sh
+npm test
+npm run typecheck
+```
+
+Tests run a local HTTP server and mock Photon calls. They cover authorization,
+request rejection, bounded uploads, complete-body consumption, recipient and
+attachment routing, provider rejection, and delayed acceptance. They neither
+read credentials nor send real messages.
+
+## HTTP contract
+
+`POST /video` matches `backend/integrations.py`:
+
+- `Authorization: Bearer <MESSAGING_TOKEN>`
+- `Content-Type: video/mp4`
+- `X-Recipient`: verified E.164 phone number
+- `X-Lesson-Job`: nonempty job identifier
+- Body: raw, nonempty MP4 bytes (no JSON, base64, or multipart envelope)
+
+The service checks the shared token before consuming the upload, resolves the
+recipient through the iMessage provider, and sends a Buffer attachment named
+`lesson.mp4`. A complete upload and a successful Photon send returning a
+nonempty provider message ID are required for HTTP 202:
+
+```json
+{ "accepted": true, "message_id": "<Photon message ID>" }
+```
+
+Errors return JSON with an `error` field: 401 for authorization, 400 for invalid
+recipient/job headers or empty/incomplete bodies, 415 for content type, 413 for
+oversized videos, and 502 for Photon rejection or a missing acceptance ID.
+Unknown paths return 404; other methods on `/video` return 405. Provider errors
+are not exposed to callers. Content type is checked; the service does not
+parse or render MP4 content.
+
+Acceptance means Photon accepted the send, not a delivery/read receipt. The
+job identifier is required metadata, not an idempotency key; repeated requests
+can send duplicate messages. No persistent delivery queue or video storage is
+introduced. Shared Photon lines may require recipients to be registered as
+project users; a routing or allowlist rejection returns 502.
+
+See [Spectrum docs](https://photon.codes/docs/spectrum-ts),
+[product-overview.md](../../product-overview.md), and
+[agents.md](../../agents.md). SDK calls remain here; generated Manim code runs
+only in isolated user containers.
