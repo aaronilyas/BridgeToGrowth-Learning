@@ -1,0 +1,98 @@
+name: btg-learning
+
+services:
+  postgres:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_USER: btg
+      POSTGRES_DB: btg
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deployment/.env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./backend/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    networks: [database]
+    healthcheck:
+      # TCP is unavailable on the temporary server used during schema init.
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    stop_grace_period: 1m
+
+  messaging:
+    build:
+      context: .
+      dockerfile: deployment/messaging.Dockerfile
+    environment:
+      PROJECT_ID: ${PROJECT_ID:?Set PROJECT_ID in deployment/.env}
+      PROJECT_SECRET: ${PROJECT_SECRET:?Set PROJECT_SECRET in deployment/.env}
+      MESSAGING_TOKEN: ${MESSAGING_TOKEN:?Set MESSAGING_TOKEN in deployment/.env}
+      HOST: 0.0.0.0
+      PORT: "3001"
+      MAX_VIDEO_BYTES: "12582912"
+    networks: [delivery]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m,uid=1000,gid=1000
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      # No credentials or video: checks the existing HTTP boundary without sending.
+      test: [CMD, bun, -e, "const r = await fetch('http://127.0.0.1:3001/video', {method: 'POST'}); process.exit(r.status === 401 ? 0 : 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    stop_grace_period: 30m
+
+  coordinator:
+    build:
+      context: .
+      dockerfile: deployment/coordinator.Dockerfile
+    environment:
+      # Use a URL-safe (e.g. hex) password: this value is embedded in a URL.
+      DATABASE_URL: postgresql+psycopg://btg:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deployment/.env}@postgres:5432/btg
+      AUTH_INTROSPECTION_URL: ${AUTH_INTROSPECTION_URL:?Set AUTH_INTROSPECTION_URL in deployment/.env}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?Set GEMINI_API_KEY in deployment/.env}
+      GEMINI_MODEL: ${GEMINI_MODEL:?Set GEMINI_MODEL in deployment/.env}
+      MESSAGING_URL: http://messaging:3001/video
+      MESSAGING_TOKEN: ${MESSAGING_TOKEN:?Set MESSAGING_TOKEN in deployment/.env}
+      USER_CONTAINER_IMAGE: ${USER_CONTAINER_IMAGE:-btg-renderer:local}
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - type: bind
+        source: ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}
+        target: /var/run/docker.sock
+        bind:
+          create_host_path: false
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    networks: [database, delivery]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      messaging:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, python, -c, "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/openapi.json', timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    # Uvicorn drains background jobs. Operators must drain before stopping;
+    # Docker's finite grace period is not a replacement for that procedure.
+    stop_grace_period: 30m
+
+volumes:
+  postgres-data:
+
+networks:
+  database:
+    internal: true
+  delivery:
