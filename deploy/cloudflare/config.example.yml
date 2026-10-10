@@ -1,0 +1,15 @@
+# Copy outside the checkout and replace every <PLACEHOLDER> literally.
+# cloudflared does not expand environment variables in this file.
+tunnel: "<TUNNEL_UUID>"
+credentials-file: "<ABSOLUTE_TUNNEL_CREDENTIALS_JSON_PATH>"
+
+# Keep connector diagnostics accessible only on this host.
+metrics: 127.0.0.1:20241
+
+ingress:
+  - hostname: "<PUBLIC_API_HOSTNAME>"
+    # Only the current API routes, including optional trailing slashes.
+    path: '^/(account/?|lessons/?|lessons/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/?)$'
+    service: "<API_ORIGIN>"
+  # Mandatory catch-all: no fallback to another service or private network.
+  - service: http_status:404
