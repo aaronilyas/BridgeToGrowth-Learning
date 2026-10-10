@@ -68,6 +68,9 @@ def main():
         return {}
     if action == 'generate':
         root.mkdir(exist_ok=False)
+        if type(payload.get('voiceover')) is not bool:
+            raise ValueError('Invalid voiceover setting')
+        (root / 'request.json').write_text(json.dumps({'voiceover': payload['voiceover']}))
         result = gemini('Write Manim Python with a Scene named Lesson, at most 90 seconds. '
                         'Return JSON with code (string). Use Manim Voiceover with GTTSService when '
                         'voiceover is enabled. Voiceover enabled: ' + str(payload['voiceover']) +
@@ -77,6 +80,9 @@ def main():
         (root / 'lesson.py').write_text(result['code'])
         return {}
     if action == 'render':
+        voiceover = json.loads((root / 'request.json').read_text())['voiceover']
+        if type(voiceover) is not bool:
+            raise ValueError('Invalid voiceover setting')
         run(['manim', '-ql', '--disable_caching', '--media_dir', str(root / 'media'),
              str(root / 'lesson.py'), 'Lesson'], root)
         candidates = list(root.glob('media/videos/lesson/*/Lesson.mp4'))
@@ -88,16 +94,18 @@ def main():
         if video.stat().st_size > 12 * 1024 * 1024:
             raise ValueError('Video exceeds inline processing limit')
         # Copy only validated bytes into a fixed, per-job filename.
-        (root / 'video.mp4').write_bytes(video.read_bytes())
+        pending = root / 'pending.mp4'
+        pending.write_bytes(video.read_bytes())
         probe = subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries', 'format=duration:stream=codec_type',
-                                         '-of', 'json', str(root / 'video.mp4')], timeout=30)
+                                         '-of', 'json', str(pending)], timeout=30)
         metadata = json.loads(probe)
         duration = float(metadata['format']['duration'])
+        if not math.isfinite(duration) or not 0 < duration <= 90:
+            raise ValueError('Invalid or overlong duration')
         has_audio = any(stream.get('codec_type') == 'audio' for stream in metadata.get('streams', []))
-        if payload.get('voiceover') is True and not has_audio:
+        if voiceover and not has_audio:
             raise ValueError('Requested voiceover has no audio stream')
-        if not math.isfinite(duration) or duration <= 0:
-            raise ValueError('Invalid duration')
+        pending.replace(root / 'video.mp4')
         return {'seconds': duration, 'has_audio': has_audio}
     if action == 'video':
         video = root / 'video.mp4'
