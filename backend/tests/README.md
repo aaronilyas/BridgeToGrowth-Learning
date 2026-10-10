@@ -95,3 +95,38 @@ These are not additional requirements silently imposed by the suite:
 These decisions affect adapter details or marked assertions; they do not excuse
 violating isolation, executing code on the host, retaining videos persistently,
 or stopping a container with an active job.
+
+## Voiceover verification
+
+Run the trusted worker's deterministic contract tests without dependencies:
+
+```sh
+python3 -m unittest backend.tests.test_voiceover_worker -v
+```
+
+These tests replace Manim and ffprobe; placeholder code and video bytes are never
+executed or rendered on the host. They check request-setting handoff, rejection
+of missing audio, silent rendering with voiceover disabled, probe failures,
+and finite positive durations through the inclusive 90-second boundary.
+
+For actual Manim rendering and ffprobe checks, build the current worker image
+and explicitly enable the dedicated container suite:
+
+```sh
+docker build -f backend/container/Dockerfile -t btg-renderer:voiceover-test .
+RUN_VOICEOVER_CONTAINER_TESTS=1 python3 -m unittest backend.tests.test_voiceover_container -v
+```
+
+Optionally set `VOICEOVER_TEST_IMAGE` to an image built from this worktree.
+Each test uses a separate disposable, unprivileged user container with tmpfs,
+no host mounts, no network, a read-only filesystem, and resource limits.
+Fixture code and all rendering execute only inside that container. No Gemini,
+GTTS, or Photon requests occur. Temporary videos disappear with container
+removal. Without opt-in these tests are **skipped**, not evidence of rendering
+or isolation. Opted-in tests fail if Docker or the renderer image is unavailable.
+
+The real fixtures cover a requested voiceover missing audio, disabled voiceover
+with a silent video, and a video containing an audio stream. The last fixture
+uses silence intentionally: an audio stream does **not** prove audible speech,
+accurate narration, synchronization, or GTTS integration. Those remain part of
+the real voiceover/quality acceptance run.

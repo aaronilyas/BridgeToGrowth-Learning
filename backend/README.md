@@ -111,3 +111,19 @@ Manim/voiceover, Gemini quality, and the real Node/Photon handoff still require
 the architecture acceptance run in [tests/README.md](tests/README.md).
 See [Gemini's generateContent contract](https://ai.google.dev/api/generate-content)
 and [FastAPI background tasks](https://fastapi.tiangolo.com/tutorial/background-tasks/).
+
+## Voiceover artifact check
+
+The container worker records the requested voiceover flag in the temporary job
+directory during generation, because render commands carry only the job ID.
+After rendering, ffprobe checks the copied MP4's duration and stream types.
+Requested voiceover without an audio stream fails rendering before evaluation
+or delivery; a video with voiceover disabled may be silent or contain audio.
+Only successful checks expose `video.mp4` for downstream reads. Videos must
+still have a finite positive duration of at most 90 seconds, and the existing
+12 MiB limit applies. Request metadata and pending video bytes stay in the
+user container's tmpfs until normal job cleanup.
+
+This checks audio-stream presence only. It does not establish speech, narration
+accuracy, audibility, or synchronization. See the dedicated mocked and isolated
+container checks in [tests/README.md](tests/README.md#voiceover-verification).
