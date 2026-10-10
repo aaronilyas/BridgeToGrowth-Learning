@@ -2,15 +2,14 @@
 import asyncio
 from contextlib import asynccontextmanager
 import logging
-import re
 import uuid
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+from .auth import identity_dependency
 from .database import SessionLocal, engine
 from .integrations import Integrations
 from .runtime import DockerRuntime
@@ -57,22 +56,7 @@ def create_app(service=None, coordinator_guard=True):
 
     app = FastAPI(lifespan=lifespan)
     app.state.service = service
-    bearer = HTTPBearer(auto_error=False)
-
-    def identity(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
-        if credentials is None:
-            raise HTTPException(401, 'Authentication required', headers={'WWW-Authenticate': 'Bearer'})
-        try:
-            result = service.integrations.authenticate(credentials.credentials)
-            if result.get('active') is not True:
-                raise ValueError('Inactive session')
-            user_id = uuid.UUID(result['user_id'])
-            phone = result['phone_number']
-            if result.get('phone_verified') is not True or not re.fullmatch(r'\+[1-9][0-9]{7,14}', phone):
-                raise ValueError('Verified phone required')
-        except Exception:
-            raise HTTPException(401, 'Invalid or expired session', headers={'WWW-Authenticate': 'Bearer'}) from None
-        return user_id, phone
+    identity = identity_dependency(service.integrations.authenticate)
 
     def registered(account=Depends(identity)):
         if not service.touch(account[0]):
