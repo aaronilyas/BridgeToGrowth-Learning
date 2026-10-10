@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.main import create_app
-from backend.models import Base, LessonJob, UserContainer
+from backend.models import Base, LessonJob, UserContainer, VideoDelivery
 from backend.service import Service
 
 
@@ -46,7 +46,7 @@ class Boundaries:
         self.call('assess', intent)
         return {'seconds': self.seconds, 'feedback': 'Split into individual topics.'}
 
-    def evaluate(self, intent, video):
+    def evaluate(self, intent, video, voiceover=False):
         self.call('evaluate', intent, video)
         return self.approved
 
@@ -78,7 +78,7 @@ class Runtime:
         if action == self.fail:
             raise RuntimeError('Injected runtime failure')
         if action == 'render':
-            return {'seconds': self.duration}
+            return {'seconds': self.duration, 'has_audio': True}
         return b'fixture-video' if action == 'video' else {}
 
     def stop(self, handle):
@@ -180,6 +180,32 @@ class BackendTests(unittest.TestCase):
             self.assertEqual(generated[3], {'intent': 'Explain gravity', 'voiceover': voiceover})
             self.assertEqual(self.dependencies.calls[-1][2], '+15550000001')
             self.assertEqual(self.dependencies.calls[-2], ('evaluate', 'Explain gravity', b'fixture-video'))
+
+    def test_acceptance_is_atomic_and_terminal_without_receipt(self):
+        job_id = uuid.UUID(self.submit())
+        with self.sessions() as db:
+            job = db.get(LessonJob, job_id)
+            delivery = db.scalar(select(VideoDelivery).where(VideoDelivery.lesson_job_id == job_id))
+            self.assertEqual(job.status, 'accepted')
+            self.assertIsNotNone(job.completed_at)
+            self.assertEqual(delivery.status, 'accepted')
+            self.assertIsNotNone(delivery.accepted_at)
+            self.assertIsNone(delivery.delivered_at)
+        self.now += timedelta(minutes=26)
+        self.service.sweep()
+        self.assertEqual(self.runtime.calls[-1][0], 'stop')
+
+    def test_missing_requested_voiceover_fails_before_evaluation(self):
+        original = self.runtime.command
+        def command(handle, action, job, payload=None):
+            result = original(handle, action, job, payload)
+            if action == 'render':
+                result['has_audio'] = False
+            return result
+        with patch.object(self.runtime, 'command', side_effect=command):
+            self.assertEqual(self.status(self.submit(True))['status'], 'failed')
+        self.assertFalse(any(c[0] in ('evaluate', 'deliver') for c in self.dependencies.calls))
+        self.assertEqual(self.runtime.calls[-1][0], 'cleanup')
 
     def test_ownership_and_forged_submission(self):
         job = self.submit()

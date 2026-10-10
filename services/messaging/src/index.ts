@@ -1,11 +1,12 @@
 import { createServer } from "node:http";
 import { Spectrum } from "spectrum-ts";
 import { imessage } from "@spectrum-ts/imessage";
-import { createDeliveryHandler } from "./delivery.ts";
-import { createPhotonDelivery } from "./photon.ts";
+import { createDeliveryHandler } from "./delivery.js";
+import { createPhotonDelivery } from "./photon.js";
 
 const token = process.env.MESSAGING_TOKEN;
 if (!token) throw new Error("MESSAGING_TOKEN is required");
+if (!process.env.PROJECT_ID || !process.env.PROJECT_SECRET) throw new Error("PROJECT_ID and PROJECT_SECRET are required");
 const port = Number(process.env.PORT ?? 3001);
 const maxVideoBytes = Number(process.env.MAX_VIDEO_BYTES ?? 50 * 1024 * 1024);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid PORT");

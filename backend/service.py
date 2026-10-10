@@ -9,7 +9,7 @@ from sqlalchemy import select
 from .models import LessonJob, User, UserContainer, VideoDelivery
 
 log = logging.getLogger(__name__)
-TERMINAL = {'needs_breakdown', 'delivered', 'failed', 'cancelled'}
+TERMINAL = {'needs_breakdown', 'accepted', 'delivered', 'failed', 'cancelled'}
 
 
 class Service:
@@ -58,8 +58,8 @@ class Service:
             job = db.scalar(select(LessonJob).where(LessonJob.id == job_id, LessonJob.user_id == identity))
             if job is None:
                 return None
-            accepted = next((d for d in job.deliveries if d.status == 'accepted'), None)
-            return {'id': str(job.id), 'status': 'accepted' if accepted else job.status,
+            accepted = next((d for d in job.deliveries if d.status in ('accepted', 'delivered') and d.accepted_at is not None and d.provider_message_id), None)
+            return {'id': str(job.id), 'status': job.status,
                     'estimated_duration_seconds': job.estimated_duration_seconds,
                     'feedback': job.scope_feedback, 'failure_reason': job.failure_reason,
                     'photon_accepted': accepted is not None,
@@ -105,16 +105,18 @@ class Service:
                 self.runtime.command(handle, 'generate', job_id, {'intent': intent, 'voiceover': voiceover})
                 stage = 'rendering'
                 self.update(job_id, stage)
-                result = self.runtime.command(handle, 'render', job_id)
+                result = self.runtime.command(handle, 'render', job_id, {'voiceover': voiceover})
                 duration = result['seconds']
                 if type(duration) not in (int, float) or not 0 < duration <= 90:
                     raise ValueError('Invalid or overlong render')
+                if voiceover and result.get('has_audio') is not True:
+                    raise ValueError('Requested voiceover has no audio stream')
                 video = self.runtime.command(handle, 'video', job_id)
                 if not isinstance(video, bytes) or not video or len(video) > 12 * 1024 * 1024:
                     raise ValueError('Invalid video')
                 stage = 'evaluating'
                 self.update(job_id, stage)
-                if self.integrations.evaluate(intent, video) is not True:
+                if self.integrations.evaluate(intent, video, voiceover=voiceover) is not True:
                     raise ValueError('Evaluation rejected')
                 stage = 'delivering'
                 self.update(job_id, stage)
@@ -128,9 +130,9 @@ class Service:
                     delivery = db.get(VideoDelivery, delivery_id)
                     delivery.status, delivery.provider_message_id = 'accepted', message_id
                     delivery.accepted_at = self.clock()
+                    job = db.get(LessonJob, job_id)
+                    job.status, job.completed_at = 'accepted', self.clock()
                     db.commit()
-                # Existing 'delivered' DB enum means pipeline finished; public status is 'accepted'.
-                self.update(job_id, 'delivered')
             except Exception:
                 log.exception('Lesson %s failed during %s', job_id, stage)
                 try:

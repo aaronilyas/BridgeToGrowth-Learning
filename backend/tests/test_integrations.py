@@ -38,3 +38,18 @@ class IntegrationTests(unittest.TestCase):
                 self.assertEqual(request.data, b'video')
                 self.assertEqual(request.get_header('X-recipient'), '+15550000001')
                 self.assertEqual(request.get_header('X-lesson-job'), 'job')
+
+    def test_requested_narration_requires_separate_quality_checks(self):
+        result = dict(accurate=True, defect_free=True, consistent=True, findings='',
+                      narration_accurate=True, narration_intelligible=True, narration_consistent=True)
+        with patch('backend.integrations.gemini', return_value=result) as evaluator:
+            self.assertTrue(Integrations().evaluate('intent', b'actual audio video', voiceover=True))
+            self.assertIn('intelligibility', evaluator.call_args.args[0])
+        for key in ('narration_accurate', 'narration_intelligible', 'narration_consistent'):
+            bad = {**result, key: False}
+            with patch('backend.integrations.gemini', return_value=bad):
+                self.assertFalse(Integrations().evaluate('intent', b'video', voiceover=True))
+            bad.pop(key)
+            with patch('backend.integrations.gemini', return_value=bad):
+                with self.assertRaises(ValueError):
+                    Integrations().evaluate('intent', b'video', voiceover=True)

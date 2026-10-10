@@ -2,8 +2,7 @@
 !services/
 !services/messaging/
 !services/messaging/package.json
-!services/messaging/bun.lock
+!services/messaging/package-lock.json
+!services/messaging/tsconfig.json
 !services/messaging/src/
-!services/messaging/src/index.ts
-!services/messaging/src/delivery.ts
-!services/messaging/src/photon.ts
+!services/messaging/src/*.ts

@@ -1,0 +1,8 @@
+# Run cloudflared on the Docker host, where the API's loopback port is reachable.
+# Substitute the named tunnel UUID, credential path, hostname and API port.
+tunnel: 00000000-0000-0000-0000-000000000001
+credentials-file: /etc/cloudflared/tunnel-credentials.json
+ingress:
+  - hostname: lessons.example.com
+    service: http://127.0.0.1:8000
+  - service: http_status:404

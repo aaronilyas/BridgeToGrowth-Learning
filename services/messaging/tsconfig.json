@@ -1,21 +1,25 @@
 {
   "compilerOptions": {
-    "lib": ["ESNext"],
-    "target": "ESNext",
-    "module": "Preserve",
+    "lib": [
+      "ESNext"
+    ],
+    "target": "ES2022",
+    "module": "NodeNext",
     "moduleDetection": "force",
-    "types": ["bun", "node"],
-
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
+    "types": [
+      "node"
+    ],
+    "moduleResolution": "NodeNext",
     "verbatimModuleSyntax": true,
-    "noEmit": true,
-
     "strict": true,
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true
+    "noImplicitOverride": true,
+    "rootDir": "src",
+    "outDir": "dist"
   },
-  "include": ["src/**/*"]
+  "include": [
+    "src/**/*"
+  ]
 }

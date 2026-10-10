@@ -92,7 +92,7 @@ class LessonJob(Base):
     __table_args__ = (
         CheckConstraint(
             "status IN ('requested', 'validating', 'needs_breakdown', 'queued', "
-            "'generating', 'rendering', 'evaluating', 'delivering', 'delivered', 'failed', 'cancelled')",
+            "'generating', 'rendering', 'evaluating', 'delivering', 'accepted', 'delivered', 'failed', 'cancelled')",
             name="ck_lesson_jobs_status",
         ),
         CheckConstraint(

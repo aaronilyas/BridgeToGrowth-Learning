@@ -89,12 +89,16 @@ def main():
             raise ValueError('Video exceeds inline processing limit')
         # Copy only validated bytes into a fixed, per-job filename.
         (root / 'video.mp4').write_bytes(video.read_bytes())
-        probe = subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+        probe = subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries', 'format=duration:stream=codec_type',
                                          '-of', 'json', str(root / 'video.mp4')], timeout=30)
-        duration = float(json.loads(probe)['format']['duration'])
+        metadata = json.loads(probe)
+        duration = float(metadata['format']['duration'])
+        has_audio = any(stream.get('codec_type') == 'audio' for stream in metadata.get('streams', []))
+        if payload.get('voiceover') is True and not has_audio:
+            raise ValueError('Requested voiceover has no audio stream')
         if not math.isfinite(duration) or duration <= 0:
             raise ValueError('Invalid duration')
-        return {'seconds': duration}
+        return {'seconds': duration, 'has_audio': has_audio}
     if action == 'video':
         video = root / 'video.mp4'
         if root.is_symlink() or video.is_symlink() or not video.resolve().is_relative_to(Path('/work').resolve()):

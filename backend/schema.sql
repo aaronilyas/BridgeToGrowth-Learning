@@ -42,7 +42,7 @@ CREATE TABLE lesson_jobs (
     completed_at TIMESTAMPTZ,
     CONSTRAINT ck_lesson_jobs_status CHECK (status IN (
         'requested', 'validating', 'needs_breakdown', 'queued', 'generating',
-        'rendering', 'evaluating', 'delivering', 'delivered', 'failed', 'cancelled'
+        'rendering', 'evaluating', 'delivering', 'accepted', 'delivered', 'failed', 'cancelled'
     )),
     CONSTRAINT ck_lesson_jobs_estimated_duration_nonnegative
         CHECK (estimated_duration_seconds IS NULL OR estimated_duration_seconds >= 0)

@@ -1,0 +1,5 @@
+**
+!backend/
+!backend/container/
+!backend/container/worker.py
+!backend/integrations.py

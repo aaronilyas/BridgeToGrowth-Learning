@@ -39,7 +39,7 @@ services:
     security_opt: [no-new-privileges:true]
     healthcheck:
       # No credentials or video: checks the existing HTTP boundary without sending.
-      test: [CMD, bun, -e, "const r = await fetch('http://127.0.0.1:3001/video', {method: 'POST'}); process.exit(r.status === 401 ? 0 : 1)"]
+      test: [CMD, node, -e, "(async () => { const r = await fetch('http://127.0.0.1:3001/video', {method: 'POST'}); process.exit(r.status === 401 ? 0 : 1); })().catch(() => process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 12

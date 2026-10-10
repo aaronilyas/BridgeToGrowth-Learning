@@ -37,12 +37,15 @@ class Integrations:
             raise ValueError("Invalid scope assessment")
         return result
 
-    def evaluate(self, intent, video):
+    def evaluate(self, intent, video, voiceover=False):
         # A new Gemini request, with the actual video, independent of code generation.
+        narration = (' Assess requested narration for accuracy, intelligibility, and alignment with the visuals. '
+                     'Also return JSON booleans narration_accurate, narration_intelligible, narration_consistent.'
+                     if voiceover else '')
         result = gemini('Evaluate this actual video against the original intent: ' + json.dumps(intent) +
                         '. Check accuracy, visual defects and inconsistencies. Return JSON booleans '
-                        'accurate, defect_free, consistent; and findings (string).', video)
-        keys = ("accurate", "defect_free", "consistent")
+                        'accurate, defect_free, consistent; and findings (string).' + narration, video)
+        keys = ("accurate", "defect_free", "consistent") + (("narration_accurate", "narration_intelligible", "narration_consistent") if voiceover else ())
         if any(type(result.get(k)) is not bool for k in keys) or not isinstance(result.get("findings"), str):
             raise ValueError("Invalid evaluation")
         return all(result[k] for k in keys)
@@ -55,6 +58,6 @@ class Integrations:
         })
         with urlopen(request, timeout=120) as response:
             result = json.load(response)
-        if result.get("accepted") is not True or not isinstance(result.get("message_id"), str) or not result["message_id"]:
+        if result.get("accepted") is not True or not isinstance(result.get("message_id"), str) or not result["message_id"].strip():
             raise ValueError("Delivery acceptance not confirmed")
         return result["message_id"]
