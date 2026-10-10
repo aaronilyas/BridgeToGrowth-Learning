@@ -7,9 +7,9 @@ See [product-overview.md](product-overview.md) for the product architecture and
 
 ## Repository layout
 
-- `backend/`: Python SQLAlchemy models, PostgreSQL schema, connection helpers,
-  and [FastAPI acceptance specifications](backend/tests/README.md). FastAPI
-  routes and generation/container orchestration are not implemented yet.
+- `backend/`: [FastAPI API and coordinator](backend/README.md), PostgreSQL models,
+  isolated Docker renderer, and executable tests alongside
+  [acceptance specifications](backend/tests/README.md).
 - `services/messaging/`: Bun/TypeScript Spectrum service configured for
   iMessage and project `a96c8fdb-17f1-4c49-94f6-3ec6e12f565e`. The generated
   entry point currently echoes incoming text; lesson-video delivery and the
@@ -34,4 +34,5 @@ credentials. On a fresh checkout, copy `.env.example` to `.env` and fill in
 
 Photon integration belongs exclusively in the TypeScript service. Generated
 Manim code must execute only in isolated user containers, and generated videos
-must remain temporary. The scaffold does not yet implement that pipeline.
+must remain temporary. The Python backend coordinates that pipeline; authentication and the Node video
+delivery endpoint still need their external services configured.

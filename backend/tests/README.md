@@ -4,8 +4,11 @@ This language-agnostic suite specifies the backend behavior required by
 [agents.md](../../agents.md) and [product-overview.md](../../product-overview.md).
 The Gherkin scenarios in [acceptance.feature](acceptance.feature) can be bound to
 any test runner or executed as an acceptance checklist. They are specifications,
-not currently runnable tests: the repository has database models and a schema,
-but no FastAPI routes or job orchestration yet. No dependencies are added.
+not directly runnable tests. The backend now implements three FastAPI routes
+and job orchestration; `test_backend.py` exercises their contracts with deterministic
+substitutes. See [backend setup](../README.md) for execution commands and the
+external authentication/delivery contracts. Substitute tests do not establish
+real container isolation or real Node/Photon integration.
 
 ## Execution contract
 

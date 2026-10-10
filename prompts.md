@@ -10,3 +10,5 @@ Analyze the current state of the repo and then run this command bun create spect
 If a sub directory is created extract the contents from it and organize it in the way you see best fit for the product this repo is trying to build. 
 
 Then append this prompt to the prompts.md
+
+Based on the product-overview.md, agents.md and the existing test suite implement the fastapi portion of the products backend, keep the number of routes to a minimum and keep design as simple as possible, so that it can be easily explained to a human at a high level. Then append this prompt to the prompts.md once you are done.
