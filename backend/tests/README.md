@@ -7,14 +7,16 @@ any test runner or executed as an acceptance checklist. They are specifications,
 not directly runnable tests. The backend now implements three FastAPI routes
 and job orchestration; `test_backend.py` exercises their contracts with deterministic
 substitutes. See [backend setup](../README.md) for execution commands and the
-external authentication/delivery contracts. Substitute tests do not establish
-real container isolation or real Node/Photon integration.
+external authentication/delivery contracts. Default substitute tests do not establish real container isolation or live
+Photon integration. The opt-in executable architecture run below exercises
+real containers and a real Node HTTP boundary with substituted Photon responses.
 
 ## Execution contract
 
-Bind semantic operations such as registration, lesson submission, and status
-retrieval to the eventual public API; do not assume route names, HTTP codes,
-authentication mechanism, or exact status strings. Assert observable outcomes
+The executable adapter binds registration to `PUT /account`, submission to
+`POST /lessons`, and polling to `GET /lessons/{id}`. The Gherkin specifications
+remain semantic requirements; the implemented contract is documented in the
+backend README. Assert observable outcomes
 and forbidden side effects. Existing model status names may guide an adapter,
 but their presence alone does not establish product behavior.
 
@@ -67,9 +69,10 @@ These are not additional requirements silently imposed by the suite:
   and verification, and duplicate-registration behavior are unspecified.
   AUTH-01 tests the supported public registration flow once defined; it does
   not require FastAPI itself to implement a credential system.
-- Public routes, response schemas, status transport (polling/push), errors,
-  cancellation, retries, timeouts, and duplicate-submit semantics are unspecified.
-  Select these before binding adapters; the suite does not mandate new endpoints.
+- The implementation selects three public routes, JSON response schemas,
+  polling, and explicit rejection/failure handling. Cancellation, restart
+  recovery, delivery retries, and duplicate-submit semantics remain unresolved;
+  the suite does not mandate additional endpoints.
 - A container's initial inactivity timestamp, exact eligibility at 25:00, and
   the scheduler's shutdown delay are unspecified. Lifecycle assertions use
   24:59 and 25:01 and an explicit completed cleanup sweep. Decide the exact
@@ -131,3 +134,37 @@ with a silent video, and a video containing an audio stream. The last fixture
 uses silence intentionally: an audio stream does **not** prove audible speech,
 accurate narration, synchronization, or GTTS integration. Those remain part of
 the real voiceover/quality acceptance run.
+
+## Executable architecture acceptance
+
+From the repository root, install Python test dependencies and build the images:
+
+```sh
+docker build -f backend/container/Dockerfile -t btg-renderer:acceptance .
+POSTGRES_PASSWORD=synthetic PROJECT_ID=synthetic PROJECT_SECRET=synthetic MESSAGING_TOKEN=synthetic AUTH_INTROSPECTION_URL=http://identity.invalid GEMINI_API_KEY=synthetic GEMINI_MODEL=synthetic docker compose --env-file /dev/null -p btg-acceptance build
+USER_CONTAINER_IMAGE=btg-renderer:acceptance .venv/bin/python -m backend.tests.run_acceptance
+```
+
+The runner creates a unique PostgreSQL 17 container with tmpfs data and a random
+loopback port; it ignores externally supplied database targets and never opens
+credential `.env` files. It checks fresh SQL schema constraints, then runs the
+combined Python suite with PostgreSQL, migration cases, real voiceover/render
+containers, and architecture tests enabled. Skipped required checks cause failure.
+Docker, cloudflared, and the freshly built images are prerequisites; missing
+prerequisites are blocked, never passed. Containers and networks belonging to
+this test run are removed only after their test jobs stop.
+
+Architecture tests cover per-user UID/mount/capability/resource/network isolation,
+host/other-user sentinel access attempts, rejected escaped artifacts, real Manim
+rendering, Manim Voiceover with an offline synthetic speech service, the real
+Node HTTP handler/SDK attachment builder with substituted Photon accept/reject/
+no-op responses, polling during an active real-container job, inactivity stop,
+restart, and success/partial-failure cleanup. Synthetic silent audio proves
+pipeline wiring only; it is not narration-quality or live GTTS evidence.
+Cloudflare checks validate allowlisted API paths and 404 fallbacks against a
+real loopback coordinator origin, with no credentials, DNS changes, or live tunnel.
+
+Provider signup/login/verification, real Gemini/GTTS quality, Photon cloud
+transport and confirmed receipt remain external product/deployment blockers.
+Offline acceptance verifies the implemented contracts and isolation without
+sending messages or claiming live integration success.

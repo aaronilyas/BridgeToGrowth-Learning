@@ -16,9 +16,9 @@ npm start
 ```
 
 `npm test` builds and runs the compiled delivery tests using Node's test runner.
-`npm run dev` watches the TypeScript entry point with Node's built-in type
-stripping; this development command is experimental on older Node 22 releases
-and does not typecheck. Run `npm run typecheck` separately. TypeScript 5.9
+`npm run dev` builds and watches emitted JavaScript. After a TypeScript edit,
+run `npm run build`, or keep `npm run build -- --watch` running in another
+terminal. This also works with Node builds that omit TypeScript stripping. TypeScript 5.9
 rewrites relative `.ts` imports to `.js` when emitting to `dist/`.
 
 Supply `MESSAGING_TOKEN`, `PROJECT_ID`, and `PROJECT_SECRET` through the process

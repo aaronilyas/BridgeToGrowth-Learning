@@ -130,3 +130,16 @@ Cloudflare's [configuration reference](https://developers.cloudflare.com/cloudfl
 documents ordered ingress rules, path matching, and the final catch-all.
 Live DNS, credentials, firewall policy, and the final deployment topology must
 be supplied by the operator before an end-to-end connectivity check.
+
+## Compose origin
+
+For [the Compose stack](compose.md), run `cloudflared` directly on the Docker
+host and set `<API_ORIGIN>` to `http://127.0.0.1:8000` (or the selected `API_PORT`).
+Compose publishes only this loopback coordinator port. PostgreSQL and messaging
+have no published ports; Docker control is a private Unix socket mounted only
+in the coordinator. Use the template's path allowlist and 404 fallback. Do not
+run the connector in a normal bridge container pointed at `127.0.0.1`: that
+address would refer to the connector container itself.
+
+`backend/tests/run_acceptance.py` verifies these rules with synthetic config
+and a real disposable coordinator bound to loopback; no tunnel or DNS is created.

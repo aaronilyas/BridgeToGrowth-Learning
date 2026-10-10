@@ -1,6 +1,6 @@
 # BridgeToGrowth messaging service
 
-The Bun/TypeScript HTTP boundary for Photon Spectrum iMessage delivery. It
+The Node.js/TypeScript HTTP boundary for Photon Spectrum iMessage delivery. It
 accepts lesson videos from the Python API and sends them to the requested
 recipient. Videos stay in request-local memory; no video files are written.
 
@@ -26,16 +26,22 @@ Keep credentials out of version control.
 From `services/messaging/`:
 
 ```sh
-bun install --frozen-lockfile
-bun run typecheck
-bun start
+npm ci
+npm run typecheck
+npm run build
+npm start
 ```
 
-Bun loads the local `.env`. `bun run dev` enables watch mode. The service
-replaces the scaffold's echo loop with HTTP delivery. Shutdown finishes active
+Node.js 22.6+ runs the compiled `dist/index.js` entry point. Node does not
+automatically load `.env`; supply environment variables through your process
+manager, Compose, or explicitly use `node --env-file=.env dist/index.js` as an
+operator. `npm run dev` builds and watches emitted JavaScript. Rebuild TypeScript with
+`npm run build` after editing, or run `npm run build -- --watch` in another
+terminal. No TypeScript runtime loader is required. The service implements the authenticated Photon
+video endpoint. Shutdown finishes active
 HTTP requests before disconnecting Photon.
 
-Run the offline tests with Node 22.6+ (TypeScript stripping) and npm:
+Run the offline tests with Node 22.6+ and npm (tests compile before execution):
 
 ```sh
 npm test

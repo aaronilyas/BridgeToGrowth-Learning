@@ -141,16 +141,19 @@ class DeliveryMigrationTests(unittest.TestCase):
                 cursor.execute(old_schema)
                 owner = uuid.uuid4()
                 cursor.execute('INSERT INTO users (id, phone_number) VALUES (%s, %s)', (owner, '+15550000001'))
-                cases = [('accepted', 'message', True, 'accepted'),
-                         ('delivered', 'legacy-message', True, 'accepted'),
-                         ('delivered', None, False, 'failed'),
-                         ('pending', None, False, 'failed'),
-                         ('accepted', '   ', True, 'failed')]
+                cases = [('accepted', 'message', True, 'accepted', 'delivered'),
+                         ('delivered', 'legacy-message', True, 'accepted', 'delivered'),
+                         ('delivered', None, False, 'failed', 'delivered'),
+                         ('pending', None, False, 'failed', 'delivered'),
+                         ('accepted', '   ', True, 'failed', 'delivered'),
+                         ('accepted', 'partial-acceptance', True, 'accepted', 'delivering'),
+                         ('accepted', 'post-acceptance-failure', True, 'accepted', 'failed'),
+                         ('pending', None, False, 'delivering', 'delivering')]
                 jobs = []
-                for status, message, timestamp, expected in cases:
+                for status, message, timestamp, expected, job_status in cases:
                     job, attempt = uuid.uuid4(), uuid.uuid4()
                     jobs.append((job, attempt, expected))
-                    cursor.execute("INSERT INTO lesson_jobs (id, user_id, original_request, status, completed_at) VALUES (%s, %s, 'test', 'delivered', now())", (job, owner))
+                    cursor.execute("INSERT INTO lesson_jobs (id, user_id, original_request, status, completed_at) VALUES (%s, %s, 'test', %s, now())", (job, owner, job_status))
                     cursor.execute("INSERT INTO video_deliveries (id, lesson_job_id, status, provider_message_id, accepted_at) VALUES (%s, %s, %s, %s, CASE WHEN %s THEN now() END)", (attempt, job, status, message, timestamp))
                 cursor.execute('SELECT id, completed_at FROM lesson_jobs ORDER BY id')
                 before = cursor.fetchall()

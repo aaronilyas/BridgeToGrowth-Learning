@@ -58,7 +58,7 @@ class Service:
             job = db.scalar(select(LessonJob).where(LessonJob.id == job_id, LessonJob.user_id == identity))
             if job is None:
                 return None
-            accepted = next((d for d in job.deliveries if d.status == 'accepted' and d.accepted_at is not None and d.provider_message_id), None)
+            accepted = next((d for d in job.deliveries if d.status == 'accepted' and d.accepted_at is not None and d.provider_message_id and d.provider_message_id.strip()), None)
             return {'id': str(job.id), 'status': job.status,
                     'estimated_duration_seconds': job.estimated_duration_seconds,
                     'feedback': job.scope_feedback, 'failure_reason': job.failure_reason,
@@ -126,6 +126,8 @@ class Service:
                     db.commit()
                     delivery_id = delivery.id
                 message_id = self.integrations.deliver(job_id, phone, video)
+                if not isinstance(message_id, str) or not message_id.strip():
+                    raise ValueError('Delivery acceptance lacks a provider message ID')
                 with self.sessions() as db:
                     delivery = db.get(VideoDelivery, delivery_id)
                     delivery.status, delivery.provider_message_id = 'accepted', message_id

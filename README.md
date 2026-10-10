@@ -1,38 +1,35 @@
 # BridgeToGrowth Learning
 
-An application for requesting lessons explained in videos of no more than
-90 seconds, rendered in isolated user containers and sent through Photon.
-See [product-overview.md](product-overview.md) for the product architecture and
-[agents.md](agents.md) for development constraints.
+Request lessons explained in videos of at most 90 seconds, rendered in isolated
+user containers and handed to Photon for messaging. See
+[product-overview.md](product-overview.md) and [agents.md](agents.md).
 
-## Repository layout
+- `backend/`: [FastAPI coordinator](backend/README.md), PostgreSQL metadata,
+  isolated Manim renderer, and [executable acceptance checks](backend/tests/README.md).
+- `services/messaging/`: [Node.js/TypeScript Photon endpoint](services/messaging/README.md).
+  Authenticated `POST /video` accepts temporary MP4 bytes and returns HTTP 202
+  only after Photon returns a message ID. Acceptance does not confirm receipt.
+- `frontend/`: reserved for React Native; currently empty.
+- [compose.md](compose.md): single-coordinator deployment with a loopback API.
+- [cloudflare.md](cloudflare.md): host-based tunnel exposing only account/lesson routes.
+- `prompts.md` and `prompt.md`: preserved request history.
 
-- `backend/`: [FastAPI API and coordinator](backend/README.md), PostgreSQL models,
-  isolated Docker renderer, and executable tests alongside
-  [acceptance specifications](backend/tests/README.md).
-- `services/messaging/`: Bun/TypeScript Spectrum service configured for
-  iMessage and project `a96c8fdb-17f1-4c49-94f6-3ec6e12f565e`. The generated
-  entry point currently echoes incoming text; lesson-video delivery and the
-  authenticated FastAPI-to-service contract still need implementation.
-- `frontend/`: reserved for the React Native application; currently empty.
-- `prompts.md`: request history. `prompt.md` retains earlier database requests.
-
-## Messaging scaffold
-
-Install Bun 1.3 or newer, then run:
+With Node.js 22.6+ installed, verify messaging without credentials or messages:
 
 ```sh
 cd services/messaging
-bun install --frozen-lockfile
-bun run typecheck
+npm ci
+npm run typecheck
+npm run build
+npm test
 ```
 
-The initializer populated the service's gitignored `.env` with Spectrum
-credentials. On a fresh checkout, copy `.env.example` to `.env` and fill in
-`PROJECT_SECRET` from the project's Photon dashboard. See the
-[service README](services/messaging/README.md) before starting the echo app.
+Supply Photon credentials and `MESSAGING_TOKEN` through the service environment
+before `npm start`. Node does not automatically load `.env`; see the service
+README for explicit operator configuration. Credential files stay outside Git.
 
-Photon integration belongs exclusively in the TypeScript service. Generated
-Manim code must execute only in isolated user containers, and generated videos
-must remain temporary. The Python backend coordinates that pipeline; authentication and the Node video
-delivery endpoint still need their external services configured.
+Photon SDK calls stay in TypeScript. Generated Manim code executes only inside
+isolated user containers; generated videos remain temporary. An identity
+provider and verified-phone onboarding must still be selected, and confirmed
+receipt needs a supported external contract. Those product decisions do not
+change the offline verification commands.

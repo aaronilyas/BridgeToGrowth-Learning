@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer, request } from "node:http";
 import { test, type TestContext } from "node:test";
-import { createDeliveryHandler } from "./delivery.js";
-import { createPhotonDelivery } from "./photon.js";
+import { createDeliveryHandler } from "./delivery.ts";
+import { createPhotonDelivery } from "./photon.ts";
 
 const headers = {
   Authorization: "Bearer test-only",

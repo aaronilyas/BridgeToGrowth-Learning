@@ -42,6 +42,20 @@ SET status = CASE WHEN EXISTS (
     ) THEN job.failure_reason ELSE 'Legacy acceptance not confirmed' END
 WHERE job.status = 'delivered';
 
+-- The old two-transaction completion could leave a delivering/failed job with
+-- a committed accepted attempt. Reconcile this evidence without sending again.
+UPDATE lesson_jobs AS job
+SET status = 'accepted', failure_reason = NULL,
+    completed_at = COALESCE(job.completed_at, evidence.accepted_at)
+FROM (
+    SELECT lesson_job_id, min(accepted_at) AS accepted_at
+    FROM video_deliveries
+    WHERE status = 'accepted' AND accepted_at IS NOT NULL
+      AND provider_message_id IS NOT NULL AND btrim(provider_message_id) <> ''
+    GROUP BY lesson_job_id
+) AS evidence
+WHERE job.id = evidence.lesson_job_id AND job.status IN ('delivering', 'failed');
+
 ALTER TABLE lesson_jobs ADD CONSTRAINT ck_lesson_jobs_status CHECK (status IN (
     'requested', 'validating', 'needs_breakdown', 'queued', 'generating',
     'rendering', 'evaluating', 'delivering', 'accepted', 'failed', 'cancelled'

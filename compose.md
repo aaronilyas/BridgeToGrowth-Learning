@@ -2,7 +2,7 @@
 
 Run from the repository root on a Docker host with Docker Compose v2 or newer.
 This stack runs PostgreSQL 17, exactly one FastAPI coordinator, and the existing
-Bun/TypeScript Photon service. An external identity provider and working Gemini
+Node.js/TypeScript Photon service. An external identity provider and working Gemini
 and Photon credentials are prerequisites; Compose does not implement signup or
 phone verification. See [backend/README.md](backend/README.md) for the identity
 provider contract and [services/messaging/README.md](services/messaging/README.md)
@@ -32,16 +32,22 @@ host (or Docker Desktop VM), not necessarily the socket path used by your local
 CLI. A missing socket fails rather than creating a directory. The Docker CLI
 in the coordinator must be compatible with the host daemon's API.
 
-PostgreSQL initializes a **fresh** named volume using the unmodified
+PostgreSQL initializes a **fresh** named volume using
 `backend/schema.sql`. Existing volumes are retained and initialization is not
-repeated; applying future schema changes requires a separate migration process.
+repeated. Before starting this version against an original-schema volume, drain
+and stop the coordinator, back up the database, and apply
+`backend/migrations/001_delivery_acceptance.sql` once with PostgreSQL
+`ON_ERROR_STOP=1`. See [migration requirements](backend/README.md#delivery-status-and-existing-databases).
+Never apply the migration to an already initialized fresh schema. Validation
+uses a new tmpfs database and never migrates a live volume.
 Changing `POSTGRES_PASSWORD` does not change credentials in an existing database;
 rotate the database credential and deployment setting together. Do not delete
 the volume to rotate credentials.
 
 The API binds to `127.0.0.1:8000` (override `API_PORT`); database and messaging
-ports are not published. Existing tunnel configuration is untouched. A tunnel
-or proxy running elsewhere needs an explicit networking decision. Database
+ports are not published. Run [cloudflared on this Docker host](cloudflare.md#compose-origin) so its origin
+`http://127.0.0.1:8000` reaches the published loopback API. A connector running
+in a normal bridge container cannot reach that host loopback address. Database
 traffic uses an internal Compose network; messaging and the coordinator have
 outbound connectivity for Photon, identity, and Gemini calls.
 
@@ -49,7 +55,9 @@ outbound connectivity for Photon, identity, and Gemini calls.
 
 The coordinator calls `http://messaging:3001/video` with raw MP4 bytes, its shared
 bearer token, `X-Lesson-Job`, and `X-Recipient`. Messaging binds to `0.0.0.0:3001`
-and uses the existing Bun entry point and frozen dependency lock. Its 12 MiB
+and uses emitted JavaScript built from TypeScript with `package-lock.json`. The
+image installs production dependencies using `npm ci --omit=dev` and starts
+`node dist/index.js`. Its 12 MiB
 upload limit matches the backend's maximum evaluated video size. Videos remain
 in memory during delivery; acceptance is Photon acceptance, not a receipt.
 
@@ -73,7 +81,7 @@ the Docker socket mount. Socket access grants control of the host daemon; use a
 dedicated deployment daemon. PostgreSQL and messaging have no Docker control
 access. Coordinator and messaging have read-only filesystems, dropped Linux
 capabilities, no privilege escalation, and temporary `/tmp` mounts. Messaging
-runs as Bun's unprivileged user. Narrow Dockerfile-specific build contexts exclude
+runs as Node's unprivileged UID 1000. Narrow Dockerfile-specific build contexts exclude
 local `.env` files and only include the sources each image needs.
 
 User render containers are created dynamically by the existing `DockerRuntime`,
@@ -122,4 +130,5 @@ and mark interrupted jobs failed. Persisted nonterminal jobs continue to protect
 user containers; pending cleanup state is in memory and requires operator review
 after process loss. A delivery timeout can occur after Photon acceptance, so
 retrying may duplicate a message. Recovery automation, identity-provider choice,
-production egress restrictions, and remote ingress are unresolved product choices.
+production egress restrictions, and production tunnel DNS/credentials remain
+operator or product decisions. The local tunnel topology is documented.

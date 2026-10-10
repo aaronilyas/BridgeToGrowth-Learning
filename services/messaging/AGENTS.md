@@ -3,19 +3,19 @@
 Repository-wide instructions in `../../agents.md` also apply. This directory
 contains only the Photon messaging service; keep Gemini-generated Manim
 execution in isolated user containers and never persist generated videos.
-The generated echo loop is a scaffold, not the lesson-delivery implementation.
+The service implements the authenticated `/video` endpoint and awaits Photon acceptance.
 
-This is a [Spectrum](https://photon.codes/docs/spectrum-ts) app, pinned to `spectrum-ts@^12.10.1`. The entry point is `src/index.ts`, which configures the imessage provider(s) and runs the echo loop.
+This is a [Spectrum](https://photon.codes/docs/spectrum-ts) app, pinned to `spectrum-ts@^12.10.1`. The entry point is `src/index.ts`, which configures the imessage provider(s) and starts the video-delivery HTTP server.
 
 ## Working in this project
 
-- Run the app with `bun start`.
+- Install with `npm ci`, verify with `npm run typecheck` and `npm test`, then build with `npm run build` and run with `npm start`.
 - Add providers by importing them in `src/index.ts` and listing them in the `Spectrum({ providers: [...] })` config.
 - Outgoing message content uses the builders documented in the skill (text, attachment, voice, contact, richlink, poll, group, custom).
 
 ## Environment
 
-This project reads secrets from `.env` (gitignored). **Do not read, write, or echo `.env`** — it contains credentials.
+Supply secrets through the process environment; Node does not automatically load `.env` (gitignored). **Do not read, write, or echo `.env`** — it contains credentials.
 
 If startup fails with an authentication error, tell the user to verify their `PROJECT_ID` / `PROJECT_SECRET` at the [Photon dashboard](https://app.photon.codes).
 

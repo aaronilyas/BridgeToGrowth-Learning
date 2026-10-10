@@ -84,7 +84,9 @@ must not run the migration. The migration converts legacy job `delivered` to
 `accepted` only with associated acceptance metadata, otherwise to `failed`.
 It also normalizes legacy delivery `delivered` using the same evidence rule
 and marks malformed legacy acceptance records failed.
-Existing timestamps and message IDs are retained. The unused `delivered_at`
+It also reconciles old `delivering`/`failed` jobs with committed acceptance
+evidence from the former split transaction; no message is resent. Existing
+timestamps and message IDs are retained. The unused `delivered_at`
 column remains historical metadata; it is never written or used as receipt
 proof by this backend.
 
@@ -96,8 +98,8 @@ callbacks and a received/read status require a separate confirmed contract.
 ## External contracts and unresolved product choices
 
 The product does not specify an identity provider, phone verification flow,
-or Node HTTP delivery interface. These are explicit integration contracts,
-not implemented credential or Photon services:
+or receipt mechanism. Authentication remains an explicit external contract;
+the Node Photon HTTP delivery interface is implemented:
 
 - Authentication performs an HTTP GET to `AUTH_INTROSPECTION_URL`, forwarding
   the bearer token. It requires JSON `{ "active": true, "user_id": "<stable UUID>",
@@ -143,7 +145,8 @@ and [FastAPI background tasks](https://fastapi.tiangolo.com/tutorial/background-
 ## Voiceover artifact check
 
 The container worker records the requested voiceover flag in the temporary job
-directory during generation, because render commands carry only the job ID.
+directory during generation so independent worker commands retain the setting.
+The coordinator also passes the flag to rendering and requires audio presence in its result.
 After rendering, ffprobe checks the copied MP4's duration and stream types.
 Requested voiceover without an audio stream fails rendering before evaluation
 or delivery; a video with voiceover disabled may be silent or contain audio.
@@ -155,3 +158,9 @@ user container's tmpfs until normal job cleanup.
 This checks audio-stream presence only. It does not establish speech, narration
 accuracy, audibility, or synchronization. See the dedicated mocked and isolated
 container checks in [tests/README.md](tests/README.md#voiceover-verification).
+
+When voiceover is requested, the separate video evaluator must also return true
+for `narration_accurate`, `narration_intelligible`, and `narration_consistent`.
+Missing/malformed or rejected narration checks fail before messaging. An audio
+stream establishes only structural presence, including silence; evaluator
+substitutes in tests do not prove real speech or Gemini assessment quality.

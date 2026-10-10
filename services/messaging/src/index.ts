@@ -1,8 +1,8 @@
 import { createServer } from "node:http";
 import { Spectrum } from "spectrum-ts";
 import { imessage } from "@spectrum-ts/imessage";
-import { createDeliveryHandler } from "./delivery.js";
-import { createPhotonDelivery } from "./photon.js";
+import { createDeliveryHandler } from "./delivery.ts";
+import { createPhotonDelivery } from "./photon.ts";
 
 const token = process.env.MESSAGING_TOKEN;
 if (!token) throw new Error("MESSAGING_TOKEN is required");

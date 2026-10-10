@@ -40,3 +40,44 @@ Work in a dedicated worktree on branch `backend/cloudflare-tunnel`. Own only `de
 ## AI-generated implementation prompt
 
 Work in a dedicated worktree on branch `backend/node-runtime`. Own messaging package, lockfile, TypeScript configuration, runtime compatibility changes, and `node-runtime.md`. Align the completed messaging service with Node.js while preserving its HTTP interface, authentication, Photon acceptance behavior, and temporary-video handling. Verify compilation and startup; flag SDK incompatibilities. Do not modify Python, deployment files, or shared READMEs. Append this exact prompt to this worktree’s `prompts.md`, labeled “AI-generated implementation prompt” to distinguish it from previous entries.
+
+## AI-generated integration prompt
+
+The following prompt is AI-generated, distinguished from previous entries.
+
+AI-generated integration prompt
+
+Integrate the completed backend work into main and push the verified result to GitHub.
+
+Create a dedicated integration branch and worktree from freshly fetched origin/main. Inventory these branches and their associated worktrees:
+- backend/account-onboarding
+- backend/delivery-semantics
+- backend/voiceover-verification
+- backend/compose-setup
+- backend/cloudflare-tunnel
+- backend/node-runtime
+
+Most implementations currently exist as uncommitted tracked and untracked worktree changes; merging branch tips alone would omit them. Review and preserve all intended changes, commit them on their respective branches once their work is complete, and merge them into the integration branch. Do not discard unrelated edits, modify worktrees with active writers, or delete source branches/worktrees.
+
+Resolve conflicts by preserving each feature’s behavior and every distinct prompts.md entry. Reconcile overlapping backend README and test documentation changes.
+
+Fix integration issues before pushing:
+1. Replace Compose’s Bun image, bun.lock references, startup command, healthcheck command, and build-context allowlist with the Node implementation. Compile TypeScript during the image build, install production dependencies using package-lock.json, and run emitted JavaScript.
+2. Update stale Bun/echo-scaffold instructions in repository and messaging documentation to match the implemented Node Photon endpoint.
+3. Keep acceptance distinct from confirmed receipt. Verify atomic job/delivery acceptance, terminal-state handling, polling, and inactive-container cleanup.
+4. Validate the delivery-status migration against disposable PostgreSQL, including legacy acceptance evidence. Document migration requirements for existing Compose volumes; do not apply migrations to live databases.
+5. Verify voiceover validation works through the complete pipeline. Audio-stream presence must not be described as proof of narration quality.
+6. Remove tracked Python bytecode and retain appropriate ignore rules.
+7. Ensure the Cloudflare setup reaches the loopback-bound Compose API while exposing no messaging, database, or Docker-control endpoint.
+8. Locate any subsequently completed architecture-acceptance work. If none exists, implement the missing executable acceptance checks needed to verify isolation, lifecycle behavior, cleanup, and the real messaging HTTP boundary with substituted Photon responses.
+
+Make additional focused fixes for failures found during integration. Preserve isolated user execution, temporary video storage, per-user file isolation, Photon SDK placement in TypeScript, the single coordinator, and the 25-minute authenticated inactivity policy. Never stop containers with active jobs. Do not invent an identity provider or receipt mechanism; document unresolved product decisions accurately.
+
+Run the combined Python suite, messaging npm ci/typecheck/build/tests, fresh-schema and migration PostgreSQL checks, Compose validation and image builds, real disposable-container acceptance checks, and Cloudflare ingress checks using synthetic configuration. Never run generated fixtures on the host, read or commit credential .env files, or send real messages. Report unavailable checks as blocked, never passed; do not push while required verification is unresolved.
+
+Once required checks pass, fetch origin again, incorporate any new main changes, and rerun affected checks. Fast-forward local main to the verified integration result without overwriting unrelated work, then push main to origin without force-pushing. If branch protection requires a PR, create and link it, follow the required checks, and merge through the permitted workflow. Verify origin/main contains the final commits and report the commit ID, fixes, test results, and remaining documented product blockers.
+
+Append this exact prompt to prompts.md under “AI-generated integration prompt,” explicitly identifying it as AI-generated to distinguish it from previous entries, and include that addition in the final commit.
+
+
+You may download different technologies so long as they from the allowed list outlined in the product overview markdown file.
