@@ -1,0 +1,5 @@
+# Keep local runtime configuration and credentials out of commits.
+config.yml
+config.yaml
+*.json
+*.pem
