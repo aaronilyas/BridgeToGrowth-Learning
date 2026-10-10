@@ -84,8 +84,9 @@ These are not additional requirements silently imposed by the suite:
   A failed evaluation must not be presented as an approved completed lesson;
   decide how to expose findings or obtain an acceptable result.
 - Photon acceptance is explicitly observable; it is not evidence of receipt.
-  Receipt acknowledgments, callbacks, and the meaning of the existing
-  `delivered` status need definition. Do not require an unsupported receipt API.
+  Internal completion now uses `accepted`, matching public polling. Confirmed
+  receipt, acknowledgments, and callbacks remain unresolved; the Node contract
+  supplies acceptance only. Do not require an unsupported receipt API.
 - Temporary artifact cleanup deadline, delivery retries, restart recovery, and
   partial-render handling need definition. STORAGE-01 requires eventual cleanup
   when processing/delivery no longer needs the artifact, not deletion while a

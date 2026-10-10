@@ -92,7 +92,7 @@ class LessonJob(Base):
     __table_args__ = (
         CheckConstraint(
             "status IN ('requested', 'validating', 'needs_breakdown', 'queued', "
-            "'generating', 'rendering', 'evaluating', 'delivering', 'delivered', 'failed', 'cancelled')",
+            "'generating', 'rendering', 'evaluating', 'delivering', 'accepted', 'failed', 'cancelled')",
             name="ck_lesson_jobs_status",
         ),
         CheckConstraint(
@@ -128,12 +128,12 @@ class LessonJob(Base):
 
 
 class VideoDelivery(Base):
-    """SMS send attempt metadata; no video or durable video location is stored."""
+    """Photon send attempt metadata; no video or durable video location is stored."""
 
     __tablename__ = "video_deliveries"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending', 'accepted', 'delivered', 'failed')",
+            "status IN ('pending', 'accepted', 'failed')",
             name="ck_video_deliveries_status",
         ),
         Index("ix_video_deliveries_job_created", "lesson_job_id", "created_at"),
@@ -150,6 +150,7 @@ class VideoDelivery(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Legacy metadata only; never populated or interpreted as receipt evidence.
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     lesson_job: Mapped[LessonJob] = relationship(back_populates="deliveries")
