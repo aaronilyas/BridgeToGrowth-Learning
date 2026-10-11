@@ -212,6 +212,11 @@ class Accounts:
                 Verification.id != row.id).order_by(Verification.sent_at.desc()).limit(1))
             if other and self.clock() - utc(other.sent_at) < timedelta(seconds=60):
                 return {'message': 'If eligible, a verification message will be sent', 'resend_after': 60}
+            if row.purpose == 'signup':
+                # A cooldown may have suppressed the initial signup. Once both
+                # cooldowns pass, allow it only if the number remains unoccupied.
+                # Recheck existing challenges too; never disclose this decision.
+                row.eligible = db.scalar(select(User.id).where(User.phone_number == row.phone_number)) is None
             code = f'{secrets.randbelow(1000000):06d}'
             row.code_hash, row.sent_at = self.keyed(f'{identifier}:{code}'), self.clock()
             # Resends never reset attempts or extend the challenge's absolute expiry.

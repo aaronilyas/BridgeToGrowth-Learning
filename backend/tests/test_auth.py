@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.auth import Accounts, digest, password_matches
+from backend.auth import Accounts, digest, password_matches, utc
 from backend.main import create_app
 from backend.models import Base, User, UserContainer, Verification, AuthToken, AuthRate
 from backend.service import Service
@@ -152,6 +152,52 @@ class AuthenticationTests(unittest.TestCase):
         with self.assertRaises(Exception) as error:
             replacement.login(PHONE, PASSWORD, 'testclient')
         self.assertEqual(error.exception.status_code, 429)
+
+    def test_signup_suppressed_by_recovery_cooldown_can_resend_and_verify(self):
+        self.request('/auth/recovery', {'phone_number': PHONE}, 202)
+        self.now += timedelta(seconds=47)
+        challenge = self.request('/auth/signup', {'phone_number': PHONE, 'password': PASSWORD}, 202)
+        identifier = challenge['challenge_id']
+        self.transport.verification.assert_not_called()
+        with self.sessions() as db:
+            expires_at = utc(db.get(Verification, uuid.UUID(identifier)).expires_at)
+        self.now += timedelta(seconds=59)
+        self.request('/auth/resend', {'challenge_id': identifier}, 202)
+        self.transport.verification.assert_not_called()
+        self.now += timedelta(seconds=1)
+        self.request('/auth/resend', {'challenge_id': identifier}, 202)
+        self.transport.verification.assert_called_once()
+        code = self.transport.verification.call_args.args[1]
+        with self.sessions() as db:
+            row = db.get(Verification, uuid.UUID(identifier))
+            self.assertEqual(utc(row.expires_at), expires_at)
+            self.assertTrue(row.eligible)
+        result = self.request('/auth/verify', {'challenge_id': identifier, 'code': code})
+        self.assertTrue(result['account']['phone_verified'])
+        self.request('/auth/login', {'phone_number': PHONE, 'password': PASSWORD})
+
+    def test_resend_does_not_send_for_occupied_signup_or_unknown_recovery(self):
+        self.signup()
+        self.now += timedelta(seconds=61)
+        occupied = self.request('/auth/signup', {'phone_number': PHONE, 'password': NEW_PASSWORD}, 202)
+        unknown = self.request('/auth/recovery', {'phone_number': '+15550000009'}, 202)
+        before = self.transport.verification.call_count
+        self.now += timedelta(seconds=61)
+        responses = [self.request('/auth/resend', {'challenge_id': c['challenge_id']}, 202)
+                     for c in (occupied, unknown)]
+        self.assertEqual(responses[0], responses[1])
+        self.assertEqual(self.transport.verification.call_count, before)
+        for challenge in (occupied, unknown):
+            with self.sessions() as db:
+                self.assertFalse(db.get(Verification, uuid.UUID(challenge['challenge_id'])).eligible)
+
+    def test_resend_preserves_cooldown_across_challenges(self):
+        first = self.request('/auth/signup', {'phone_number': PHONE, 'password': PASSWORD}, 202)
+        self.now += timedelta(seconds=61)
+        self.request('/auth/signup', {'phone_number': PHONE, 'password': PASSWORD}, 202)
+        self.now += timedelta(seconds=1)
+        self.request('/auth/resend', {'challenge_id': first['challenge_id']}, 202)
+        self.assertEqual(self.transport.verification.call_count, 2)
 
     def test_unauthenticated_responses_do_not_reveal_existence(self):
         session, _, _ = self.signup()
