@@ -12,7 +12,7 @@ user containers and handed to Photon for messaging. See
 - `frontend/`: reserved for React Native; currently empty.
 - [compose.md](compose.md): single-coordinator deployment with a loopback API.
 - [cloudflare.md](cloudflare.md): host-based tunnel exposing only account/lesson routes.
-- `prompts.md` and `prompt.md`: preserved request history.
+- [prompts.md](prompts.md): consolidated request history with explicit prompt-origin labels.
 
 With Node.js 22.6+ installed, verify messaging without credentials or messages:
 
