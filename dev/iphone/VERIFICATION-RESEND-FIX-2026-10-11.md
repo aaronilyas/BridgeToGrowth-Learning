@@ -44,3 +44,28 @@ requests intact. The fix does not trigger a message automatically. The user must
 request a resend once permitted, or start a fresh signup if the challenge expired.
 Actual provider acceptance and delivery remain unverified until a live request is
 made by the user or explicitly authorized.
+
+## Subsequent live attempt: Photon recipient restriction
+
+The user then submitted a new signup themselves. Read-only inspection confirmed
+that the running coordinator contained the resend fix, the new challenge was
+eligible and unexpired, and a verification transport failure was logged. The
+initial cooldown defect no longer explained this attempt.
+
+Read-only provider diagnostics using the messaging container's existing process
+credentials found that project authentication succeeds, iMessage is enabled, the
+project is named `BridgeToGrowth-Learning`, and it uses the free/shared mode. A
+read-only gRPC chat lookup for the signup recipient returned:
+
+```text
+[spectrum-imessage] Target not allowed for this project
+```
+
+No chat was created and no message was sent by the diagnostic. Temporary SDK
+authentication material remained in process memory and was never printed. This
+confirms a provider recipient-access restriction; it does not establish whether
+the number is missing from the project's Users list or has another authorization
+problem. The user was asked to check the correct project's Users list. The shared
+browser reached Photon sign-in, so authenticated recipient management was not
+available. No external user was created, permissions changed, paid plan selected,
+invitation sent, or additional live verification attempted by the agent.
