@@ -328,16 +328,22 @@ for authority in ['postgres:5432', 'messaging:3001', '127.0.0.1:443', '169.254.1
             container.container_handle, container.status = handle, 'running'
             db.commit()
         self.runtime._run('exec', '-d', handle, 'python', '-c',
-            "from pathlib import Path; import time; Path('/work/abandoned.mp4').write_bytes(b'temporary'); time.sleep(2)")
-        deadline = time.monotonic() + 5
-        while not self.runtime.state(self.a)['busy']:
-            self.assertLess(time.monotonic(), deadline)
-        recovered = Service(self.sessions, self.dependencies, self.runtime, lambda: self.now)
-        self.service = recovered
-        recovered.reconcile()
-        self.assertEqual(recovered.status(self.a, job)['status'], 'generating')
-        self.assertTrue(self.runtime.state(self.a)['running'])
-        deadline = time.monotonic() + 5
+            "from pathlib import Path; import time; Path('/work/abandoned.mp4').write_bytes(b'temporary')\n"
+            "while not Path('/tmp/recovery-release').exists(): time.sleep(.05)")
+        try:
+            deadline = time.monotonic() + 10
+            while not self.runtime.state(self.a)['busy']:
+                self.assertLess(time.monotonic(), deadline)
+            recovered = Service(self.sessions, self.dependencies, self.runtime, lambda: self.now)
+            self.service = recovered
+            recovered.reconcile()
+            self.assertEqual(recovered.status(self.a, job)['status'], 'generating')
+            self.assertTrue(self.runtime.state(self.a)['running'])
+        finally:
+            # A timed sleep could finish while Docker/reconciliation was running.
+            # Explicitly release this fixture before cleanup, including on failure.
+            self.runtime._run('exec', handle, 'touch', '/tmp/recovery-release')
+        deadline = time.monotonic() + 10
         while self.runtime.state(self.a)['busy']:
             self.assertLess(time.monotonic(), deadline)
             time.sleep(.1)

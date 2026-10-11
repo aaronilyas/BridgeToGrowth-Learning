@@ -44,6 +44,10 @@ def session():
         except (RuntimeError, OSError):
             pass
     caps = {'platformName': 'iOS', 'appium:automationName': 'XCUITest', 'appium:udid': c['udid'], 'appium:bundleId': 'com.bridgetogrowth.learning', 'appium:noReset': True, 'appium:useNewWDA': False, 'appium:usePrebuiltWDA': True, 'appium:derivedDataPath': str(LOCAL / 'wda-build'), 'appium:updatedWDABundleId': c['wda_bundle_id'], 'appium:xcodeOrgId': c['team_id'], 'appium:xcodeSigningId': 'Apple Development', 'appium:newCommandTimeout': 3600, 'appium:wdaLaunchTimeout': 120000, 'appium:showXcodeLog': False}
+    # React Native rerenders and native reinstalls can invalidate cached inputs.
+    caps['appium:useNativeCachingStrategy'] = False
+    # Countdown timers update every second; waiting for complete idleness stalls UI commands.
+    caps['appium:waitForIdleTimeout'] = 0
     value = request('POST', '/session', {'capabilities': {'alwaysMatch': caps, 'firstMatch': [{}]}})
     file.write_text(json.dumps({'sessionId': value['sessionId']}, indent=2) + '\n')
     file.chmod(0o600)
