@@ -3,11 +3,71 @@ import io
 import json
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 
-from backend.integrations import Integrations
+from backend.integrations import Integrations, gemini
 
 
 class IntegrationTests(unittest.TestCase):
+    def test_gemini_daily_quota_is_not_retried_and_body_remains_private(self):
+        body = json.dumps({'error': {'details': [{'@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+            'violations': [{'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier'}]}]}}).encode()
+        error = HTTPError('https://example.test', 429, 'quota', {}, io.BytesIO(body))
+        with patch.dict('os.environ', {'GEMINI_MODEL': 'test', 'GEMINI_API_KEY': 'test'}), \
+                patch('backend.integrations.request_json', side_effect=error) as request, \
+                patch('backend.integrations.time.sleep') as sleep:
+            with self.assertRaises(HTTPError) as outcome:
+                gemini('prompt')
+            self.assertEqual(request.call_count, 1)
+            sleep.assert_not_called()
+            self.assertEqual(outcome.exception.read(), body)
+
+    def test_gemini_accepts_only_unambiguous_single_json_object(self):
+        for value in ({'ok': True}, [{'ok': True}], [], [{'ok': True}, {'ok': False}], 'invalid'):
+            response = {'candidates': [{'content': {'parts': [{'text': json.dumps(value)}]}}]}
+            with self.subTest(value=value), \
+                    patch.dict('os.environ', {'GEMINI_MODEL': 'test', 'GEMINI_API_KEY': 'test'}), \
+                    patch('backend.integrations.request_json', return_value=response):
+                if value in ({'ok': True}, [{'ok': True}]):
+                    self.assertEqual(gemini('prompt'), {'ok': True})
+                else:
+                    with self.assertRaises(ValueError):
+                        gemini('prompt')
+
+    def test_gemini_respects_short_provider_retry_delay(self):
+        body = json.dumps({'error': {'details': [{'@type': 'type.googleapis.com/google.rpc.RetryInfo',
+                                                'retryDelay': '5s'}]}}).encode()
+        error = HTTPError('https://example.test', 429, 'busy', {}, io.BytesIO(body))
+        response = {'candidates': [{'content': {'parts': [{'text': '{"ok":true}'}]}}]}
+        with patch.dict('os.environ', {'GEMINI_MODEL': 'test', 'GEMINI_API_KEY': 'test'}), \
+                patch('backend.integrations.request_json', side_effect=[error, response]), \
+                patch('backend.integrations.time.sleep') as sleep:
+            self.assertEqual(gemini('prompt'), {'ok': True})
+            sleep.assert_called_once_with(5)
+
+    def test_gemini_retries_transient_errors_with_bounded_backoff(self):
+        response = {'candidates': [{'content': {'parts': [{'text': '{"ok":true}'}]}}]}
+        errors = [HTTPError('https://example.test', 503, 'unavailable', {}, io.BytesIO()),
+                  HTTPError('https://example.test', 429, 'busy', {}, io.BytesIO())]
+        with patch.dict('os.environ', {'GEMINI_MODEL': 'test', 'GEMINI_API_KEY': 'test'}), \
+                patch('backend.integrations.request_json', side_effect=[*errors, response]) as request, \
+                patch('backend.integrations.time.sleep') as sleep:
+            self.assertEqual(gemini('prompt', b'actual video'), {'ok': True})
+            self.assertEqual(request.call_count, 3)
+            self.assertEqual([call.args[0] for call in sleep.call_args_list], [1, 2])
+            self.assertEqual(request.call_args_list[0], request.call_args_list[-1])
+
+    def test_gemini_does_not_retry_permanent_errors_or_exceed_limit(self):
+        for status, count in ((400, 1), (403, 1), (503, 3)):
+            with self.subTest(status=status), \
+                    patch.dict('os.environ', {'GEMINI_MODEL': 'test', 'GEMINI_API_KEY': 'test'}), \
+                    patch('backend.integrations.request_json', side_effect=lambda *a: (_ for _ in ()).throw(
+                        HTTPError('https://example.test', status, 'failed', {}, io.BytesIO()))) as request, \
+                    patch('backend.integrations.time.sleep'):
+                with self.assertRaises(HTTPError):
+                    gemini('prompt')
+                self.assertEqual(request.call_count, count)
+
     def test_scope_rejects_invalid_estimates(self):
         for seconds in (-1, True, 90.5, '90', None):
             with self.subTest(seconds=seconds), patch('backend.integrations.gemini', return_value={'seconds': seconds, 'feedback': 'split'}):

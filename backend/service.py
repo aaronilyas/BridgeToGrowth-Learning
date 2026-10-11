@@ -213,9 +213,9 @@ class Service:
                     db.commit()
             except Cancelled:
                 self.update(job_id, 'cancelled', failure_reason=None)
-            except Exception:
+            except Exception as error:
                 # Exceptions can contain keys, prompts or provider bodies. Log IDs and stage only.
-                log.warning('Lesson %s stopped during %s', job_id, stage)
+                log.warning('Lesson %s stopped during %s (%s)', job_id, stage, type(error).__name__)
                 try:
                     with self.sessions() as db:
                         cancelled = db.get(LessonJob, job_id).cancel_requested

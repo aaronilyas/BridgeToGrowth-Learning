@@ -737,6 +737,76 @@ At the end, provide a testing report containing the installation status, backend
 **Append this prompt to the end of the ai generated prompt section from prompts.md**
 ```
 
+### Fix video generation and verify physical iPhone delivery
+
+**Origin: User-supplied prompt, appended to the AI-generated prompts section as requested. Recipient phone number redacted.**
+
+```markdown
+goal Fix BridgeToGrowth-Learning’s video-generation failure and verify real video delivery and playback on my USB-connected iPhone within a maximum of 20 minutes from starting. Authentication now works: preserve it. Continue reproducing, diagnosing, fixing, and testing until the outcome is physically verified or the deadline is reached.
+
+Repository: https://github.com/aaronilyas/BridgeToGrowth-Learning
+My verified US recipient: [REDACTED PHONE NUMBER].
+
+Success requires:
+- A lesson submitted through the physical app uses the real Gemini, isolated renderer, evaluation, and Photon integrations.
+- A genuine video is generated and passes the existing duration, size, and quality checks.
+- The video arrives at [REDACTED PHONE NUMBER] in Messages and plays correctly on my physical iPhone.
+- If the reported failure involves voiceover, that requested mode also works with audible narration.
+
+HTTP 202, passing mocked tests, a successful render alone, or Photon acceptance alone do not prove the full goal.
+
+Access and authorization:
+Use the local repository, remote GitHub repository, internet, my browser’s existing signed-in sessions, and my connected physical iPhone. I authorize focused fixes, necessary configuration corrections under my existing accounts, real Gemini/rendering/Photon calls, and lesson-video messages to my own number. Rebuild and gracefully restart affected local components and reinstall/relaunch the app if necessary. Earlier no-video/no-provider-test restrictions are superseded for this task.
+
+Keep the working account/session where possible. Do not restart the authentication investigation unless an observed authentication failure blocks lessons. Ask for human help only for an actual blocker such as unlocking the phone or completing browser authentication; continue independent work while waiting.
+
+Record the start time and hard deadline. Suggested allocation:
+- Minutes 0–3: reproduce and identify the failing stage.
+- Minutes 3–10: implement the smallest supported fix.
+- Minutes 10–17: verify real generation, delivery, and physical playback.
+- Minutes 17–20: focused regression checks and final report.
+Adjust based on evidence. Start the live lesson early enough to finish within the deadline.
+
+Repository context:
+Remote main was e57dc7f3c2290371488f9a5aecc49805c3756c8b when reviewed. The four commits after authentication fix 18d3f0b changed only dev/iphone/VERIFICATION-RESEND-FIX-2026-10-11.md. Check for newer commits and local uncommitted changes before drawing conclusions.
+
+The pipeline is:
+frontend submission → validating/Gemini scope assessment → container startup → generating/Gemini Manim code → rendering/Manim and ffprobe → evaluating/Gemini actual-video review → delivering/Photon attachment.
+
+backend/service.py currently records generic stage failures. backend/container/worker.py discards renderer stdout/stderr. Do not guess the root cause from these generic messages.
+
+Execution:
+1. Read applicable repository instructions and inspect local changes. Verify the physical app’s actual API origin, ordinary backend, current running images/code, and authenticated account. Rule out the substituted QA backend.
+2. Inspect the latest failed lesson belonging to my account: job ID, status, failure_reason, evaluation findings, cleanup state, and relevant sanitized logs. Capture the original topic and voiceover setting privately.
+3. Reproduce through the physical app. Correlate the request with its job ID and stage transitions. Use a small 15–30-second lesson for a baseline, such as adding fractions with equal denominators, initially without voiceover. Also reproduce the original failing mode when needed.
+4. Investigate the observed stage:
+   - validating: Gemini model access, API response, quota, JSON contract, or legitimate scope rejection.
+   - container startup: Docker access, image availability, ownership, proxy readiness, and stale container configuration.
+   - generating: Gemini credentials passed into the trusted worker, allowed proxy connectivity, response parsing, and generated-code contract.
+   - rendering: capture bounded diagnostic output privately inside the isolated container; inspect actual Manim errors, dependencies, file permissions, resources, output discovery, ffprobe, and voiceover failures.
+   - evaluating: inspect actual structured findings and malformed responses. Correct generation or evaluation integration; never force approval.
+   - delivering: inspect MP4 attachment handling, limits, Photon rejection, and physical receipt. Keep generation failures distinct from delivery failures.
+5. Apply the smallest evidence-backed fix. Rebuild and activate changed components, including affected renderer images/containers when necessary. Preserve working authentication and unrelated local work.
+6. Run relevant existing checks and add a focused regression test where warranted. Then repeat the live app flow and play the received video on the physical iPhone. Check that it contains the requested lesson without obvious corruption; verify narration if requested.
+
+Preserve renderer isolation, account ownership, idempotency, cancellation, cleanup, and no persistent generated-video storage. Never execute generated Manim code on the host, bypass evaluation, substitute fixture videos, hardcode success, delete accounts, reset databases, remove active containers, broadly disable egress restrictions, purchase a plan, or expose credentials.
+
+Inspect unresolved delivery attempts before submitting replacements. Do not automatically replay a delivery_unknown send.
+
+Continue after failed attempts using the next evidence-supported action. Provide short updates at meaningful checkpoints. Do not repeatedly request approval for authorized work.
+
+At success or the 20-minute deadline, stop substantive work and report:
+- Confirmed cause and evidence, distinguishing generation from delivery.
+- Changes made and the code/images actually running.
+- Tests run.
+- Real generation, Messages receipt, playback, and voiceover results separately.
+- Remaining blockers and the exact next step.
+
+Redact credentials, tokens, codes, and my phone number from shared evidence. Report any jobs still running without killing them merely to meet the deadline.
+
+Never invent findings or mark the goal complete because time ran out. If physical receipt and playback are unverified, explicitly state that the full fix remains unproven.
+```
+
 ## Human-written additional instruction (not AI-generated)
 
 ### Allowed technologies

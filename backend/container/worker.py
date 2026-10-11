@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 import time
+import threading
 import uuid
 
 from integrations import gemini
@@ -39,12 +40,26 @@ def reap_generated_processes():
 
 
 def run(args, cwd):
-    process = subprocess.Popen(args, cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    process = subprocess.Popen(args, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                start_new_session=True, env={k: v for k, v in os.environ.items()
                                                           if not k.startswith('GEMINI_')})
+    # Keep only a bounded tail in the owning container's disposable work tmpfs.
+    tail = bytearray()
+    def capture():
+        for block in iter(lambda: process.stdout.read(4096), b''):
+            tail.extend(block)
+            del tail[:-65536]
+    reader = threading.Thread(target=capture, daemon=True)
+    reader.start()
     try:
         code = process.wait(timeout=300)
+        reader.join(timeout=2)
+        diagnostic = Path(cwd) / 'renderer.log'
+        diagnostic.write_bytes(tail)
+        diagnostic.chmod(0o600)
         if code:
+            # DockerRuntime captures this privately; the API logs only stage/type.
+            sys.stderr.buffer.write(tail)
             raise RuntimeError("Renderer failed")
     finally:
         # Also reap descendants left behind by generated code, before releasing job protection.
@@ -53,6 +68,7 @@ def run(args, cwd):
         except ProcessLookupError:
             pass
         process.wait()
+        reader.join(timeout=2)
         reap_generated_processes()
 
 
@@ -96,7 +112,11 @@ def main():
             raise ValueError('Invalid voiceover setting')
         (root / 'request.json').write_text(json.dumps({'voiceover': payload['voiceover']}))
         result = gemini('Write Manim Python with a Scene named Lesson, at most 90 seconds. '
-                        'Return JSON with code (string). Use Manim Voiceover with GTTSService when '
+                        'Honor the requested duration: explicitly budget play and wait times to reach it. '
+                        'Use fully formed Text and MathTex with FadeIn; do not use Write or letter-by-letter '
+                        'text animations that show partial glyphs. Keep labels readable, within the frame, '
+                        'and separated from other objects. Return JSON with code (string). '
+                        'Use Manim Voiceover with GTTSService when '
                         'voiceover is enabled. Voiceover enabled: ' + str(payload['voiceover']) +
                         '. Original intent: ' + json.dumps(payload['intent']))
         if not isinstance(result.get('code'), str) or not result['code'].strip():

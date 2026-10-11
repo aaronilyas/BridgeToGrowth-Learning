@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import time
+import tempfile
 import uuid
 
 
@@ -99,8 +100,20 @@ class DockerRuntime:
         args = ['exec', '-i']
         if action == 'generate':
             args += ['-e', 'GEMINI_API_KEY', '-e', 'GEMINI_MODEL']
-        output = self._run(*args, handle, 'python', '/opt/worker.py', action, str(job_id),
-                           data=json.dumps(payload or {}).encode())
+        try:
+            output = self._run(*args, handle, 'python', '/opt/worker.py', action, str(job_id),
+                               data=json.dumps(payload or {}).encode())
+        except subprocess.CalledProcessError as error:
+            # Private, bounded stderr in coordinator tmpfs, surviving job cleanup.
+            # Never record stdout: the video action returns video bytes there.
+            if action in ('generate', 'render') and error.stderr:
+                try:
+                    with tempfile.NamedTemporaryFile(prefix=f'btg-{uuid.UUID(str(job_id))}-{action}-',
+                                                     suffix='.log', dir='/tmp', delete=False) as diagnostic:
+                        diagnostic.write(error.stderr[-65536:])
+                except OSError:
+                    pass  # Diagnostics must never interfere with job cleanup.
+            raise
         return output if action == 'video' else json.loads(output)
 
     def stop(self, handle):

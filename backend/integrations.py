@@ -1,7 +1,11 @@
 """External HTTP contracts. No generated code is executed in this module."""
 import base64
 import json
+import io
 import os
+import logging
+import time
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 
@@ -16,14 +20,59 @@ def gemini(prompt, video=None):
     parts = [{"text": prompt}]
     if video is not None:
         parts.append({"inlineData": {"mimeType": "video/mp4", "data": base64.b64encode(video).decode()}})
-    result = request_json(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{os.environ['GEMINI_MODEL']}:generateContent",
-        {"contents": [{"parts": parts}], "generationConfig": {"responseMimeType": "application/json"}},
-        {"x-goog-api-key": os.environ["GEMINI_API_KEY"]},
-    )
+    # Retry only Gemini's transient HTTP failures, never a messaging send.
+    for attempt in range(3):
+        try:
+            result = request_json(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{os.environ['GEMINI_MODEL']}:generateContent",
+                {"contents": [{"parts": parts}], "generationConfig": {"responseMimeType": "application/json"}},
+                {"x-goog-api-key": os.environ["GEMINI_API_KEY"]},
+            )
+            break
+        except HTTPError as error:
+            if error.code not in (429, 500, 502, 503, 504) or attempt == 2:
+                raise
+            status = error.code
+            delay = 2 ** attempt
+            # Preserve the private body for callers while inspecting only retry metadata.
+            body = error.read(65536)
+            try:
+                details = json.loads(body).get('error', {}).get('details', [])
+            except (ValueError, AttributeError):
+                details = []
+            daily_quota = False
+            for detail in details:
+                if not isinstance(detail, dict):
+                    continue
+                if detail.get('@type', '').endswith('QuotaFailure'):
+                    daily_quota |= any('PerDay' in violation.get('quotaId', '')
+                                       for violation in detail.get('violations', [])
+                                       if isinstance(violation, dict))
+                if detail.get('@type', '').endswith('RetryInfo'):
+                    try:
+                        delay = max(delay, float(detail.get('retryDelay', '').removesuffix('s')))
+                    except (ValueError, TypeError, AttributeError):
+                        pass
+            try:
+                delay = max(delay, float(error.headers.get('Retry-After', '0')))
+            except (ValueError, TypeError, AttributeError):
+                pass
+            if daily_quota or delay > 30:
+                logging.getLogger(__name__).warning('Gemini HTTP %s; provider retry window exceeds bounded retries', status)
+                error.close()
+                raise HTTPError(error.url, error.code, error.reason, error.headers, io.BytesIO(body)) from None
+            error.close()
+            logging.getLogger(__name__).warning('Gemini HTTP %s; retry %s/2', status, attempt + 1)
+            time.sleep(delay)
     if not isinstance(result, dict) or result.get("promptFeedback", {}).get("blockReason"):
         raise ValueError("Invalid Gemini response")
-    return json.loads("".join(p.get("text", "") for p in result["candidates"][0]["content"]["parts"]))
+    parsed = json.loads("".join(p.get("text", "") for p in result["candidates"][0]["content"]["parts"]))
+    # Some models return one JSON object wrapped in a singleton array.
+    if isinstance(parsed, list) and len(parsed) == 1 and isinstance(parsed[0], dict):
+        parsed = parsed[0]
+    if not isinstance(parsed, dict):
+        raise ValueError('Ambiguous or invalid Gemini JSON object')
+    return parsed
 
 
 class Integrations:

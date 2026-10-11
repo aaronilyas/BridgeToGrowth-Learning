@@ -18,6 +18,23 @@ with patch.dict(sys.modules, {'integrations': Mock()}):
 
 
 class VoiceoverWorkerTests(unittest.TestCase):
+    def test_renderer_failure_keeps_bounded_private_diagnostics_and_strips_keys(self):
+        process = Mock(stdout=io.BytesIO(b'x' * 100000 + b'actual render error'), pid=12345)
+        process.wait.return_value = 1
+        stderr = Mock(buffer=io.BytesIO())
+        with patch.object(worker.subprocess, 'Popen', return_value=process) as launch, \
+                patch.object(worker.os, 'killpg'), patch.object(worker, 'reap_generated_processes') as reap, \
+                patch.object(worker.sys, 'stderr', stderr), \
+                patch.dict(worker.os.environ, {'GEMINI_API_KEY': 'private-test-key'}):
+            with self.assertRaisesRegex(RuntimeError, 'Renderer failed'):
+                worker.run(['manim', 'never-executed.py'], self.work)
+        diagnostic = self.work / 'renderer.log'
+        self.assertEqual(len(diagnostic.read_bytes()), 65536)
+        self.assertTrue(diagnostic.read_bytes().endswith(b'actual render error'))
+        self.assertEqual(diagnostic.stat().st_mode & 0o777, 0o600)
+        self.assertNotIn('GEMINI_API_KEY', launch.call_args.kwargs['env'])
+        reap.assert_called_once()
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
