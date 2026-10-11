@@ -28,3 +28,13 @@ class ConfigurationTests(unittest.TestCase):
             with self.subTest(field=field), patch.dict('os.environ', {**VALID, field: value}, clear=True):
                 with self.assertRaises(RuntimeError):
                     validate_settings()
+
+    def test_stage_chains_reject_empty_unsafe_duplicate_or_unbounded_models(self):
+        for setting in ('GEMINI_CODE_MODELS', 'GEMINI_VIDEO_MODELS'):
+            for value in ('', 'model,', 'model/../../secret', 'model,model', 'one,two,three,four'):
+                with self.subTest(setting=setting, value=value), \
+                        patch.dict('os.environ', {**VALID, setting: value}, clear=True):
+                    with self.assertRaisesRegex(RuntimeError, setting):
+                        validate_settings()
+            with patch.dict('os.environ', {**VALID, setting: 'primary, backup'}, clear=True):
+                validate_settings()

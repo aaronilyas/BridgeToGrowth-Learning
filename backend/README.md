@@ -158,6 +158,32 @@ Node, Docker socket and receipt callbacks private. Use the credential-free
 [deployment example](../deployment/.env.example), [egress policy](../deployment/egress/README.md)
 and [Cloudflare route allowlist](../cloudflare.md).
 
+Code generation defaults to `gemini-3.8-flash` with **medium** reasoning, followed
+by `gemini-3.5-flash` and `gemini-3.1-flash-lite`, both with medium reasoning.
+Actual-video evaluation uses the same ordered models with **high** reasoning
+throughout. The adapter sends `generationConfig.thinkingConfig.thinkingLevel`
+explicitly, as described in [Google's thinking API documentation](https://ai.google.dev/gemini-api/docs/generate-content/thinking).
+Optional `GEMINI_CODE_MODELS` and `GEMINI_VIDEO_MODELS` override the respective
+chains with 1–3 distinct comma-separated model IDs, in priority order. Blank,
+unsafe, duplicate or longer chains fail startup validation. `GEMINI_MODEL`
+continues to control scope assessment only, with its existing same-model retries.
+
+Each code/video request tries at most three models, once each, advancing on HTTP
+404 (model unavailable), 429 (including exhausted daily quota), 500/502/503/504,
+or connection/timeout failures. It switches immediately rather than waiting on a
+quota retry window. HTTP calls retain their 120-second socket timeout, and the
+worker command retains its overall 420-second deadline. Authentication/permission errors, invalid requests, safety
+blocks, malformed results and negative video verdicts fail without falling back.
+Fallback logs include only stage, model and failure type/status; they exclude
+prompts, videos, credentials and provider error bodies. Generation settings are
+passed to the isolated trusted worker, and all `GEMINI_` settings are stripped
+before generated code executes.
+
+To activate this change on an existing deployment, rebuild both coordinator and
+renderer images, drain active jobs before restarting the coordinator, and retire
+idle user containers built from the previous renderer image so future jobs use
+the updated worker. Never stop a user container while its job is active.
+
 ## Database upgrade
 
 Fresh databases use `schema.sql` only. Existing original databases require

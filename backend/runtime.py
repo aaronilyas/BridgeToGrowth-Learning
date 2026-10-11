@@ -5,6 +5,7 @@ import subprocess
 import time
 import tempfile
 import uuid
+from .integrations import gemini_policy
 
 
 class DockerRuntime:
@@ -99,7 +100,8 @@ class DockerRuntime:
             raise ValueError('Invalid user container handle')
         args = ['exec', '-i']
         if action == 'generate':
-            args += ['-e', 'GEMINI_API_KEY', '-e', 'GEMINI_MODEL']
+            models, _ = gemini_policy('code')
+            args += ['-e', 'GEMINI_API_KEY', '-e', 'GEMINI_CODE_MODELS=' + ','.join(models)]
         try:
             output = self._run(*args, handle, 'python', '/opt/worker.py', action, str(job_id),
                                data=json.dumps(payload or {}).encode())

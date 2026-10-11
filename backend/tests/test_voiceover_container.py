@@ -57,7 +57,7 @@ class VoiceoverContainerTests(unittest.TestCase):
 sys.path.insert(0, '/opt')
 import worker
 payload = json.load(sys.stdin)
-worker.gemini = lambda prompt: {'code': payload['code']}
+worker.gemini = lambda prompt, **kwargs: {'code': payload['code']}
 import io
 sys.stdin = io.StringIO(json.dumps({'intent': 'fixture', 'voiceover': payload['voiceover']}))
 sys.argv = ['worker.py', 'generate', payload['job']]
