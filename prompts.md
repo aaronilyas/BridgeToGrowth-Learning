@@ -60,6 +60,236 @@ Generate a start script for the backend and a stop script for the backend. After
 
 ## AI-generated prompts
 
+### BridgeToGrowth — Fully Automated macOS & Physical iPhone Testing Prerequisites
+
+<!-- Added at the user's explicit request to the AI-generated prompts section. -->
+
+# BridgeToGrowth — Fully Automated macOS & Physical iPhone Testing Prerequisites
+
+You are my autonomous macOS development environment setup agent.
+
+## Objective
+
+Prepare my Mac and physical iPhone for AI-driven, end-to-end testing of the BridgeToGrowth Learning mobile application.
+
+**Do all prerequisite setup work possible yourself.** Install missing software, configure development tools, prepare the backend, establish iPhone connectivity, configure iOS signing, and set up physical-device UI automation.
+
+Do not conduct the full application test suite yet. Your job is to leave the development environment ready for another AI agent to begin testing immediately.
+
+## Existing setup
+
+- The GitHub repository `aaronilyas/BridgeToGrowth-Learning` is already cloned locally.
+- The required `.env` configuration files are already populated.
+- My Mac is the development machine.
+- My iPhone will be physically connected to my Mac using USB.
+- The FastAPI backend must run locally on my Mac.
+- The React Native/Expo iOS app must run on my actual iPhone, not just an iOS Simulator.
+- The testing agent must eventually be able to interact with the physical iPhone automatically.
+
+Locate the repository from the current directory or an obvious local checkout. Do not clone a second copy.
+
+Preserve existing environment files, credentials, data, and uncommitted changes. Never expose secret values in terminal output, logs, or reports.
+
+## Phase 1 — Inspect the environment
+
+1. Read `README.md`, `agents.md`, `frontend/README.md`, `backend/README.md`, `compose.md`, `cloudflare.md`, and the relevant configuration files.
+2. Inspect the existing frontend and backend architectures.
+3. Detect macOS version, CPU architecture, available storage, and installed development tools.
+4. Verify Homebrew, Git, Node.js, npm, Python 3, Docker Desktop, Docker Compose, Xcode, Xcode command-line tools, CocoaPods, and Expo tooling.
+5. Verify Node.js satisfies the repository requirement of version 22.13 or newer.
+6. Detect the iPhone using Xcode's device-management tools.
+7. Identify missing or incorrectly configured prerequisites.
+
+Install or repair any missing dependencies using appropriate official installation methods. Avoid unnecessary global packages and breaking existing development environments.
+
+If a dependency requires a GUI installation, macOS administrator approval, Apple authentication, or a physical iPhone interaction, complete every automatable step first, then tell me precisely what action I need to perform.
+
+## Phase 2 — Configure Xcode and physical iPhone development
+
+1. Verify the full Xcode installation and compatibility with the installed iOS version.
+2. Configure the active Xcode developer directory.
+3. Complete required Xcode first-launch components and license acceptance where authorized.
+4. Verify iOS platform support and physical-device development support.
+5. Detect the connected iPhone's device identifier, OS version, and development readiness.
+6. Verify the iPhone is trusted, unlocked, paired, and has Developer Mode enabled.
+7. Configure a valid Apple Development signing team for local installation.
+8. Confirm that `com.bridgetogrowth.learning` can be signed and installed on the device.
+9. Resolve provisioning, signing, deployment-target, and compatibility errors.
+
+Never modify my Apple Account or security settings without explicit authorization.
+
+Ask me only for actions that cannot be completed through the available local tools, such as unlocking the iPhone, approving trust, enabling Developer Mode, or completing Apple authentication.
+
+## Phase 3 — Prepare the frontend toolchain
+
+Working inside `frontend/`:
+
+1. Run `npm ci`.
+2. Verify Expo SDK 57 compatibility with the installed Node.js and Xcode versions.
+3. Run the existing TypeScript checks, lint checks, Expo dependency checks, and Expo Doctor.
+4. Diagnose and resolve genuine prerequisite or dependency errors.
+5. Verify Expo Router, SecureStore, native modules, CocoaPods, and iOS build dependencies.
+6. Generate the native iOS project using Expo prebuild if required.
+7. Ensure native generated files and local configuration are appropriately excluded from Git.
+8. Confirm the development server can start and the iOS build toolchain can compile the project.
+
+Do not upgrade Expo, React Native, or major dependencies unnecessarily.
+
+Preserve the existing architecture and backend API contracts.
+
+## Phase 4 — Prepare and validate the local backend
+
+Use the existing configuration and scripts.
+
+1. Confirm Docker Desktop and its daemon are functioning.
+2. Validate the configured Docker Compose stack without printing secret values.
+3. Verify the required environment variables are present.
+4. Confirm that PostgreSQL, FastAPI, messaging, and rendering dependencies can start.
+5. Use the project's existing `start-backend.sh` where appropriate.
+6. Build missing Docker images.
+7. Start the local backend services.
+8. Verify Docker service health and FastAPI availability.
+9. Confirm that the FastAPI coordinator is accessible at its configured loopback port, which defaults to `127.0.0.1:8000`.
+10. Inspect service logs for startup errors without leaking credentials.
+
+Do not run destructive migrations, reset databases, delete Docker volumes, or terminate active jobs.
+
+Do not attempt real messaging, Gemini requests, or video generation during prerequisite setup.
+
+## Phase 5 — Connect the physical iPhone to the local backend
+
+The app running on my iPhone must communicate with the FastAPI backend running on my Mac.
+
+Implement a secure development connection.
+
+Prefer a temporary, restricted local-network forwarding solution when the Mac and iPhone are on the same trusted network. The backend's current Docker configuration binds FastAPI to loopback, so preserve that architecture rather than exposing the complete stack.
+
+If LAN connectivity is unsuitable, investigate the repository's existing Cloudflare Tunnel setup and use it only if appropriate credentials, hostname configuration, and authorization are already available.
+
+Required actions:
+
+1. Detect my Mac's active network interface and local IP address.
+2. Determine whether the iPhone can reach the Mac over the local network.
+3. Configure a dedicated forwarding endpoint for FastAPI, if required.
+4. Restrict exposure to the intended API port and trusted network.
+5. Keep PostgreSQL, the messaging service, Docker control, and internal callbacks inaccessible.
+6. Configure `frontend/.env` with the reachable API origin.
+7. Verify iOS development HTTP permissions or HTTPS certificate trust as appropriate.
+8. Check that the API is reachable through the selected forwarding endpoint.
+9. Arrange for the forward or tunnel to remain available during the testing session.
+10. Document the command needed to restart this connection.
+
+Do not place secrets in `EXPO_PUBLIC_*` variables or weaken production network security.
+
+If a physical-device API connection cannot yet be verified, distinguish Mac-side verification from actual iPhone verification.
+
+## Phase 6 — Configure automated physical iPhone interaction
+
+Install and configure Appium with the XCUITest driver, using versions compatible with the installed Node.js, Xcode, and iOS versions.
+
+1. Install Appium if missing.
+2. Install the XCUITest driver.
+3. Verify the driver and dependencies.
+4. Prepare WebDriverAgent for the connected physical iPhone.
+5. Configure WebDriverAgent signing using my authorized Apple Development team.
+6. Build and install WebDriverAgent if permitted.
+7. Configure the required physical-device UI automation permissions.
+8. Start the Appium server and establish a session with the connected device.
+9. Verify that device information can be retrieved.
+10. Verify screenshot capture, element discovery, and a harmless UI interaction on an appropriate non-sensitive screen.
+11. Prepare a reusable Appium configuration or test harness.
+12. Document how the next AI agent should connect to this automation setup.
+
+If WebDriverAgent cannot be installed because of signing, trust, or device restrictions, identify the exact remaining blocker and its resolution.
+
+Do not claim physical-device automation is working until it has been verified on the actual iPhone.
+
+## Phase 7 — Install and launch BridgeToGrowth
+
+Once the prerequisites are ready, perform a development installation of BridgeToGrowth on the connected iPhone.
+
+Use the repository's Expo workflow, including `npx expo run:ios --device` where appropriate.
+
+1. Build the iOS development app.
+2. Sign it for my physical iPhone.
+3. Install it onto the device.
+4. Start the necessary Expo/Metro development server.
+5. Launch the installed application.
+6. Verify that it reaches the initial application screen.
+7. Verify that the development API configuration is valid.
+8. Where possible, confirm an actual network request from the app reaches the local FastAPI backend.
+9. Capture an initial screenshot.
+10. Record relevant non-sensitive build and runtime logs.
+
+Stop short of executing the complete functional test suite.
+
+## Phase 8 — Make the environment repeatable
+
+Create lightweight, clearly named local development helper scripts or documentation for:
+
+- Starting the backend and checking its health.
+- Establishing the local iPhone-to-backend API connection.
+- Starting Expo/Metro.
+- Starting the Appium server and connecting to the physical iPhone.
+- Building, installing, and launching the iOS app.
+- Checking readiness of the complete development environment.
+- Safely stopping test-specific services without destroying data or interrupting active backend jobs.
+
+Prefer scripts inside a suitable `scripts/` or `dev/` directory, with a short README.
+
+Make the scripts safe to run repeatedly.
+
+Do not commit credentials, provisioning profiles, local device identifiers, generated private keys, or environment secrets.
+
+## Phase 9 — Final readiness report
+
+Produce a concise but comprehensive readiness report that includes:
+
+- macOS and Xcode versions.
+- Node.js, Expo, and Appium versions.
+- Connected iPhone model and iOS version.
+- Apple signing readiness.
+- Docker and backend health.
+- Local API origin configured for the iPhone.
+- Expo build and iOS installation status.
+- WebDriverAgent and physical-device automation status.
+- Screenshot and launch verification results.
+- Locations of reusable scripts.
+- Any prerequisites that could not be completed.
+- Exact manual actions, if any, still required.
+
+Clearly distinguish **verified**, **configured but unverified**, and **blocked** items.
+
+Finish with an explicit verdict:
+
+**READY FOR PHYSICAL IPHONE AI TESTING**
+
+or
+
+**NOT READY — REMAINING BLOCKERS**
+
+Only report READY when the actual device has a launchable BridgeToGrowth installation, can communicate with the local backend, and can be controlled through the configured automation tooling.
+
+## Operating instructions
+
+Work autonomously and perform the setup rather than merely describing commands.
+
+Use the available local terminal, Xcode tools, Docker tools, and device automation facilities.
+
+Do not request confirmation for ordinary, reversible, low-risk prerequisite setup steps.
+
+Request authorization for administrator-level changes, sensitive security modifications, Apple Account operations, or any destructive action.
+
+Do not invent successful test results or claim access to resources that are not available.
+
+If something fails, diagnose it, apply a reasonable fix, and retry verification.
+
+Do not stop after your first installation error.
+
+**The desired final state is a working BridgeToGrowth development build on my real iPhone, connected to the locally running backend, with AI-driven UI automation ready for the next testing agent.**
+
+**Append this prompt to the ai generated prompts section of prompts.md**
+
 ### Photon HTTP delivery endpoint
 
 **Origin: AI-generated implementation prompt.**

@@ -1,0 +1,10 @@
+{
+  "name": "btg-physical-iphone-tools",
+  "private": true,
+  "engines": { "node": ">=22.13.0" },
+  "dependencies": {
+    "appium": "3.8.0",
+    "appium-xcuitest-driver": "12.17.1",
+    "expo-doctor": "1.20.4"
+  }
+}
