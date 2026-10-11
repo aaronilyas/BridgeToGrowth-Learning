@@ -9,7 +9,8 @@ user containers and handed to Photon for messaging. See
 - `services/messaging/`: [Node.js/TypeScript Photon endpoint](services/messaging/README.md).
   Authenticated `POST /video` accepts temporary MP4 bytes and returns HTTP 202
   only after Photon returns a message ID. Acceptance does not confirm receipt.
-- `frontend/`: reserved for React Native; currently empty.
+- `frontend/`: [Expo React Native mobile app](frontend/README.md) with secure
+  sessions, lesson submission/progress/cancellation and account management.
 - [compose.md](compose.md): single-coordinator deployment with a loopback API.
 - [cloudflare.md](cloudflare.md): host-based tunnel exposing only authentication, account and lesson routes.
 - [prompts.md](prompts.md): consolidated request history with explicit prompt-origin labels.
