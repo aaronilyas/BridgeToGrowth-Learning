@@ -31,6 +31,16 @@ README for explicit operator configuration. Credential files stay outside Git.
 
 Signup, phone verification, login, rotating opaque sessions, recovery and phone
 changes are owned by the [backend](backend/AUTHENTICATION.md).
+
+To run the backend stack locally, install Docker with Compose and Python 3,
+copy `.env.example` to `.env`, and fill the required backend credentials. Run
+`./start-backend.sh` to build the images and start PostgreSQL, messaging and
+FastAPI. Run `./stop-backend.sh` to drain active jobs and stop the stack without
+deleting volumes or user containers. Shutdown waits without a forced-kill
+timeout. Set `ENV_FILE=/path/to/config` to use a different environment file.
+The frontend runs separately using `frontend/.env`. For an existing database,
+follow the upgrade instructions in [compose.md](compose.md) before starting.
+
 Photon SDK calls stay in TypeScript. Generated Manim code executes only inside
 isolated user containers; generated videos remain temporary. Provider DM read receipts are consumed as independent evidence; missing receipts
 remain unconfirmed. Cancellation, submission idempotency, persisted crash cleanup

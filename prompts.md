@@ -52,6 +52,12 @@ Extract the contents of the front-implementation-plan.md and provide them to me 
 
 Append this prompt to prompts.md in the human written prompts section
 
+### Backend start and stop scripts
+
+**Origin: Human-written (not AI-generated).**
+
+Generate a start script for the backend and a stop script for the backend. After that append this prompt to the hand written prompt section of the prompts.md
+
 ## AI-generated prompts
 
 ### Photon HTTP delivery endpoint
