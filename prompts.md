@@ -280,6 +280,145 @@ Update backend documentation with:
 Proceed with implementation, using these defaults for routine decisions. Do not stop after writing a plan. At completion, summarize what changed, what passed, and what still requires live testing or an external capability.
 Append this prompt to the prompts.md file at the bottom of the ai generated prompts section
 
+### BridgeToGrowth-Learning frontend implementation
+
+**Origin: AI-generated implementation prompt (section placement requested by the user).**
+
+```markdown
+# BridgeToGrowth-Learning Frontend Implementation
+
+Build and test the React Native mobile frontend for:
+https://github.com/aaronilyas/BridgeToGrowth-Learning
+
+Deliver working, integrated code and local Git commits—not just a plan.
+
+## Approach
+
+Use GPT-6.1 Sol with High reasoning as the lead. If delegation helps, use GPT-6 Luna with High reasoning for bounded implementation tasks. Report unavailable model settings honestly.
+
+Keep the implementation straightforward:
+- Reuse compatible existing code.
+- Organize around authentication, lessons, and account management.
+- Add shared components or abstractions only where they serve an actual need.
+- Avoid speculative features, generic frameworks, and unnecessary dependencies.
+- If using parallel agents, give them separate worktrees and non-overlapping responsibilities. Review their changes before integration.
+
+## Inspect the repository first
+
+Check Git status and existing frontend work. Read the repository instructions, product overview, authentication documentation, backend integration documentation, relevant backend code and tests, and prompts.md.
+
+Use the actual backend contracts as the source of truth. Investigate documentation conflicts and preserve unrelated local changes.
+
+Keep this assignment focused on the frontend. Do not invent endpoints or change backend behavior to accommodate the UI. Add server-backed lesson history or recovery only if already supported or separately requested.
+
+## Stack
+
+Use:
+- React Native, TypeScript, and a supported stable Expo SDK
+- Expo Router
+- TanStack Query
+- Built-in fetch
+- expo-secure-store
+- Expo-compatible connectivity and React Native AppState
+- Native components and StyleSheet
+- Jest and React Native Testing Library
+
+Check package compatibility against official documentation. Configure a public API base URL, strict TypeScript, and appropriate linting.
+
+## Features
+
+### Authentication and sessions
+
+Implement login, signup, phone verification, resend, password recovery, and password reset using the existing API.
+
+Follow backend validation and challenge rules:
+- Preserve passwords exactly; never trim or store them.
+- Treat verification codes as six-digit strings, preserving leading zeroes.
+- Honor challenge expiry, resend cooldown, and Retry-After.
+- Prevent duplicate submissions and automatic offline replay.
+- Use neutral verification messaging; API success alone does not prove a message was sent.
+- Install sessions after login or signup verification. Require login after password reset.
+
+Store access tokens in memory and minimal refresh credentials in SecureStore. Follow backend expiration rules, including absolute refresh-session expiry.
+
+Serialize refresh requests and pause authenticated requests during rotation. Securely save rotated credentials before using them. An uncertain refresh response or unsafe storage failure requires reauthentication; never blindly retry consumed refresh credentials.
+
+Restore sessions before showing protected routes. Reject stale responses and clear account-scoped caches, pending work, and credentials when sessions end or accounts change.
+
+### Lesson submission
+
+Build a composer with:
+- The verified recipient phone number from the server
+- A topic field, trimmed and validated against backend limits
+- Voiceover off by default
+- An explanation of the 90-second video limit
+
+Do not promise a generation time.
+
+Submit the backend-supported payload with one cryptographically safe idempotency key per deliberate request. Keep the normalized payload and key unchanged for explicit retries; edited requests receive a new key.
+
+Prevent duplicate taps and automatic mutation retries. A lost response must not silently create another request.
+
+Before submission, retain a bounded, account-scoped pending-key record in secure storage without storing full topic text there. Use exact-key recovery only if the backend supports it. An empty lookup does not prove resubmission is safe.
+
+Without server recovery, use retained job IDs or in-memory payloads and explain restart limitations.
+
+### Job progress and cancellation
+
+Display all backend job statuses, including processing, needs_breakdown, failed, cancelled, interrupted, delivery_unknown, and accepted. Unknown statuses must not imply success.
+
+Provide readable stages, indeterminate progress, useful failure feedback, scope-editing options, manual refresh, and offline/stale indicators.
+
+Poll active jobs and jobs awaiting cleanup approximately every 3–5 seconds, with bounded backoff. Pause in the background or offline, and reconcile on return. Stop frequent polling once the job is terminal and cleanup is complete.
+
+Treat cancellation acknowledgement as a request, then observe the authoritative outcome. Respect the messaging cutoff and refetch after cancellation conflicts. Never imply an already-sent message can be retracted.
+
+Provider acceptance does not prove receipt or reading. Confirm reading only from supported, correlated receipt evidence. For accepted jobs, keep automatic receipt checks brief and bounded, then offer manual refresh. Never automatically resend a delivery_unknown job.
+
+### Account management
+
+Show the server-provided phone number and verification state. Implement logout, logout-all, and phone changes.
+
+Phone changes must use the current password and backend challenge flow. Successful verification revokes sessions: clear local account data and require login with the new number. Explain that a message already in progress may still reach the old recipient.
+
+Attempt server revocation during logout, clear local state, and distinguish confirmed revocation from local-only logout.
+
+### UI
+
+Use accessible native controls, readable validation messages, safe areas, keyboard handling, and dynamic text sizing. Cover loading, error, offline, and expired-session states.
+
+## Boundaries
+
+Preserve backend ownership of authentication, rendering, container lifecycle, and messaging.
+
+- Keep generated-code execution inside the existing isolated backend containers.
+- Keep Photon credentials and SDK usage in the existing Node.js/TypeScript service.
+- Do not bundle provider secrets or log passwords, tokens, or verification codes.
+- Do not expose one account’s data to another.
+- Preserve temporary video handling; add no video storage, playback, or downloads.
+- Avoid polling that defeats the backend’s 25-minute inactivity shutdown.
+- Do not assume iMessage supports every Android recipient.
+- Do not add alternative authentication, messaging transports, push notifications, biometrics, or unrelated features.
+
+## Verification and delivery
+
+Use deterministic tests with mocked backend/provider responses. Focus on:
+- Authentication, challenge handling, refresh races, uncertain refresh, and storage failure
+- Account switching and stale-response isolation
+- Duplicate lesson submissions, idempotency, and lost responses
+- Polling lifecycle, cancellation races, and cleanup
+- Acceptance versus reading, and ambiguous delivery
+- Route protection and core screen interactions
+
+Run dependency installation, typecheck, lint, the frontend test suite, and available Expo/native checks. Run relevant backend checks if backend files change. Fix failures within scope and report unavailable checks accurately.
+
+Document setup, environment configuration, run/test commands, session storage, recovery limitations, delivery semantics, and remaining device/provider verification.
+
+Commit meaningful changes locally. Do not push, open pull requests, deploy, or send live verification or lesson messages unless separately authorized.
+
+Finish with a concise report of implemented features, checks and results, limitations, commit IDs, and remaining uncommitted changes.
+```
+
 ## Human-written additional instruction (not AI-generated)
 
 ### Allowed technologies
