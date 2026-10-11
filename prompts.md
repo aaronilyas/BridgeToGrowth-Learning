@@ -2,13 +2,13 @@
 
 This file combines the former `prompt.md` and `prompts.md`. Prompt text is preserved as historical instructions; references to the former filename remain as originally written.
 
-Origin labels describe prompt authorship, not whether AI carried out the task. **AI-generated** means the original entry explicitly identified itself that way. **Not marked AI-generated — authorship unverified** means the original entry had no AI-generation label; this does not establish that it was written without AI. No entry currently has a verified non-AI authorship label. For future entries, record **Human-written (not AI-generated)**, **AI-generated**, or **AI-assisted** when the origin is known.
+Origin labels describe prompt authorship, not whether AI carried out the task. **Human-written (not AI-generated)** identifies the original requests and additional instruction that Aaron confirmed he wrote. **AI-generated** identifies entries explicitly labeled that way in the original history. For future entries, record **Human-written (not AI-generated)**, **AI-generated**, or **AI-assisted** when the origin is known.
 
-## Original prompts without an AI-generation label
+## Human-written prompts (not AI-generated)
 
 ### Backend schema and PostgreSQL setup
 
-**Origin: Not marked AI-generated — authorship unverified.**
+**Origin: Human-written (not AI-generated).**
 
 Create a backend sub directory then Based on the agents.md as well as the product-overview.md design a sqlalchemy data base schema and install Postgres's sql. After that create a prompt.md file outside of the backend sub directory and append this prompt to it.
 
@@ -16,7 +16,7 @@ Create an PostgreSQL database and establish a connection to it, assume the datab
 
 ### Backend acceptance test suite
 
-**Origin: Not marked AI-generated — authorship unverified.**
+**Origin: Human-written (not AI-generated).**
 
 Analyze the contents of the Agents.md as well as the Product-overview.md and based on their contents design a compact but effective language agnostic test suite for the fast api portion of this apps backend all the functionality that must be baked into it. Then once you are done append this prompt to the prompts.md 
 
@@ -24,7 +24,7 @@ Place the test suite in a sub directory within the backend sub directory.
 
 ### Messaging scaffold and repository organization
 
-**Origin: Not marked AI-generated — authorship unverified.**
+**Origin: Human-written (not AI-generated).**
 
 Analyze the current state of the repo and then run this command bun create spectrum-project@latest bridgetogrowth-learning --projectId a96c8fdb-17f1-4c49-94f6-3ec6e12f565e --providers imessage --yes
 
@@ -34,7 +34,7 @@ Then append this prompt to the prompts.md
 
 ### FastAPI backend implementation
 
-**Origin: Not marked AI-generated — authorship unverified.**
+**Origin: Human-written (not AI-generated).**
 
 Based on the product-overview.md, agents.md and the existing test suite implement the fastapi portion of the products backend, keep the number of routes to a minimum and keep design as simple as possible, so that it can be easily explained to a human at a high level. Then append this prompt to the prompts.md once you are done.
 
@@ -122,10 +122,10 @@ Once required checks pass, fetch origin again, incorporate any new main changes,
 
 Append this exact prompt to prompts.md under “AI-generated integration prompt,” explicitly identifying it as AI-generated to distinguish it from previous entries, and include that addition in the final commit.
 
-## Additional instruction without an AI-generation label
+## Human-written additional instruction (not AI-generated)
 
 ### Allowed technologies
 
-**Origin: Not marked AI-generated — authorship unverified.**
+**Origin: Human-written (not AI-generated).**
 
 You may download different technologies so long as they from the allowed list outlined in the product overview markdown file.
