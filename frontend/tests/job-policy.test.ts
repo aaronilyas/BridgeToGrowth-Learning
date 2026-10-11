@@ -32,7 +32,7 @@ const pollOptions = (overrides: Partial<{
 
 describe('job policy', () => {
   describe('pollDelay', () => {
-    it.each(['queued', 'requested', 'validating', 'generating', 'rendering', 'evaluating', 'delivering'])(
+    it.each(['processing', 'queued', 'requested', 'validating', 'generating', 'rendering', 'evaluating', 'delivering'])(
       'polls active status %s every four seconds', (status) => {
         expect(pollDelay(makeJob({ status }), pollOptions())).toBe(4_000);
       },
@@ -128,7 +128,7 @@ describe('job policy', () => {
   });
 
   describe('canCancel', () => {
-    it.each(['queued', 'requested', 'validating', 'generating', 'rendering', 'evaluating'])(
+    it.each(['processing', 'queued', 'requested', 'validating', 'generating', 'rendering', 'evaluating'])(
       'allows cancellation during pre-send status %s', (status) => {
         expect(canCancel(makeJob({ status }))).toBe(true);
       },

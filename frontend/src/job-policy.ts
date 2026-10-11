@@ -33,6 +33,7 @@ const TERMINAL_STATUSES = new Set([
 ]);
 
 const ACTIVE_STATUSES = new Set([
+  'processing',
   'queued',
   'requested', // Legacy status recognized during recovery.
   'validating',
@@ -70,6 +71,8 @@ function hasConfirmedRead(job: Job): boolean {
 
 export function jobMessage(job: Job): string {
   switch (job.status) {
+    case 'processing':
+      return 'Processing your lesson. The outcome is not confirmed yet.';
     case 'queued':
     case 'requested':
       return job.cancel_requested

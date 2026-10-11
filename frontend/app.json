@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "BridgeToGrowth",
+    "slug": "bridgetogrowth-learning",
+    "scheme": "bridgetogrowth",
+    "version": "1.0.0",
+    "orientation": "default",
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-status-bar"
+    ],
+    "ios": {
+      "bundleIdentifier": "com.bridgetogrowth.learning",
+      "supportsTablet": true,
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.bridgetogrowth.learning"
+    }
+  }
+}
