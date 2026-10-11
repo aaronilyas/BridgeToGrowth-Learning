@@ -101,13 +101,13 @@ def owned_pid(name):
         return None
 
 
-def start(name):
+def start(name, upstream_port=None):
     if owned_pid(name):
         print(f'{name} already running')
         return
     c = settings()
     if name == 'forward':
-        args = [sys.executable, '-u', str(HERE / 'api-forward.py'), '--bind', c['lan_ip'], '--trusted-cidr', c['trusted_cidr'], '--port', str(c['forward_port']), '--upstream-port', str(c['api_port'])]
+        args = [sys.executable, '-u', str(HERE / 'api-forward.py'), '--bind', c['lan_ip'], '--trusted-cidr', c['trusted_cidr'], '--port', str(c['forward_port']), '--upstream-port', str(upstream_port or c['api_port'])]
         cwd, url = ROOT, f"http://{c['lan_ip']}:{c['forward_port']}/__btg_readiness"
     elif name == 'metro':
         args = ['node', str(ROOT / 'frontend/node_modules/expo/bin/cli'), 'start', '--host', 'lan', '--port', str(c['metro_port'])]
@@ -138,6 +138,20 @@ def start(name):
             pass
         time.sleep(1)
     raise RuntimeError(f'{name} did not become ready within 30 seconds; inspect its local log.')
+
+
+def switch_forward(upstream_port):
+    pid = owned_pid('forward')
+    if pid:
+        os.killpg(pid, signal.SIGTERM)
+        for _ in range(50):
+            if not owned_pid('forward'):
+                break
+            time.sleep(.1)
+        else:
+            raise RuntimeError('Previous forwarder did not stop; refusing a second listener.')
+    start('forward', upstream_port)
+    print(f'Public-route forwarder now targets loopback port {upstream_port}.')
 
 
 def backend_health():
@@ -190,7 +204,7 @@ def stop():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['configure', 'backend-start', 'backend-health', 'forward-start', 'metro-start', 'appium-start', 'build-install', 'install-launch', 'relaunch', 'wda-build', 'readiness', 'stop'])
+    parser.add_argument('command', choices=['configure', 'backend-start', 'backend-health', 'forward-start', 'qa-forward-start', 'production-forward-start', 'metro-start', 'appium-start', 'build-install', 'install-launch', 'relaunch', 'wda-build', 'readiness', 'stop'])
     args = parser.parse_args()
     LOCAL.mkdir(parents=True, exist_ok=True)
     LOCAL.chmod(0o700)
@@ -205,6 +219,13 @@ if __name__ == '__main__':
                 run(['bash', ROOT / 'start-backend.sh'])
         elif args.command == 'backend-health':
             backend_health()
+        elif args.command == 'qa-forward-start':
+            c = json.loads((LOCAL / 'qa-backend.json').read_text())
+            if not probe(f"http://127.0.0.1:{c['port']}/openapi.json"):
+                raise RuntimeError('Start the isolated QA backend first.')
+            switch_forward(c['port'])
+        elif args.command == 'production-forward-start':
+            switch_forward(settings()['api_port'])
         elif args.command.endswith('-start'):
             start(args.command.split('-')[0])
         elif args.command == 'build-install':

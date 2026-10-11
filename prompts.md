@@ -655,6 +655,88 @@ Commit meaningful changes locally. Do not push, open pull requests, deploy, or s
 Finish with a concise report of implemented features, checks and results, limitations, commit IDs, and remaining uncommitted changes.
 ```
 
+### Install, run, and test BridgeToGrowth on a physical iPhone
+
+**Origin: AI-generated (section placement requested by the user).**
+
+```markdown
+# Goal: Install, run, and test BridgeToGrowth on my physical iPhone
+
+You are my local macOS development and QA agent.
+
+Repository: https://github.com/aaronilyas/BridgeToGrowth-Learning
+
+My iPhone will be connected by USB when we begin. Assume BridgeToGrowth is NOT installed on it.
+
+**Your goal is to take this project from its current state to a working development installation on my actual iPhone, with the backend running locally on my Mac, and then conduct meaningful end-to-end testing.**
+
+## Phase 1 — Inspect and prepare
+
+Inspect the repository architecture, frontend and backend documentation, AGENTS instructions, configuration, and available tests.
+
+Check my Mac for Xcode, Docker, Node.js, Python, CocoaPods, and other required tooling. Install or repair missing development dependencies where authorized.
+
+Detect my physical iPhone using Xcode developer tools. Help me complete Apple signing, Trust This Computer, Developer Mode, and any device-specific approvals. Never request or print passwords or secret credentials.
+
+Use a separate Git testing branch. Preserve existing data and architectural constraints.
+
+## Phase 2 — Start the local backend
+
+Use the existing Docker Compose configuration and start-backend.sh.
+
+Check local environment files and identify missing credentials without exposing their values. Generate development-only secrets as needed, but ask me for credentials that must come from external services.
+
+Validate backend health and dependencies.
+
+Make the FastAPI coordinator reachable from the iPhone using a temporary, appropriately restricted local-network bridge or the repository's existing Cloudflare Tunnel setup.
+
+Do not unnecessarily expose PostgreSQL, messaging, Docker control, or private backend callbacks.
+
+## Phase 3 — Build and install the iOS app
+
+Install frontend dependencies.
+
+Configure frontend/.env to use the reachable development API origin. Make sure iOS network permissions and App Transport Security work without weakening production security.
+
+Build the native iOS app using Expo and Xcode, sign it for my connected iPhone, and install it directly onto the device.
+
+Verify successful launch and actual backend connectivity. Diagnose and fix build errors, dependency issues, signing problems, startup crashes, and network errors.
+
+## Phase 4 — Enable automated testing on the physical iPhone
+
+Prefer Appium with XCUITest/WebDriverAgent for physical-device UI automation.
+
+Set up signing, installation, and automation permissions for the testing helper as required.
+
+Prove you can obtain a screenshot, identify a UI element, tap it, type text, and verify the resulting screen on my actual iPhone.
+
+If physical-device automation is blocked by an Apple approval or tooling restriction, explain the exact blocker. Use simulator automation and guided physical-device checks only as an explicitly labeled fallback.
+
+## Phase 5 — Test the app
+
+Test first launch, configuration errors, account signup and login, verification, session persistence, token refresh, lesson submission, progress polling, cancellation, offline recovery, foreground/background behavior, logout, and account management.
+
+Include invalid input, network failures, repeated taps, app termination and relaunch, and unusual server responses.
+
+Validate behavior against the real FastAPI contracts and distinguish mocked integration tests from real provider-dependent tests.
+
+Do not send real SMS/iMessages, initiate real video generation, delete accounts, or make irreversible external requests without my explicit approval.
+
+## Phase 6 — Fix and verify
+
+For each reproduced defect, collect an appropriate screenshot, logs, reproduction steps, and expected versus actual behavior.
+
+Fix defects when justified, run the relevant automated tests, and rerun the failing scenario on the device.
+
+Avoid speculative changes and unnecessary dependencies.
+
+At the end, provide a testing report containing the installation status, backend connectivity, test results, screenshots or evidence paths, bugs found, fixes made, remaining blockers, and instructions for repeating the test session.
+
+**Carry out the work using the local tools available to you. Do not stop after giving me a setup guide. Ask for my involvement only where physical interaction, external credentials, or sensitive approval is genuinely required.**
+
+**Append this prompt to the end of the ai generated prompt section from prompts.md**
+```
+
 ## Human-written additional instruction (not AI-generated)
 
 ### Allowed technologies

@@ -1,8 +1,9 @@
 # Physical iPhone development
 
-These helpers operate the existing checkout and preserve the backend's loopback
-binding. They do not run functional tests, submit lessons, send verification
-messages, call Gemini, migrate databases, delete volumes, or manage user containers.
+The setup helpers operate the existing checkout and preserve the backend's
+loopback binding. The optional QA helpers below exercise real FastAPI contracts
+against a disposable database with substituted providers. They never send real
+verification messages or call Gemini or Photon.
 
 Use Python 3 and a supported Node LTS release (22.13+). On this Mac the helpers
 prepend Homebrew's `node@22` without changing the shell's global Node version.
@@ -131,6 +132,78 @@ the matching authentication error. Login does not send verification messages.
 Probe inputs were cleared afterwards. No real account credentials were used.
 Do not repeat this automatically during readiness checks: login attempts are
 rate limited, and later testing may have a real account open.
+
+## Physical-device functional QA without provider calls
+
+`qa_backend.py` creates a new, uniquely named PostgreSQL container with tmpfs
+storage and a random password. It overrides any inherited database URL. It runs
+the repository's real FastAPI routes, authentication, opaque-token sessions and
+lesson state machine. Verification transport, generation, rendering, evaluation
+and delivery are substitutes; the fake video bytes are never sent externally.
+This proves API/UI integration, not provider availability or output quality.
+Loopback-only `/__qa/control` captures synthetic verification codes, advances the
+test clock and injects response failures. The LAN bridge blocks that route.
+
+Use the repository's backend/test requirements in a local virtual environment:
+
+```sh
+python3 -m venv .local/iphone-testing/venv
+.local/iphone-testing/venv/bin/pip install -r backend/requirements.txt -r backend/tests/requirements.txt
+# Keep this running in a separate terminal; Ctrl-C gracefully drains the server
+# and removes only its own disposable QA database.
+.local/iphone-testing/venv/bin/python dev/iphone/qa_backend.py
+```
+
+Then switch the existing restricted bridge and run these stages in order on a
+signed-out app. Start with a fresh QA database and remove only the private
+`qa-evidence/credentials.json` before a repeat session so fresh synthetic
+credentials are created. Preserve old evidence in a private directory first.
+
+```sh
+python3 dev/iphone/run.py qa-forward-start
+python3 dev/iphone/appium.py session
+python3 dev/iphone/qa.py signup
+python3 dev/iphone/qa.py lessons
+python3 dev/iphone/qa.py faults
+python3 dev/iphone/qa.py account
+python3 dev/iphone/qa.py recovery
+python3 dev/iphone/qa.py configuration
+```
+
+Every mutating QA stage checks the bridge response's QA marker before proceeding.
+`probe` is separate: it performs a synthetic invalid login against the ordinary
+API and never requests verification. Do not use production accounts with these
+scripts. Evidence and synthetic credentials remain ignored and owner-only in
+`.local/iphone-testing/qa-evidence/`. The device tests require the phone to remain
+unlocked. The helper declines the known iOS Save Password prompt with **Not Now**;
+it never saves test passwords. The recovery fixture advances its isolated clock
+to respect the real recipient-wide verification cooldown.
+
+For a physical offline check, record the original radio settings, enable Airplane
+Mode with Wi-Fi disconnected, and verify the app's offline banner and paused
+requests. Restore the original settings afterwards. Radio changes can restart
+WebDriverAgent's transport; restore connectivity and recreate the session if
+needed. An Expo Debug build also needs Metro to reload its JavaScript on a cold
+launch. See the dated report for the actual offline and relaunch results.
+
+Before returning to the ordinary backend, log out from the QA app, switch the
+bridge back, then stop the QA server:
+
+```sh
+python3 dev/iphone/run.py production-forward-start
+# Ctrl-C in the QA backend terminal; do not remove unrelated containers.
+python3 dev/iphone/run.py relaunch
+python3 dev/iphone/run.py readiness
+```
+
+The required backend acceptance suite also uses its own disposable database and
+isolated renderer containers. With the existing local images built, repeat:
+
+```sh
+USER_CONTAINER_IMAGE=btg-renderer:local RENDERER_EGRESS_IMAGE=btg-egress:local \
+COORDINATOR_TEST_IMAGE=btg-learning-coordinator MESSAGING_TEST_IMAGE=btg-learning-messaging \
+.local/iphone-testing/venv/bin/python -m backend.tests.run_acceptance
+```
 
 ## Safe stopping
 
