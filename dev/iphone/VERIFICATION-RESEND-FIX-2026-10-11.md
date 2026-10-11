@@ -126,3 +126,39 @@ Private evidence: `.local/iphone-testing/qa-evidence/iphone-settings-current.png
 `iphone-settings-current.xml`, `iphone-send-receive.png`, and
 `iphone-send-receive.xml`. These contain personal contact details and remain
 ignored with owner-only permissions. No real message or video was sent.
+
+## Deeper dashboard diagnosis: provider access recovered
+
+At the user's request, the agent inspected Photon Users, Get Started, Configure,
+Settings, Billing and the project/line/subscription responses read-only. The
+project is `running`, iMessage is its enabled platform, the sole registered user
+matches the signup number and project exactly, and a shared-pool sender is
+assigned. There are no dedicated lines or pending line registrations. The
+dashboard's current project ID and secret exactly match the messaging container's
+process environment. The secret comparison used an in-memory fingerprint; no
+secret or fingerprint was printed or saved. No credentials were revealed in the
+UI or rotated. The installed `spectrum-ts` / `@spectrum-ts/imessage` 12.10.1 and
+`@photon-ai/advanced-imessage` 2.2.0 match their currently published npm versions.
+
+The result changed during this inspection. At **2026-10-11T12:40:20Z**, newly
+authenticated read-only chat and address lookups both succeeded. A second check
+at **12:41:30Z** returned the exact signup address, country `US`, service
+`iMessage`, and an existing one-participant iMessage conversation matching that
+recipient. Read-only outgoing-message history after 11:00Z contained zero
+messages. No message bodies or verification codes were printed. Thus the earlier
+provider access restriction is no longer reproducible at these checks.
+
+No application code, environment, dashboard configuration, subscription,
+permissions, or credentials were changed, and no backend restart or live message
+was performed during this inspection. This change in provider responses supports
+an intermittent Photon authorization/routing condition, but does not establish
+its internal cause or prove successful live verification delivery. Previous
+sections describe the earlier incident; they are not the current access status.
+
+The last real signup attempt remained eligible but expired at 12:14:54Z, and no
+account existed at the subsequent database check. It cannot be recovered through
+an expired challenge's Resend button. A future live delivery check requires a
+fresh signup by the user or explicit approval for a real verification message;
+the agent's no-message/no-video constraint remains in effect. A complete private
+draft for Photon to investigate the intermittent incident is saved at
+`.local/iphone-testing/photon-support-draft.md`; it has not been sent.
