@@ -11,6 +11,8 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
+    JSON,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -30,7 +32,7 @@ class Base(DeclarativeBase):
 
 
 class User(Base):
-    """Application user; auth credentials/provider linkage are not specified."""
+    """Application account; legacy users require explicit enrollment."""
 
     __tablename__ = "users"
     __table_args__ = (
@@ -39,6 +41,10 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     phone_number: Mapped[str] = mapped_column(String(32), nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(Text)
+    phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    enrollment_hash: Mapped[str | None] = mapped_column(String(64))
+    enrollment_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -92,13 +98,14 @@ class LessonJob(Base):
     __table_args__ = (
         CheckConstraint(
             "status IN ('requested', 'validating', 'needs_breakdown', 'queued', "
-            "'generating', 'rendering', 'evaluating', 'delivering', 'accepted', 'failed', 'cancelled')",
+            "'generating', 'rendering', 'evaluating', 'delivering', 'accepted', 'failed', 'cancelled', 'interrupted', 'delivery_unknown')",
             name="ck_lesson_jobs_status",
         ),
         CheckConstraint(
             "estimated_duration_seconds IS NULL OR estimated_duration_seconds >= 0",
             name="ck_lesson_jobs_estimated_duration_nonnegative",
         ),
+        UniqueConstraint("user_id", "idempotency_key", name="uq_lesson_jobs_idempotency"),
         Index("ix_lesson_jobs_user_created", "user_id", "created_at"),
         Index("ix_lesson_jobs_status_created", "status", "created_at"),
     )
@@ -110,6 +117,13 @@ class LessonJob(Base):
     # Retained as user-provided text so the result can be evaluated against intent.
     original_request: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="requested", server_default="requested")
+    idempotency_key: Mapped[str | None] = mapped_column(String(128))
+    request_hash: Mapped[str | None] = mapped_column(String(64))
+    voiceover: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    cleanup_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    evaluation: Mapped[dict | None] = mapped_column(JSON)
+    rendered_duration_seconds: Mapped[str | None] = mapped_column(String(32))
     estimated_duration_seconds: Mapped[int | None] = mapped_column(Integer)
     scope_feedback: Mapped[str | None] = mapped_column(Text)
     failure_reason: Mapped[str | None] = mapped_column(Text)
@@ -144,7 +158,9 @@ class VideoDelivery(Base):
         Uuid(as_uuid=True), ForeignKey("lesson_jobs.id", ondelete="CASCADE"), nullable=False
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", server_default="pending")
-    provider_message_id: Mapped[str | None] = mapped_column(String(255))
+    provider_message_id: Mapped[str | None] = mapped_column(String(255), unique=True)
+    recipient_phone: Mapped[str | None] = mapped_column(String(32))
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     failure_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -154,3 +170,53 @@ class VideoDelivery(Base):
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     lesson_job: Mapped[LessonJob] = relationship(back_populates="deliveries")
+
+
+class AuthSession(Base):
+    __tablename__ = "auth_sessions"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AuthToken(Base):
+    __tablename__ = "auth_tokens"
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("auth_sessions.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(8))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Verification(Base):
+    __tablename__ = "auth_verifications"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    phone_number: Mapped[str] = mapped_column(String(32))
+    purpose: Mapped[str] = mapped_column(String(16))
+    code_hash: Mapped[str] = mapped_column(String(64))
+    password_hash: Mapped[str | None] = mapped_column(Text)
+    # Security snapshot prevents a stale phone/reset challenge overwriting a later change.
+    credential_snapshot: Mapped[str | None] = mapped_column(Text)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    eligible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class AuthRate(Base):
+    __tablename__ = "auth_rates"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    count: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class ReceiptEvent(Base):
+    __tablename__ = "receipt_events"
+    event_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    provider_message_id: Mapped[str] = mapped_column(String(255), index=True)
+    recipient_phone: Mapped[str] = mapped_column(String(32))
+    read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

@@ -21,6 +21,7 @@ class DeliverySemanticsTests(unittest.TestCase):
     headers = fixtures.BackendTests.headers
     submit = fixtures.BackendTests.submit
     status = fixtures.BackendTests.status
+    renew_access = fixtures.BackendTests.renew_access
 
     def test_acceptance_completes_job_and_attempt_together(self):
         job_id = uuid.UUID(self.submit())
@@ -31,12 +32,12 @@ class DeliverySemanticsTests(unittest.TestCase):
             self.assertEqual(delivery.status, 'accepted')
             self.assertEqual(job.completed_at, delivery.accepted_at)
             self.assertIsNotNone(job.completed_at)
-            self.assertEqual(delivery.provider_message_id, 'photon-message')
+            self.assertEqual(delivery.provider_message_id, 'photon-message-' + str(job_id))
             self.assertIsNone(delivery.delivered_at)
-        self.assertEqual(self.status(job_id), {
+        self.assertEqual({k: self.status(job_id)[k] for k in ('id', 'status', 'estimated_duration_seconds', 'feedback', 'failure_reason', 'photon_accepted', 'provider_message_id')}, {
             'id': str(job_id), 'status': 'accepted', 'estimated_duration_seconds': 90,
             'feedback': None, 'failure_reason': None, 'photon_accepted': True,
-            'provider_message_id': 'photon-message',
+            'provider_message_id': 'photon-message-' + str(job_id),
         })
         self.now += timedelta(minutes=26)
         self.service.sweep()
@@ -68,14 +69,14 @@ class DeliverySemanticsTests(unittest.TestCase):
                 job_id = uuid.UUID(self.submit())
                 send.assert_called_once()
                 result = self.status(job_id)
-                self.assertEqual(result['status'], 'failed')
+                self.assertEqual(result['status'], 'delivery_unknown')
                 self.assertFalse(result['photon_accepted'])
                 self.assertIsNone(result['provider_message_id'])
                 with self.sessions() as db:
                     job = db.get(LessonJob, job_id)
                     delivery = job.deliveries[0]
                     self.assertIsNotNone(job.completed_at)
-                    self.assertEqual(delivery.status, 'failed')
+                    self.assertEqual(delivery.status, 'pending')
                     self.assertEqual(delivery.failure_reason, 'Acceptance not confirmed')
                     self.assertIsNone(delivery.accepted_at)
                     self.assertIsNone(delivery.delivered_at)
@@ -97,11 +98,11 @@ class DeliverySemanticsTests(unittest.TestCase):
             job_id = uuid.UUID(self.submit())
         self.assertEqual(observed, [('accepted', True)])
         result = self.status(job_id)
-        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['status'], 'delivery_unknown')
         self.assertFalse(result['photon_accepted'])
         with self.sessions() as db:
             delivery = db.get(LessonJob, job_id).deliveries[0]
-            self.assertEqual(delivery.status, 'failed')
+            self.assertEqual(delivery.status, 'pending')
             self.assertIsNone(delivery.accepted_at)
             self.assertIsNone(delivery.provider_message_id)
 
@@ -129,7 +130,7 @@ class DeliveryMigrationTests(unittest.TestCase):
         schema_name = 'delivery_test_' + uuid.uuid4().hex
         root = Path(__file__).resolve().parents[1]
         # Reconstruct the initial schema constraints; the remaining columns are unchanged.
-        old_schema = (root / 'schema.sql').read_text().replace(
+        old_schema = (root / 'tests/fixtures/preauth.sql').read_text().replace(
             "'delivering', 'accepted', 'failed'", "'delivering', 'delivered', 'failed'").replace(
             "'pending', 'accepted', 'failed'", "'pending', 'accepted', 'delivered', 'failed'")
         connection = engine.raw_connection()

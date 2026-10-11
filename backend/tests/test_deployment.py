@@ -12,8 +12,8 @@ from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
 SYNTHETIC = dict(POSTGRES_PASSWORD='synthetic-only', PROJECT_ID='synthetic',
-                PROJECT_SECRET='synthetic', MESSAGING_TOKEN='synthetic-only',
-                AUTH_INTROSPECTION_URL='http://identity.invalid', GEMINI_API_KEY='synthetic',
+                PROJECT_SECRET='synthetic', MESSAGING_TOKEN='synthetic-messaging-secret-' * 2,
+                AUTH_CODE_SECRET='synthetic-code-secret-' * 2, RECEIPT_SECRET='synthetic-receipt-secret-' * 2, GEMINI_API_KEY='synthetic',
                 GEMINI_MODEL='synthetic')
 
 
@@ -49,7 +49,9 @@ class DeploymentTests(unittest.TestCase):
         self.addCleanup(lambda: subprocess.run(['docker','rm','-f',name],check=True,capture_output=True))
         subprocess.run(['docker','run','-d','--name',name,'--read-only','--cap-drop=ALL',
                         '--security-opt=no-new-privileges','--tmpfs=/tmp:rw,nosuid,nodev,size=64m',
-                        '-p','127.0.0.1::8000','-e',f'DATABASE_URL=postgresql+psycopg://postgres:synthetic-only@{ip}:5432/btg',
+                        '-p','127.0.0.1::8000',
+                        *[argument for key, value in {**SYNTHETIC, 'MESSAGING_URL': 'http://messaging:3001/video', 'RENDERER_EGRESS_IMAGE': 'btg-egress:local'}.items() for argument in ('-e', f'{key}={value}')],
+                        '-e',f'DATABASE_URL=postgresql+psycopg://postgres:synthetic-only@{ip}:5432/btg',
                         os.environ.get('COORDINATOR_TEST_IMAGE','btg-acceptance-coordinator')],check=True,capture_output=True)
         info = json.loads(subprocess.check_output(['docker','inspect',name]))[0]
         binding = info['NetworkSettings']['Ports']['8000/tcp'][0]
@@ -76,12 +78,12 @@ class DeploymentTests(unittest.TestCase):
             path.write_text(config)
             cli = ['cloudflared','tunnel','--config',str(path),'ingress']
             subprocess.run([*cli,'validate'],check=True,capture_output=True)
-            for route in ('/account','/lessons','/lessons/'+str(uuid.uuid4()),'/lessons/'):
+            for route in ('/auth/signup','/auth/enrollment/verify','/auth/logout-all','/account/phone/verify','/lessons/'+str(uuid.uuid4())+'/cancel','/account','/lessons','/lessons/'+str(uuid.uuid4()),'/lessons/'):
                 output = subprocess.check_output([*cli,'rule','https://lessons.example.test'+route]).decode()
                 self.assertIn('Matched rule #0',output)
                 self.assertIn(origin,output)
             for url in ('https://lessons.example.test/video','https://lessons.example.test/docs',
-                        'https://lessons.example.test/openapi.json','https://lessons.example.test/docker',
+                        'https://lessons.example.test/openapi.json','https://lessons.example.test/docker','https://lessons.example.test/verification','https://lessons.example.test/internal/receipts',
                         'https://lessons.example.test/lessons/not-a-uuid','https://other.example.test/lessons'):
                 output = subprocess.check_output([*cli,'rule',url]).decode()
                 self.assertIn('http_status:404',output)

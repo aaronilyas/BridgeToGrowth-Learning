@@ -7,6 +7,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 import uuid
 
 from integrations import gemini
@@ -33,6 +34,7 @@ def reap_generated_processes():
                 os.kill(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+        time.sleep(.02)
     raise RuntimeError('Render processes have not stopped; retain protection')
 
 
@@ -59,12 +61,34 @@ def main():
     identifier = str(uuid.UUID(identifier))
     root = Path('/work') / identifier
     payload = json.load(sys.stdin)
+    if action == 'state':
+        # No generated execution here. Exclude PID 1 and this trusted probe.
+        busy = False
+        for entry in Path('/proc').iterdir():
+            if not entry.name.isdigit() or int(entry.name) in (1, os.getpid()):
+                continue
+            try:
+                busy |= (entry / 'stat').read_text().split(') ', 1)[1][0] != 'Z'
+            except FileNotFoundError:
+                pass
+        return {'busy': busy}
+    if action == 'cancel':
+        reap_generated_processes()
+        return {}
     if action == 'cleanup':
         reap_generated_processes()
         if root.is_symlink():
             root.unlink()
         elif root.exists():
             shutil.rmtree(root)
+        # All same-user execution is serialized. Remove renamed artifacts too.
+        # Limit to work tmpfs; do not follow symlinks into other locations.
+        for temporary_root in ('/work', '/tmp'):
+            for item in Path(temporary_root).iterdir():
+                if item.is_symlink() or item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    shutil.rmtree(item)
         return {}
     if action == 'generate':
         root.mkdir(exist_ok=False)

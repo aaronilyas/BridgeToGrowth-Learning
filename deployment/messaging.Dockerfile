@@ -17,5 +17,6 @@ WORKDIR /app
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY services/messaging/package.json ./package.json
 COPY --from=build /app/dist ./dist
+RUN mkdir /receipts && chown node:node /receipts
 USER node
 CMD ["node", "dist/index.js"]

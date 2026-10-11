@@ -21,13 +21,18 @@ def gemini(prompt, video=None):
         {"contents": [{"parts": parts}], "generationConfig": {"responseMimeType": "application/json"}},
         {"x-goog-api-key": os.environ["GEMINI_API_KEY"]},
     )
+    if not isinstance(result, dict) or result.get("promptFeedback", {}).get("blockReason"):
+        raise ValueError("Invalid Gemini response")
     return json.loads("".join(p.get("text", "") for p in result["candidates"][0]["content"]["parts"]))
 
 
 class Integrations:
-    def authenticate(self, token):
-        # The identity provider must return a stable UUID and verified E.164 phone.
-        return request_json(os.environ["AUTH_INTROSPECTION_URL"], headers={"Authorization": f"Bearer {token}"})
+    def verification(self, phone, code):
+        url = os.environ['MESSAGING_URL'].rsplit('/', 1)[0] + '/verification'
+        result = request_json(url, {'recipient': phone, 'code': code},
+                              {'Authorization': f"Bearer {os.environ['MESSAGING_TOKEN']}"})
+        if result.get('accepted') is not True or not isinstance(result.get('message_id'), str) or not result['message_id'].strip():
+            raise ValueError('Verification acceptance not confirmed')
 
     def assess(self, intent):
         result = gemini('Assess whether this lesson can be explained in at most 90 seconds. '
@@ -48,7 +53,7 @@ class Integrations:
         keys = ("accurate", "defect_free", "consistent") + (("narration_accurate", "narration_intelligible", "narration_consistent") if voiceover else ())
         if any(type(result.get(k)) is not bool for k in keys) or not isinstance(result.get("findings"), str):
             raise ValueError("Invalid evaluation")
-        return all(result[k] for k in keys)
+        return {**{k: result[k] for k in keys}, 'findings': result['findings'][:4000], 'approved': all(result[k] for k in keys)}
 
     def deliver(self, job_id, phone, video):
         # Node must consume the entire body before acknowledging Photon acceptance.

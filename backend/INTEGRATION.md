@@ -1,92 +1,79 @@
-# Backend integration verification — 2026-10-10
+# Backend completion and verification handoff
 
-Integration branch: `integration/backend-20261010`, with its dedicated worktree
-at `/home/aaron/BridgeToGrowth-integration`. The branch started from freshly
-fetched `origin/main` (`407c7a26433e38d4fd2ee0c03f849f9dbda2b249`).
+This implementation supersedes the initial integration's external authentication
+and manual reconciliation gaps. The product requirements remain in
+[product-overview.md](../product-overview.md); the React Native frontend has not
+been implemented in this work.
 
-## Source inventory
+## Implemented behavior
 
-At first only Compose was available locally or remotely. After the user supplied
-pulled changes, all six completed source commits were available on GitHub and
-merged with their history. Local source branches are retained:
+- FastAPI owns phone/password accounts with Argon2id, expiring single-use codes,
+  persisted limits/cooldowns and existence-neutral unauthenticated responses.
+  PostgreSQL stores opaque-token hashes, access expiry, rotating refresh families
+  and server-side revocation. Signup/verification, login, renewal, logout/all,
+  current account, recovery/reset and reauthenticated verified phone changes are
+  documented for mobile clients in [AUTHENTICATION.md](AUTHENTICATION.md).
+- Upgrade SQL preserves account UUIDs/relationships without creating credentials
+  or marking anyone verified. Legacy enrollment needs an expiring operator
+  invitation and verification of the original stored recipient.
+- Owner-only cancellation stops generated processes inside their container and
+  keeps active protection through cleanup. Messaging has an atomic cancellation
+  cutoff. Account-scoped idempotency keys prevent concurrent duplicate admission.
+- Startup/sweeps inspect actual owned containers/processes, preserve active work,
+  recover durable cleanup obligations and restore idle cleanup. Interrupted sends
+  remain `delivery_unknown`; no automatic rerender/resend can duplicate a message.
+- Independent actual-video evaluation retains structured checks/findings for the
+  owner, with scope/render duration and optional audio/narration checks preserved.
+- TypeScript uses the installed Spectrum 12.10.1 text builder for verification
+  and consumes documented inbound DM read receipts. A metadata-only durable spool
+  forwards signed private callbacks; duplicate/out-of-order/early events are safe
+  and correlated by provider message ID plus captured send-time recipient.
+- Renderer UID 1000 has kernel-enforced egress only through its account's trusted
+  HTTPS allowlist proxy. Containers retain separate filesystems/PIDs, read-only
+  roots, dropped capabilities, tmpfs, resource limits and no host/Docker mounts.
+- Compose and the Cloudflare allowlist expose public auth/account/lesson routes
+  while keeping database, Node endpoints, Docker control and callbacks private.
+  Required production settings fail closed. The original request is appended
+  at the bottom of the AI-generated section in [prompts.md](../prompts.md).
 
-- `backend/account-onboarding`: `a55e67c1dcc352fb2828f5417731011b42963b40`.
-- `backend/delivery-semantics`: `89f534c9d7ea397a94e1d893c260febe1471fbb7`.
-- `backend/voiceover-verification`: `cd9095b2ce2d99445fc21ef7dc33dc76b3a18e4b`.
-- `backend/compose-setup`: `1f2146373f2080a44ee74273db0d046cd3fb1f12`.
-- `backend/cloudflare-tunnel`: `53e6fda05e801c12fb79225beaf5ed3abd1f7a61`.
-- `backend/node-runtime`: `4bf3f587e30c09aff6c53731819b0868498850f0`.
+## Automated verification
 
-No source worktrees for these branches were attached to the local repository.
-The main worktree and a separate older clone were clean. No source worktree or
-branch was deleted, and no active source writer was modified. Every distinct
-source `prompts.md` entry was checked against the integrated file and preserved.
-No additional architecture-acceptance branch or implementation was found, so
-executable isolation/lifecycle/HTTP/ingress tests were added during integration.
+The backend acceptance suite passed **71 tests with zero failures and zero
+skips**. Messaging `npm run typecheck`, `npm run build` and `npm test` passed,
+with **12 messaging tests**. The renderer, egress proxy, coordinator and messaging
+images built successfully. Reproduce using [tests/README.md](tests/README.md).
+Acceptance creates its own PostgreSQL 17
+with tmpfs, resets only that disposable database, and requires zero skips.
+Generated/hostile fixtures execute only inside isolated user containers. Tests
+never read credential `.env` files, migrate production data, contact real Gemini
+or GTTS, send Photon messages, provision DNS or run the mobile frontend.
 
-## Integration fixes
+The initial repository integration's 51-test evidence is historical. The current
+run covers the additional authentication, migration, cancellation, idempotency,
+receipt, recovery, egress and production-setting behavior. It includes real
+PostgreSQL migrations and constraints, container process cancellation, temporary
+artifact cleanup, egress rejection and Cloudflare route checks. These automated
+results are the relevant verification for this version.
 
-Compose now compiles TypeScript and installs production dependencies from
-`package-lock.json` in a Node image, then runs emitted JavaScript. Its healthcheck
-and build allowlist use Node and npm. Repository, messaging, and deployment
-documentation match the authenticated Photon endpoint. Development startup also
-uses compiled JavaScript because this host's Node build omits TypeScript stripping.
+## Deferred live verification and provider limits
 
-Photon acceptance and job completion are atomic and terminal, with no fabricated
-receipt state. Migration tests cover legacy delivery/job completion, malformed
-acceptance evidence, and interrupted split transactions. Existing Compose volumes
-require a drained/stopped coordinator, backup, and the documented migration;
-no migration was applied to a live database.
+Live provider and full frontend-to-backend tests are deliberately deferred until
+the frontend is ready. Synthetic silent audio/offline voiceover prove wiring
+and stream presence; mocked Gemini verdicts do not prove real video/narration
+quality. Actual Gemini/GTTS quality, required-host proxy connectivity, Photon
+transport/recipient eligibility, mobile token storage and final production tunnel
+DNS/TLS/client-address trust still need the later
+[checklist](README.md#verification-and-later-integration).
 
-Requested voiceover requires an audio stream and separate narration evaluator
-checks. Audio presence, including synthetic silence, is not proof of narration
-quality. The actual container run found missing `ffprobe` in the base image;
-the renderer now installs FFmpeg and SoX. Tracked Python bytecode was removed
-and existing ignore rules retained. Cloudflare uses the host's loopback API
-origin, API path allowlist, and 404 fallback; private services remain unexposed.
+Read receipts are a supported cloud iMessage capability, conditional on the
+recipient enabling them and Photon resolving the upstream target. The installed
+adapter exposes no delivery-only confirmation event; absent read evidence stays
+`unconfirmed`. Photon acceptance never becomes inferred receipt. The provider
+is iMessage transport, with no guaranteed universal SMS fallback; shared-line
+plans may require recipient registration/allowlisting. These limitations are
+explicit in [the provider contract evidence](../services/messaging/README.md#provider-contract-evidence).
 
-## Required checks passed
-
-- Clean messaging `npm ci`, TypeScript typecheck, emitted-JavaScript build, and
-  all **7** messaging tests. Compiled startup fails closed without a token.
-- Combined Python suite: **51 tests, zero failures, zero skips**. The acceptance
-  runner creates PostgreSQL 17 with tmpfs data and a random loopback port.
-- Fresh SQL schema checks and legacy delivery migration checks against that
-  disposable PostgreSQL; real PostgreSQL also verifies the single-coordinator
-  advisory lock and atomic acceptance rollback.
-- Compose configuration validation with synthetic settings and `/dev/null` as
-  the env file; messaging, coordinator, and renderer image builds.
-- Real disposable containers: actual Manim rendering, Manim Voiceover with an
-  offline MP3 speech substitute, missing-audio rejection, narration rejection,
-  real Node HTTP delivery/SDK attachment building with substituted Photon
-  acceptance/rejection/no-op responses, polling during active work, 25-minute
-  inactivity stop and restart, success/partial-failure cleanup, host/other-user
-  sentinel and network isolation, and escaped-artifact rejection.
-- Synthetic Cloudflare ingress validation/rule checks, including private-path
-  and other-host denial, against a real disposable loopback coordinator API.
-
-Environment: Python 3.12.13, Node 22.22.1, npm 9.2.0, Docker 29.6.2,
-Compose 5.3.1, PostgreSQL 17. Reproduce with the commands in
-[tests/README.md](tests/README.md). Generated fixtures executed only in isolated
-containers. No credential `.env` files were read or committed; no real messages
-were sent. Test containers/networks were removed after their jobs completed.
-
-A final fetch after successful verification found `origin/main` unchanged at
-`407c7a26433e38d4fd2ee0c03f849f9dbda2b249`; no new main changes required retesting.
-Only documentation/evidence was added after the final successful executable run.
-
-## Remaining product and deployment blockers
-
-Identity-provider choice, signup/login and verified-phone onboarding remain
-unimplemented external decisions. Confirmed user receipt needs a supported
-receipt contract; acceptance does not mean receipt. Live Gemini/GTTS narration
-quality, Photon cloud credentials/transport, production tunnel credentials/DNS,
-and production egress policy were not exercised by synthetic acceptance.
-Cancellation, phone changes, safe retries/idempotency, and automated crash
-recovery/reconciliation remain documented product choices.
-
-The existing Spectrum SDK dependency chain still reports moderate npm audit
-findings (14 with host npm, 18 with image npm). No forced dependency overrides or
-SDK upgrade were introduced; compatibility review remains documented in
-[node-runtime.md](../node-runtime.md). These findings do not invalidate the
-executed offline checks or establish live provider readiness.
+Deployment requires the documented offline migrations for existing databases,
+retirement of drained legacy unrestricted renderers, and new distinct auth/code,
+receipt and messaging secrets. No production database or provider configuration
+was changed by these automated checks.

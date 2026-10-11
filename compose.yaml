@@ -28,10 +28,15 @@ services:
       PROJECT_ID: ${PROJECT_ID:?Set PROJECT_ID in deployment/.env}
       PROJECT_SECRET: ${PROJECT_SECRET:?Set PROJECT_SECRET in deployment/.env}
       MESSAGING_TOKEN: ${MESSAGING_TOKEN:?Set MESSAGING_TOKEN in deployment/.env}
+      RECEIPT_URL: http://coordinator:8000/internal/receipts
+      RECEIPT_SECRET: ${RECEIPT_SECRET:?Set RECEIPT_SECRET in deployment/.env}
+      RECEIPT_SPOOL_DIR: /receipts
       HOST: 0.0.0.0
       PORT: "3001"
       MAX_VIDEO_BYTES: "12582912"
     networks: [delivery]
+    volumes:
+      - receipt-metadata:/receipts
     read_only: true
     tmpfs:
       - /tmp:rw,nosuid,nodev,size=64m,uid=1000,gid=1000
@@ -53,7 +58,9 @@ services:
     environment:
       # Use a URL-safe (e.g. hex) password: this value is embedded in a URL.
       DATABASE_URL: postgresql+psycopg://btg:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deployment/.env}@postgres:5432/btg
-      AUTH_INTROSPECTION_URL: ${AUTH_INTROSPECTION_URL:?Set AUTH_INTROSPECTION_URL in deployment/.env}
+      AUTH_CODE_SECRET: ${AUTH_CODE_SECRET:?Set AUTH_CODE_SECRET in deployment/.env}
+      RECEIPT_SECRET: ${RECEIPT_SECRET:?Set RECEIPT_SECRET in deployment/.env}
+      RENDERER_EGRESS_IMAGE: ${RENDERER_EGRESS_IMAGE:-btg-egress:local}
       GEMINI_API_KEY: ${GEMINI_API_KEY:?Set GEMINI_API_KEY in deployment/.env}
       GEMINI_MODEL: ${GEMINI_MODEL:?Set GEMINI_MODEL in deployment/.env}
       MESSAGING_URL: http://messaging:3001/video
@@ -91,6 +98,7 @@ services:
 
 volumes:
   postgres-data:
+  receipt-metadata:
 
 networks:
   database:

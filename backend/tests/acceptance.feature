@@ -162,7 +162,7 @@ Feature: Required FastAPI backend behavior
       | result                    | observable_outcome                                    |
       | Photon accepted the message | acceptance associated with the correct lesson job  |
       | Photon rejected the message | delivery failure without a success claim           |
-      | acceptance is unknown after timeout | an unresolved or failed outcome without a fabricated acceptance |
+      | acceptance is unknown after timeout | delivery_unknown without a fabricated acceptance or automatic resend |
 
   Scenario: STATUS-01 Status supports the app throughout asynchronous work
     Given A has submitted an accepted lesson
@@ -210,3 +210,56 @@ Feature: Required FastAPI backend behavior
       | separate Gemini evaluator |
       | Node delivery service   |
       | PostgreSQL status update |
+
+
+  Scenario: AUTH-03 Backend owns verified accounts and rotating opaque sessions
+    Given an eligible new phone recipient
+    When the user signs up with a password and verifies the single-use code
+    Then the backend creates the verified account and issues hashed opaque sessions
+    And expired, revoked and reused refresh credentials cannot authorize lessons
+    And recovery and verified phone changes revoke prior account sessions
+
+  Scenario: AUTH-04 Legacy account enrollment preserves ownership
+    Given an existing UUID with no password or verified phone after migration
+    When the original holder uses an operator-issued invitation and verifies the stored phone
+    Then the same UUID and lesson relationships are enrolled without fabricated credentials
+    And an invalid invitation or code cannot enroll the account
+
+  Scenario: REQUEST-01 Concurrent account-scoped idempotency
+    Given an authenticated account submitting one topic and voiceover choice
+    When concurrent requests repeat the same idempotency key and content
+    Then exactly one lesson is admitted and subsequent requests return its current snapshot
+    And different content with that key returns a conflict
+    And another account has its own key namespace
+
+  Scenario: CANCEL-01 Cancellation wins before the messaging cutoff
+    Given an owned lesson in generation, rendering or evaluation
+    When the owner cancels before messaging begins
+    Then generated processes stop only inside the owning container
+    And temporary artifacts are removed before active protection is released
+    And no video send is started
+    But cancellation after the messaging cutoff cannot retract an accepted message
+
+  Scenario: RECOVERY-01 Persisted cleanup and actual process recovery
+    Given persisted interrupted work after coordinator loss
+    When a new coordinator acquires the single-coordinator guard
+    Then genuinely active container processes remain protected
+    And abandoned artifacts are removed only after the processes stop
+    And interrupted pre-send work has an accurate terminal outcome
+    And uncertain sends are never automatically resent
+    And inactivity eligibility returns after cleanup finishes
+
+  Scenario: RECEIPT-01 Authenticated provider evidence is independent of acceptance
+    Given an accepted lesson with a captured send-time recipient
+    When the authenticated SDK emits a correlated DM read event
+    Then polling exposes persisted read evidence to the owner
+    And duplicate, early and out-of-order events cannot regress or misattribute evidence
+    And forged events and cross-account polling are rejected
+    And missing read events remain unconfirmed
+
+  Scenario: SECURITY-03 Renderer egress is enforced outside generated code
+    Given a renderer behind its account's trusted network namespace
+    When generated code attempts direct internet, host, private control or cross-user access
+    Then kernel policy denies the connection even if proxy variables are removed
+    And the proxy permits only required Gemini and GTTS HTTPS hosts
+    And private addresses and other hosts or ports are rejected

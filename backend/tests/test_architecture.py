@@ -82,7 +82,7 @@ class Lesson(Scene):
 MOCK_NODE = '''import { createServer } from 'node:http';
 import { createDeliveryHandler } from './dist/delivery.js';
 import { createPhotonDelivery } from './dist/photon.js';
-let mode = 'accept';
+let mode = 'accept'; let messageSequence = 0;
 const deliver = createPhotonDelivery({
  user: async phone => { if (phone !== '+15550000001') throw Error('wrong recipient'); return phone; },
  space: {create: async () => ({send: async builder => {
@@ -90,7 +90,7 @@ const deliver = createPhotonDelivery({
    if (content.type !== 'attachment' || content.mimeType !== 'video/mp4' || !(await content.read()).length) throw Error('invalid attachment');
    if (mode === 'reject') throw Error('substituted rejection');
    if (mode === 'noop') return undefined;
-   return {id: 'offline-photon-acceptance'};
+   return {id: 'offline-photon-acceptance-' + ++messageSequence};
  }})}
 });
 const handler = createDeliveryHandler({token: 'synthetic-only', maxVideoBytes: 12582912, deliver});
@@ -133,6 +133,7 @@ class ArchitectureTests(unittest.TestCase):
     headers = fixtures.BackendTests.headers
     submit = fixtures.BackendTests.submit
     status = fixtures.BackendTests.status
+    renew_access = fixtures.BackendTests.renew_access
 
     def setUp(self):
         fixtures.BackendTests.setUp(self)
@@ -187,6 +188,7 @@ class ArchitectureTests(unittest.TestCase):
             name = 'btg-user-'+str(owner)
             # process() is synchronous except a test-owned thread, always joined before cleanup.
             subprocess.run(['docker','rm','-f',name], capture_output=True)
+            subprocess.run(['docker','rm','-f',name+'-egress'], capture_output=True)
             subprocess.run(['docker','network','rm',name+'-network'], capture_output=True)
 
     def assert_clean(self, owner, job):
@@ -198,7 +200,7 @@ class ArchitectureTests(unittest.TestCase):
             self.runtime.code = VOICEOVER if voiceover else SILENT
             job = self.submit(voiceover)
             self.assertEqual(self.status(job)['status'], 'accepted', self.status(job))
-            self.assertEqual(self.status(job)['provider_message_id'], 'offline-photon-acceptance')
+            self.assertTrue(self.status(job)['provider_message_id'].startswith('offline-photon-acceptance-'))
             self.assert_clean(self.a, job)
         before = len(self.dependencies.calls)
         self.runtime.code = SILENT
@@ -213,7 +215,7 @@ class ArchitectureTests(unittest.TestCase):
             with urlopen(Request(self.url.replace('/video','/test-mode'), data=b'', headers={
                 'Authorization':'Bearer synthetic-only','X-Test-Mode':mode})) as response:
                 response.read()
-            self.assertEqual(self.status(self.submit())['status'], 'failed')
+            self.assertEqual(self.status(self.submit())['status'], 'delivery_unknown')
         self.assertEqual(self.service.active[self.a],0)
 
     def test_isolation_configuration_and_hostile_fixture(self):
@@ -224,7 +226,7 @@ class ArchitectureTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             sentinel = Path(directory)/'host-sentinel'
             sentinel.write_text('private host bytes')
-            address = next(iter(json.loads(self.runtime._run('inspect',b))[0]['NetworkSettings']['Networks'].values()))['IPAddress']
+            address = next(iter(json.loads(self.runtime._run('inspect',b+'-egress'))[0]['NetworkSettings']['Networks'].values()))['IPAddress']
             self.runtime.code = 'HOST_SENTINEL='+repr(str(sentinel))+'\nB_SENTINEL='+repr(b_file)+'\nB_ADDRESS='+repr(address)+'\n'+ISOLATION
             self.assertEqual(self.status(self.submit())['status'],'accepted')
             self.assertEqual(sentinel.read_text(),'private host bytes')
@@ -243,7 +245,7 @@ class ArchitectureTests(unittest.TestCase):
             self.assertFalse(config['Binds'])
             self.assertFalse(info['Mounts'])
             self.assertEqual(set(config['Tmpfs']),{'/work','/tmp'})
-            self.assertEqual(len(info['NetworkSettings']['Networks']),1)
+            self.assertTrue(config['NetworkMode'].startswith('container:'))
         self.assertNotEqual(json.loads(self.runtime._run('inspect',a))[0]['HostConfig']['NetworkMode'],
                             json.loads(self.runtime._run('inspect',b))[0]['HostConfig']['NetworkMode'])
 
@@ -256,6 +258,7 @@ class ArchitectureTests(unittest.TestCase):
         try:
             self.assertTrue(entered.wait(30))
             self.now += timedelta(minutes=26)
+            self.renew_access()
             self.service.sweep()
             self.assertTrue(json.loads(self.runtime._run('inspect','btg-user-'+str(self.a)))[0]['State']['Running'])
             self.assertEqual(self.status(job)['status'],'rendering')
@@ -288,3 +291,83 @@ class ArchitectureTests(unittest.TestCase):
         self.service.sweep()
         handle = self.runtime.start(self.a)
         self.assertEqual(self.runtime._run('exec',handle,'sh','-c','test -z "$(ls -A /work)"'), b'')
+
+
+    def test_enforced_egress_blocks_direct_connections_and_private_proxy_targets(self):
+        handle = self.runtime.start(self.a)
+        # Every executable fixture runs only inside the restricted user container.
+        code = r"""import os, socket, urllib.request
+assert os.getuid() == 1000
+for host, port in [('127.0.0.1', 8000), ('172.17.0.1', 5432), ('1.1.1.1', 443), ('169.254.169.254', 80)]:
+    with socket.socket() as probe:
+        probe.settimeout(1)
+        assert probe.connect_ex((host, port)) != 0, (host, port)
+# Proxy remains reachable, but rejects unapproved hosts and IP literal/private targets.
+for authority in ['postgres:5432', 'messaging:3001', '127.0.0.1:443', '169.254.169.254:443', 'example.com:443']:
+    with socket.create_connection(('127.0.0.1', 3128), timeout=3) as probe:
+        probe.sendall(('CONNECT ' + authority + ' HTTP/1.1\r\nHost: ' + authority + '\r\n\r\n').encode())
+        assert b'403' in probe.recv(1024), authority
+"""
+        self.runtime._run('exec', handle, 'python', '-c', code)
+        proxy = json.loads(self.runtime._run('inspect', handle + '-egress'))[0]
+        self.assertNotIn('1000', proxy['Config'].get('User', ''))
+        self.assertFalse(proxy['HostConfig']['Privileged'])
+        self.assertEqual(proxy['HostConfig']['Binds'], None)
+        self.assertTrue(proxy['HostConfig']['ReadonlyRootfs'])
+
+    def test_actual_process_state_preserved_and_abandoned_tmpfs_cleaned_on_recovery(self):
+        from backend.models import LessonJob, UserContainer
+        from backend.service import Service
+        from sqlalchemy import select
+        import time
+        handle = self.runtime.start(self.a)
+        job = self.service.submit(self.a, 'interrupted topic')
+        self.service.update(job, 'generating', cleanup_required=True)
+        with self.sessions() as db:
+            container = db.scalar(select(UserContainer).where(UserContainer.user_id == self.a))
+            container.container_handle, container.status = handle, 'running'
+            db.commit()
+        self.runtime._run('exec', '-d', handle, 'python', '-c',
+            "from pathlib import Path; import time; Path('/work/abandoned.mp4').write_bytes(b'temporary'); time.sleep(2)")
+        deadline = time.monotonic() + 5
+        while not self.runtime.state(self.a)['busy']:
+            self.assertLess(time.monotonic(), deadline)
+        recovered = Service(self.sessions, self.dependencies, self.runtime, lambda: self.now)
+        self.service = recovered
+        recovered.reconcile()
+        self.assertEqual(recovered.status(self.a, job)['status'], 'generating')
+        self.assertTrue(self.runtime.state(self.a)['running'])
+        deadline = time.monotonic() + 5
+        while self.runtime.state(self.a)['busy']:
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(.1)
+        recovered.sweep()
+        self.assertEqual(recovered.status(self.a, job)['status'], 'interrupted')
+        self.assertFalse(recovered.status(self.a, job)['cleanup_pending'])
+        self.assertEqual(self.runtime._run('exec', handle, 'sh', '-c', 'test ! -e /work/abandoned.mp4'), b'')
+
+
+    def test_actual_generated_process_cancellation_reaps_and_cleans(self):
+        import time
+        self.runtime.code = "from manim import Scene\nimport time\nclass Lesson(Scene):\n    def construct(self):\n        time.sleep(100)\n"
+        job = self.service.submit(self.a, 'cancellation fixture')
+        worker = threading.Thread(target=self.service.process, args=(self.a, job))
+        worker.start()
+        try:
+            deadline = time.monotonic() + 20
+            while self.service.status(self.a, job)['status'] != 'rendering' or not self.runtime.state(self.a)['busy']:
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(.05)
+            result = self.client.post(f'/lessons/{job}/cancel', headers=self.headers())
+            self.assertEqual(result.status_code, 202)
+            worker.join(20)
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(self.status(job)['status'], 'cancelled')
+            self.assertFalse(self.status(job)['cleanup_pending'])
+            self.assertFalse(self.runtime.state(self.a)['busy'])
+            self.assert_clean(self.a, job)
+        finally:
+            # Finish this isolated test's process before removing its container.
+            if worker.is_alive():
+                self.runtime.command('btg-user-' + str(self.a), 'cancel', job)
+                worker.join(20)

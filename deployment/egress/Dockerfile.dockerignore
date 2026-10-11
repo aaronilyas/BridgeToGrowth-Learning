@@ -1,0 +1,5 @@
+**
+!deployment/
+!deployment/egress/
+!deployment/egress/squid.conf
+!deployment/egress/start.sh

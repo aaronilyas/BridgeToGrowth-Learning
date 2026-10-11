@@ -13,7 +13,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.main import create_app
-from backend.models import Base, LessonJob, UserContainer, VideoDelivery
+from backend.auth import Accounts, DUMMY_HASH
+from backend.models import Base, LessonJob, User, UserContainer, VideoDelivery
 from backend.service import Service
 
 
@@ -36,12 +37,6 @@ class Boundaries:
         if stage == self.fail:
             raise RuntimeError('Injected failure')
 
-    def authenticate(self, token):
-        if token not in self.identities:
-            return {'active': False}
-        return {'active': True, 'user_id': str(self.identities[token]),
-                'phone_verified': True, 'phone_number': '+1555000000' + ('1' if token == 'a' else '2')}
-
     def assess(self, intent):
         self.call('assess', intent)
         return {'seconds': self.seconds, 'feedback': 'Split into individual topics.'}
@@ -52,7 +47,7 @@ class Boundaries:
 
     def deliver(self, job_id, phone, video):
         self.call('deliver', job_id, phone, video)
-        return 'photon-message'
+        return 'photon-message-' + str(job_id)
 
 
 class Runtime:
@@ -81,6 +76,9 @@ class Runtime:
             return {'seconds': self.duration, 'has_audio': True}
         return b'fixture-video' if action == 'video' else {}
 
+    def state(self, owner):
+        return {'handle': None, 'running': False, 'busy': False}
+
     def stop(self, handle):
         self.calls.append(('stop', handle))
 
@@ -99,18 +97,34 @@ class BackendTests(unittest.TestCase):
         self.now = datetime(2026, 1, 1, tzinfo=timezone.utc)
         self.dependencies, self.runtime = Boundaries(self.a, self.b), Runtime()
         self.service = Service(self.sessions, self.dependencies, self.runtime, lambda: self.now)
-        self.client = TestClient(create_app(self.service, coordinator_guard=False))
-        for token in ('a', 'b'):
-            self.assertEqual(self.client.put('/account', headers=self.headers(token)).status_code, 200)
+        self.accounts = Accounts(self.sessions, self.dependencies, 'test-only-' * 4, lambda: self.now)
+        self.tokens = {}
+        with self.sessions() as db:
+            for token, identity, phone in [('a', self.a, '+15550000001'), ('b', self.b, '+15550000002')]:
+                user = User(id=identity, phone_number=phone, password_hash=DUMMY_HASH, phone_verified_at=self.now)
+                db.add(user)
+                db.add(UserContainer(user_id=identity, last_authenticated_request_at=self.now))
+                self.tokens[token] = self.accounts.new_session(db, user)['access_token']
+            db.commit()
+        self.client = TestClient(create_app(self.service, coordinator_guard=False, accounts=self.accounts,
+                                           receipt_secret='receipt-test-' * 4))
 
     def tearDown(self):
         self.client.close()
         self.engine.dispose()
 
     def headers(self, token='a'):
-        return {'Authorization': 'Bearer ' + token}
+        return {'Authorization': 'Bearer ' + self.tokens.get(token, token)}
+
+    def renew_access(self):
+        from backend.models import AuthToken
+        with self.sessions() as db:
+            for row in db.scalars(select(AuthToken)):
+                row.expires_at = self.now + timedelta(minutes=15)
+            db.commit()
 
     def submit(self, voiceover=False):
+        self.renew_access()
         response = self.client.post('/lessons', headers=self.headers(), json={'topic': 'Explain gravity', 'voiceover': voiceover})
         self.assertEqual(response.status_code, 202)
         return response.json()['id']
@@ -130,11 +144,10 @@ class BackendTests(unittest.TestCase):
             with TestClient(create_app(self.service, coordinator_guard=True)) as client:
                 self.assertEqual(client.get('/openapi.json').status_code, 200)
 
-    def test_registration_is_stable_and_phone_conflicts_are_rejected(self):
-        result = self.client.put('/account', headers=self.headers()).json()
+    def test_current_account_identity_and_recipient_are_stable(self):
+        result = self.client.get('/account', headers=self.headers()).json()
         self.assertEqual(result['id'], str(self.a))
-        with self.assertRaises(ValueError):
-            self.service.register(self.a, '+15551111111')
+        self.assertEqual(result['phone_number'], '+15550000001')
 
     def test_authentication_does_not_trigger_activity_or_work(self):
         self.now += timedelta(minutes=24)
@@ -174,7 +187,7 @@ class BackendTests(unittest.TestCase):
             status = self.status(job)
             self.assertTrue(status['photon_accepted'])
             self.assertEqual(status['status'], 'accepted')
-            self.assertEqual(status['provider_message_id'], 'photon-message')
+            self.assertEqual(status['provider_message_id'], 'photon-message-' + job)
             generated = [c for c in self.runtime.calls if c[0] == 'generate'][-1]
             self.assertEqual(generated[1], 'user-' + str(self.a))
             self.assertEqual(generated[3], {'intent': 'Explain gravity', 'voiceover': voiceover})
@@ -225,6 +238,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(self.runtime.calls[-1][0], 'stop')
         self.submit()
         self.now += timedelta(minutes=24)
+        self.renew_access()
         self.client.get('/lessons/' + str(uuid.uuid4()), headers=self.headers())
         self.now += timedelta(minutes=1, seconds=1)
         before = len(self.runtime.calls)
@@ -243,6 +257,7 @@ class BackendTests(unittest.TestCase):
                 try:
                     self.assertTrue(entered.wait(5))
                     self.now += timedelta(minutes=26)
+                    self.renew_access()
                     # This request must return while the pipeline is paused.
                     self.assertEqual(self.client.get('/lessons/' + str(job), headers=self.headers()).status_code, 200)
                     self.service.sweep()
@@ -273,7 +288,7 @@ class BackendTests(unittest.TestCase):
             with self.subTest(stage=stage):
                 boundary.fail = stage
                 status = self.status(self.submit())
-                self.assertEqual(status['status'], 'failed')
+                self.assertEqual(status['status'], 'delivery_unknown' if stage == 'deliver' else 'failed')
                 self.assertFalse(status['photon_accepted'])
                 self.assertEqual(self.service.active[self.a], 0)
                 boundary.fail = None

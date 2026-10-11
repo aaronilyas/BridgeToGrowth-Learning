@@ -1,134 +1,129 @@
 # Compose deployment
 
-Run from the repository root on a Docker host with Docker Compose v2 or newer.
-This stack runs PostgreSQL 17, exactly one FastAPI coordinator, and the existing
-Node.js/TypeScript Photon service. An external identity provider and working Gemini
-and Photon credentials are prerequisites; Compose does not implement signup or
-phone verification. See [backend/README.md](backend/README.md) for the identity
-provider contract and [services/messaging/README.md](services/messaging/README.md)
-for delivery semantics.
+The stack runs PostgreSQL 17, one FastAPI coordinator and the Node/TypeScript
+Photon transport. Accounts and credentials belong to FastAPI. There is no
+external identity-provider dependency. Read [backend/mobile contracts](backend/AUTHENTICATION.md),
+[job behavior](backend/README.md), [renderer egress](deployment/egress/README.md)
+and [messaging transport](services/messaging/README.md) before deployment.
 
-## Configure and start
+## Configure and build
 
 ```sh
 cp deployment/.env.example deployment/.env
 chmod 600 deployment/.env
-# Edit deployment/.env and fill every blank. Use hex secrets for the database
-# password and shared messaging token: openssl rand -hex 32
+# Fill blanks locally. Generate a distinct value for each secret:
+# openssl rand -hex 32
+# Keep the PostgreSQL password URL-safe because Compose embeds it in DATABASE_URL.
 docker compose --env-file deployment/.env config --quiet
-
-# Build the existing renderer on the daemon that will create user containers.
-# This image is a template, not a long-running Compose renderer service.
 docker build -f backend/container/Dockerfile -t btg-renderer:local .
+docker build -f deployment/egress/Dockerfile -t btg-egress:local .
 docker compose --env-file deployment/.env build
+# Only start after completing any existing-volume upgrade below.
 docker compose --env-file deployment/.env up -d --wait
 docker compose --env-file deployment/.env ps
 ```
 
-If `USER_CONTAINER_IMAGE` is changed, build/tag the renderer with that exact
-name. The coordinator uses the host daemon through the socket mounted at
-`/var/run/docker.sock`. `DOCKER_SOCKET_PATH` is a bind source on that daemon's
-host (or Docker Desktop VM), not necessarily the socket path used by your local
-CLI. A missing socket fails rather than creating a directory. The Docker CLI
-in the coordinator must be compatible with the host daemon's API.
+Set `AUTH_CODE_SECRET`, `RECEIPT_SECRET` and `MESSAGING_TOKEN` to distinct random
+secrets of at least 32 characters. Also set database/Photon/Gemini settings from
+the example. Startup fails with missing/invalid required settings. Build the
+renderer and egress images on the same daemon used by the coordinator; changed
+image tags must match `USER_CONTAINER_IMAGE` and `RENDERER_EGRESS_IMAGE`.
+The coordinator alone receives the Docker socket and CLI. `DOCKER_SOCKET_PATH`
+is a daemon-side bind path (including Docker Desktop's VM); a missing socket
+fails rather than creating a directory. Use a dedicated deployment daemon.
 
-PostgreSQL initializes a **fresh** named volume using
-`backend/schema.sql`. Existing volumes are retained and initialization is not
-repeated. Before starting this version against an original-schema volume, drain
-and stop the coordinator, back up the database, and apply
-`backend/migrations/001_delivery_acceptance.sql` once with PostgreSQL
-`ON_ERROR_STOP=1`. See [migration requirements](backend/README.md#delivery-status-and-existing-databases).
-Never apply the migration to an already initialized fresh schema. Validation
-uses a new tmpfs database and never migrates a live volume.
-Changing `POSTGRES_PASSWORD` does not change credentials in an existing database;
-rotate the database credential and deployment setting together. Do not delete
-the volume to rotate credentials.
+PostgreSQL and messaging publish no ports. Only FastAPI publishes
+`127.0.0.1:${API_PORT:-8000}`. Run host `cloudflared` with that loopback origin
+and the [public auth/account/lesson allowlist](cloudflare.md). `/verification`,
+`/video`, `/internal/receipts`, PostgreSQL and Docker control stay private.
+`RECEIPT_URL=http://coordinator:8000/internal/receipts` is reachable only within
+the trusted stack (and private loopback origin); it is HMAC-authenticated anyway.
+The connector has no Docker socket. Configure trusted forwarded client addresses
+only for the connector's actual source; default requests behind a proxy share
+its address rate limit. Never set a blanket forwarded-address trust policy.
 
-The API binds to `127.0.0.1:8000` (override `API_PORT`); database and messaging
-ports are not published. Run [cloudflared on this Docker host](cloudflare.md#compose-origin) so its origin
-`http://127.0.0.1:8000` reaches the published loopback API. A connector running
-in a normal bridge container cannot reach that host loopback address. Database
-traffic uses an internal Compose network; messaging and the coordinator have
-outbound connectivity for Photon, identity, and Gemini calls.
+Compose's database network is internal. Its delivery network gives only the
+coordinator and Node the required outbound access. Renderers do not join either.
+They use per-account enforced proxy namespaces. Coordinator/Node filesystems
+are read-only, with dropped capabilities and temporary `/tmp`. Node runs UID
+1000. Narrow build contexts exclude credential `.env` files. The `receipt-metadata`
+volume contains JSON read-event evidence only, never credentials, codes or videos;
+the PostgreSQL volume stores account and lifecycle metadata only.
 
-## Contract and verification
+## Fresh databases and upgrades
 
-The coordinator calls `http://messaging:3001/video` with raw MP4 bytes, its shared
-bearer token, `X-Lesson-Job`, and `X-Recipient`. Messaging binds to `0.0.0.0:3001`
-and uses emitted JavaScript built from TypeScript with `package-lock.json`. The
-image installs production dependencies using `npm ci --omit=dev` and starts
-`node dist/index.js`. Its 12 MiB
-upload limit matches the backend's maximum evaluated video size. Videos remain
-in memory during delivery; acceptance is Photon acceptance, not a receipt.
+New `postgres-data` volumes initialize from `backend/schema.sql` once. Do not
+run upgrade SQL on a fresh current schema. Existing original volumes require
+001 then 002; volumes already upgraded through 001 need only 002. Initialization
+scripts do not upgrade existing volumes automatically.
 
-Health checks use PostgreSQL's readiness probe, an unauthenticated `POST /video`
-that must return 401, and FastAPI's existing `/openapi.json`. The latter two
-checks do not send messages or refresh authenticated user activity. They check
-local service availability; they do not verify external credentials, Gemini
-quality, or actual Photon delivery.
+Before upgrading, stop new admissions, drain existing jobs, keep dependencies
+available during drain, stop the coordinator, and back up PostgreSQL. Then:
 
-After starting, check `http://127.0.0.1:8000/docs`. With a real verified identity,
-follow the existing authenticated `PUT /account`, `POST /lessons`, and
-`GET /lessons/{id}` flow. Real delivery sends a message; use an intended test
-recipient. Follow [backend/tests/README.md](backend/tests/README.md) for renderer
-and isolation acceptance checks. Configuration validation and image builds alone
-cannot prove the real integrations work.
+```sh
+# Run only migrations not already applied, in order. Never ignore SQL errors.
+docker compose --env-file deployment/.env exec -T postgres psql -U btg -d btg -v ON_ERROR_STOP=1 < backend/migrations/001_delivery_acceptance.sql
+docker compose --env-file deployment/.env exec -T postgres psql -U btg -d btg -v ON_ERROR_STOP=1 < backend/migrations/002_owned_auth_and_recovery.sql
+```
 
-## Isolation and lifecycle
+Existing account UUIDs/relationships survive, with null password and verification
+columns. Issue enrollment invitations with `python -m backend.enroll <account-uuid>`
+from an operator environment or `docker compose exec coordinator python -m
+backend.enroll <account-uuid>` after startup, and hand stdout privately to the
+verified original holder. See [safe enrollment](backend/AUTHENTICATION.md).
+Duplicate historical provider IDs intentionally block the uniqueness migration
+until ambiguous evidence is reviewed; never infer send-time phones or receipts.
 
-Only the coordinator image includes Docker CLI and only the coordinator has
-the Docker socket mount. Socket access grants control of the host daemon; use a
-dedicated deployment daemon. PostgreSQL and messaging have no Docker control
-access. Coordinator and messaging have read-only filesystems, dropped Linux
-capabilities, no privilege escalation, and temporary `/tmp` mounts. Messaging
-runs as Node's unprivileged UID 1000. Narrow Dockerfile-specific build contexts exclude
-local `.env` files and only include the sources each image needs.
+Drain and stop/remove each old unrestricted `btg-user-<uuid>` container and its
+old network before enrolling/starting new work. Preserve PostgreSQL. The new
+runtime fails closed on a legacy network mode. Never delete a container with
+active work. Updating image templates does not update already-created dynamic
+containers: drain and recreate the affected renderer AND its egress helper.
+Changing `POSTGRES_PASSWORD` in Compose does not rotate an existing database
+credential; rotate that database role and configuration together. Do not use
+`down -v` for updates because it deletes accounts and receipt evidence.
 
-User render containers are created dynamically by the existing `DockerRuntime`,
-outside Compose. They retain separate per-user networks, unprivileged UID,
-read-only roots, tmpfs `/work` and `/tmp`, resource limits, no host mounts, and no
-Docker socket. Gemini-generated Manim code runs only inside those containers.
-The PostgreSQL volume stores accounts, progress, and delivery metadata; no
-persistent volume stores generated videos. Each completed job cleans temporary
-artifacts, and stopping a user container discards its tmpfs files.
+## Health, shutdown and recovery
 
-The coordinator command explicitly uses one Uvicorn worker. Do not scale the
-coordinator or run another stack against the same daemon: user-container names
-are shared on that daemon. The existing database advisory lock also rejects a
-second coordinator using the same database. No reload process, extra worker,
-scheduler, or queue is added.
+Health checks use PostgreSQL TCP readiness, unauthenticated `/video` returning
+401, and FastAPI `/openapi.json`. They send no message, consume no verification
+code and refresh no account activity. They establish local service readiness,
+with no claim about live provider credentials or narration quality.
 
-The application checks inactivity every 30 seconds and stops user containers
-after 25 minutes without authenticated requests. Reserved jobs, persisted
-nonterminal jobs, and pending cleanup protect a container from stopping.
-Compose does not add a competing container reaper or automatic restart policy.
+Uvicorn uses exactly one worker and holds a PostgreSQL advisory guard. Do not
+scale coordinators or share the deployment daemon with another BTG database.
+The single coordinator atomically admits jobs and protects active work from
+25-minute inactivity shutdown. Normal completion removes `/work` and `/tmp`
+files; failed cleanup remains durable and protected.
 
-## Shutdown and interrupted work
-
-Before updating or stopping the stack, stop admitting new lesson requests and
-let current jobs finish. Keep PostgreSQL and messaging running while the
-coordinator drains. Uvicorn waits for its background work; messaging finishes
-active requests on SIGTERM. The 30-minute Docker grace periods are finite and
-can eventually force termination, so operators must verify jobs and cleanup
-have drained before stopping. Do not force-stop or remove active user containers.
-
-Once drained, stop the coordinator first, then its dependencies:
+For maintenance, stop admission at the public origin, let jobs and cleanup
+finish, and stop coordinator before dependencies:
 
 ```sh
 docker compose --env-file deployment/.env stop coordinator
 docker compose --env-file deployment/.env stop messaging postgres
 ```
 
-Compose stop/down does not manage dynamically created user containers. Leave
-the coordinator running for normal inactivity cleanup when that is needed.
-Do not use `down -v` for routine maintenance: it deletes account/progress data.
+Graceful coordinator shutdown drains background tasks. Node drains active sends
+before disconnecting Spectrum. Thirty-minute stop grace periods are finite;
+verify drained work before stopping and never force-remove active user containers.
+Dynamic containers are outside Compose's lifecycle. Leave the coordinator running
+when normal inactivity cleanup is desired.
 
-Abrupt loss has no automatic job resume or safe delivery retry. Before manually
-restarting after a crash, follow the existing backend reconciliation requirement:
-confirm interrupted work has stopped, clean only that user's temporary artifacts,
-and mark interrupted jobs failed. Persisted nonterminal jobs continue to protect
-user containers; pending cleanup state is in memory and requires operator review
-after process loss. A delivery timeout can occur after Photon acceptance, so
-retrying may duplicate a message. Recovery automation, identity-provider choice,
-production egress restrictions, and production tunnel DNS/credentials remain
-operator or product decisions. The local tunnel topology is documented.
+After an abrupt coordinator crash, startup reconciles actual owned container
+processes, preserves active work, cleans abandoned artifacts after processes
+stop, restores inactivity eligibility, and retries persisted cleanup obligations.
+Committed acceptance is retained; uncertain sends become `delivery_unknown` and
+are never resent automatically. Runtime/DB uncertainty keeps protection until
+observations succeed. See [precise terminal outcomes](backend/README.md#status-meanings-and-cancellation).
+The receipt spool survives Node/backend outages; signature timestamps are regenerated
+on retry and accepted read evidence survives in PostgreSQL.
+
+## Automated checks and deferred live work
+
+Follow [tests/README.md](backend/tests/README.md) to run disposable PostgreSQL,
+real restricted renderers, message substitutes and synthetic tunnel-rule tests.
+The runner never migrates a production database, reads credential files or sends
+real provider messages. Live Gemini/GTTS/Photon, production DNS/TLS and full mobile
+integration are deferred until the frontend is ready; use the checklist in
+[backend/README.md](backend/README.md#verification-and-later-integration).

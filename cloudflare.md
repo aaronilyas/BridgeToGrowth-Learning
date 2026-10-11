@@ -68,9 +68,10 @@ shell variables here, so the credentials path must be absolute, with no `~`.
 - `<PUBLIC_API_HOSTNAME>`: chosen hostname in your zone, without a scheme or path.
 - `<API_ORIGIN>`: reachable private API base URL described above.
 
-Restrict the credentials file to its owner with `chmod 600`. The template exposes
-`/account`, `/lessons`, and `/lessons/<UUID>` (also with trailing slashes).
-All other paths and hostnames return 404, including `/video`, `/docs`, `/redoc`,
+Restrict the credentials file to its owner with `chmod 600`. The template exposes the documented `/auth/*` endpoints, `/account`,
+`/account/phone`, `/account/phone/verify`, `/lessons`, `/lessons/<UUID>` and
+`/lessons/<UUID>/cancel` (also with trailing slashes).
+All other paths and hostnames return 404, including `/video`, `/verification`, `/internal/receipts`, `/docs`, `/redoc`,
 and `/openapi.json`. HTTP methods and bearer-session validation remain the API's
 responsibility. Path matching does not grant authorization.
 
@@ -114,8 +115,9 @@ curl -i 'https://<PUBLIC_API_HOSTNAME>/docs'
 ```
 
 The first request should be rejected by API authentication (currently HTTP 401);
-the others should return the tunnel's 404. Use the frontend's real bearer
-session to exercise account registration and lesson polling. Do not put real
+the others should return the tunnel's 404. Use the backend signup/verification/login flow to obtain an access bearer for
+account retrieval and lesson polling. Full mobile integration is deferred until
+the frontend is ready; see [mobile token expectations](backend/AUTHENTICATION.md). Do not put real
 tokens in committed examples. Configure Cloudflare cache rules to bypass
 caching for this API hostname, so user-specific status responses stay private.
 Cloudflare Access, if desired, needs a separately agreed mobile authentication
@@ -143,3 +145,8 @@ address would refer to the connector container itself.
 
 `backend/tests/run_acceptance.py` verifies these rules with synthetic config
 and a real disposable coordinator bound to loopback; no tunnel or DNS is created.
+
+The receipt consumer uses the authenticated Spectrum cloud stream and a private
+Node-to-coordinator HMAC callback. No provider callback needs public exposure.
+Never broaden the tunnel allowlist to `/internal/receipts` or Node verification
+transport. Auth and account routes must bypass Cloudflare caching.

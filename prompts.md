@@ -122,6 +122,150 @@ Once required checks pass, fetch origin again, incorporate any new main changes,
 
 Append this exact prompt to prompts.md under “AI-generated integration prompt,” explicitly identifying it as AI-generated to distinguish it from previous entries, and include that addition in the final commit.
 
+### Remaining backend implementation
+
+**Origin: User-supplied implementation prompt, appended to the AI-generated prompts section as requested.**
+
+Implement the remaining and partially implemented backend functionality for BridgeToGrowth-Learning.
+
+Read product-overview.md, agents.md, backend/, services/messaging/, compose.yaml, and the deployment documentation first. Treat product-overview.md as the requirements source.
+
+The app must manage its own authentication and accounts. Remove the dependency on an external identity provider and AUTH_INTROSPECTION_URL.
+
+Scope
+- Implement backend functionality and update its tests, migrations, configuration, and documentation.
+- Do not build the React Native frontend; that will be handled separately.
+- Run automated backend and messaging tests now.
+- Defer live provider testing and full frontend-to-backend testing until the frontend is ready. Clearly distinguish implemented behavior, automated verification, and deferred live verification.
+- Preserve existing working functionality and follow the repository’s architectural constraints.
+
+1. Implement backend-owned authentication
+
+Use phone number and password authentication, with phone verification because the phone number is the lesson-delivery recipient.
+
+Provide a complete API flow for:
+- Signup and phone verification.
+- Login.
+- Session renewal.
+- Logout and revocation of all sessions.
+- Retrieving the current account.
+- Password recovery and reset.
+- Changing the phone number after verifying the new recipient and reauthenticating the account.
+
+Use a maintained password-hashing library with Argon2id. Never store plaintext passwords, session tokens, refresh tokens, or verification codes.
+
+Use cryptographically random opaque bearer tokens backed by PostgreSQL:
+- Short-lived access tokens.
+- Expiring refresh tokens with rotation and reuse detection.
+- Server-side revocation.
+- Revocation after password reset and account security changes.
+
+Implement expiring, single-use verification codes with bounded attempts, resend cooldowns, and rate limits for authentication and recovery operations. Avoid exposing account existence through unauthenticated responses or logging credentials and codes.
+
+Keep identity and lesson recipients server-derived. Preserve ownership checks and ensure unauthenticated requests do not refresh container activity.
+
+Preserve existing account UUIDs and relationships through a documented migration. Existing users must not receive fabricated credentials or automatically become verified under the new authentication system. Define a safe enrollment path.
+
+Verification-message delivery must remain behind the Node/TypeScript service. Confirm the installed Photon Spectrum SDK’s supported text-message contract before implementing the adapter. Authentication and account state belong to this backend; Photon is only the message transport. Use deterministic substitutes in tests, never a production verification bypass.
+
+2. Complete delivery-status handling
+
+Preserve the distinction between Photon acceptance and confirmed receipt.
+
+Inspect the installed SDK and official provider documentation for supported delivery or receipt events. If a supported mechanism exists:
+- Implement the appropriate authenticated callback or event consumer.
+- Correlate provider events with the correct lesson and account.
+- Handle duplicate and out-of-order events safely.
+- Persist and expose the supported receipt state through polling.
+- Reject forged events and prevent cross-account disclosure.
+
+Never infer receipt from acceptance, elapsed time, or a successful HTTP response.
+
+If the provider cannot support receipt confirmation, retain the accurate accepted status and document the precise remaining limitation. Complete all independent work and report the unsupported capability explicitly.
+
+3. Implement safe crash recovery
+
+Replace reliance on manual reconciliation wherever the backend can safely determine what happened.
+
+On coordinator startup:
+- Reconcile persisted jobs with actual user-container and process state.
+- Preserve genuinely active work.
+- Clean abandoned temporary artifacts once work has stopped.
+- Mark interrupted jobs with an accurate terminal outcome when safe.
+- Restore inactivity cleanup eligibility.
+- Recover outstanding cleanup obligations from persisted metadata.
+
+Do not automatically resend a video when a previous send may already have been accepted. Expose an accurate outcome when acceptance cannot be established.
+
+Maintain the single-coordinator guard and atomic admission/shutdown protection.
+
+4. Complete cancellation and duplicate-request handling
+
+Implement authenticated lesson cancellation:
+- Only the owner may cancel.
+- Stop generated processes safely within the owning container.
+- Remove temporary artifacts before releasing active-job protection.
+- Handle cancellation racing with rendering, evaluation, delivery, and completion.
+- Clearly define behavior once messaging has started; do not claim to retract an accepted message.
+
+Support idempotency keys for lesson submission:
+- Repeating the same key and request returns the existing job.
+- Reusing the key with different request content returns a conflict.
+- Scope keys to the authenticated account.
+- Prevent duplicate jobs under concurrent submissions.
+- Do not claim provider-side send deduplication unless the provider supports it.
+
+5. Finish generation and evaluation integration
+
+Preserve:
+- Gemini code generation inside isolated user containers.
+- Manim rendering only inside those containers.
+- Scope feedback for lessons estimated over 90 seconds.
+- Actual rendered-duration enforcement.
+- Optional Manim Voiceover audio checks.
+- A fresh, independent Gemini evaluation of the actual video.
+- Accuracy, visual-defect, consistency, and requested-narration checks before delivery.
+
+Persist useful structured evaluation findings as metadata and expose appropriate feedback to the owning account. Do not persist generated videos.
+
+Validate configuration and malformed provider responses. Keep failures observable without exposing secrets or internal implementation details.
+
+Do not treat synthetic audio or mocked Gemini responses as proof of real narration quality.
+
+6. Complete deployment configuration and container egress controls
+
+Update Compose and Cloudflare configuration for the new public account and authentication routes. Keep PostgreSQL, messaging endpoints, Docker control, and internal callbacks private except where a supported authenticated provider callback explicitly needs exposure.
+
+Implement and document enforceable renderer egress restrictions while allowing the external services required for Gemini generation and voiceover. Preserve per-user network/filesystem isolation and prevent access to private control services.
+
+Provide configuration examples without credentials. Production startup must fail clearly when required settings are missing.
+
+7. Verification and handoff
+
+Add meaningful tests for:
+- Signup, verification, login, expiry, refresh rotation, logout, recovery, and phone changes.
+- Authentication throttling and invalid/replayed verification codes.
+- Migration and existing-account enrollment.
+- Account ownership and authenticated activity.
+- Cancellation races.
+- Concurrent idempotent submission.
+- Startup reconciliation and cleanup recovery.
+- Supported receipt events, including duplicates and forged events.
+- Container isolation, egress controls, and temporary-video cleanup.
+
+Run the existing backend acceptance suite, appropriate new tests, and messaging typecheck/build/tests. Generated code and hostile fixtures must execute only in isolated user containers.
+
+Update backend documentation with:
+- Exact endpoint request/response contracts for the future frontend.
+- Authentication and token-storage expectations for a mobile client.
+- Database migration and deployment instructions.
+- Terminal job statuses and their precise meanings.
+- Any remaining unsupported provider capabilities.
+- A checklist for later live integration and frontend testing.
+
+Proceed with implementation, using these defaults for routine decisions. Do not stop after writing a plan. At completion, summarize what changed, what passed, and what still requires live testing or an external capability.
+Append this prompt to the prompts.md file at the bottom of the ai generated prompts section
+
 ## Human-written additional instruction (not AI-generated)
 
 ### Allowed technologies

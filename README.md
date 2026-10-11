@@ -11,7 +11,7 @@ user containers and handed to Photon for messaging. See
   only after Photon returns a message ID. Acceptance does not confirm receipt.
 - `frontend/`: reserved for React Native; currently empty.
 - [compose.md](compose.md): single-coordinator deployment with a loopback API.
-- [cloudflare.md](cloudflare.md): host-based tunnel exposing only account/lesson routes.
+- [cloudflare.md](cloudflare.md): host-based tunnel exposing only authentication, account and lesson routes.
 - [prompts.md](prompts.md): consolidated request history with explicit prompt-origin labels.
 
 With Node.js 22.6+ installed, verify messaging without credentials or messages:
@@ -28,8 +28,11 @@ Supply Photon credentials and `MESSAGING_TOKEN` through the service environment
 before `npm start`. Node does not automatically load `.env`; see the service
 README for explicit operator configuration. Credential files stay outside Git.
 
+Signup, phone verification, login, rotating opaque sessions, recovery and phone
+changes are owned by the [backend](backend/AUTHENTICATION.md).
 Photon SDK calls stay in TypeScript. Generated Manim code executes only inside
-isolated user containers; generated videos remain temporary. An identity
-provider and verified-phone onboarding must still be selected, and confirmed
-receipt needs a supported external contract. Those product decisions do not
-change the offline verification commands.
+isolated user containers; generated videos remain temporary. Provider DM read receipts are consumed as independent evidence; missing receipts
+remain unconfirmed. Cancellation, submission idempotency, persisted crash cleanup
+and enforced renderer egress are implemented. Live provider and full mobile
+integration checks are deferred until the frontend is ready; see
+[verification and handoff](backend/INTEGRATION.md).

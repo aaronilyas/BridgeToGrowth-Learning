@@ -19,7 +19,7 @@ class IntegrationTests(unittest.TestCase):
             result = dict(accurate=True, defect_free=True, consistent=True, findings='issue')
             result[failed] = False
             with patch('backend.integrations.gemini', return_value=result) as gemini:
-                self.assertFalse(Integrations().evaluate('original intent', b'actual video'))
+                self.assertFalse(Integrations().evaluate('original intent', b'actual video')['approved'])
                 self.assertEqual(gemini.call_args.args[1], b'actual video')
                 self.assertIn('original intent', gemini.call_args.args[0])
         with patch('backend.integrations.gemini', return_value={'accurate': 'true'}):
@@ -43,12 +43,12 @@ class IntegrationTests(unittest.TestCase):
         result = dict(accurate=True, defect_free=True, consistent=True, findings='',
                       narration_accurate=True, narration_intelligible=True, narration_consistent=True)
         with patch('backend.integrations.gemini', return_value=result) as evaluator:
-            self.assertTrue(Integrations().evaluate('intent', b'actual audio video', voiceover=True))
+            self.assertTrue(Integrations().evaluate('intent', b'actual audio video', voiceover=True)['approved'])
             self.assertIn('intelligibility', evaluator.call_args.args[0])
         for key in ('narration_accurate', 'narration_intelligible', 'narration_consistent'):
             bad = {**result, key: False}
             with patch('backend.integrations.gemini', return_value=bad):
-                self.assertFalse(Integrations().evaluate('intent', b'video', voiceover=True))
+                self.assertFalse(Integrations().evaluate('intent', b'video', voiceover=True)['approved'])
             bad.pop(key)
             with patch('backend.integrations.gemini', return_value=bad):
                 with self.assertRaises(ValueError):
