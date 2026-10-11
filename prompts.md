@@ -38,6 +38,20 @@ Then append this prompt to the prompts.md
 
 Based on the product-overview.md, agents.md and the existing test suite implement the fastapi portion of the products backend, keep the number of routes to a minimum and keep design as simple as possible, so that it can be easily explained to a human at a high level. Then append this prompt to the prompts.md once you are done.
 
+### Cross-platform mobile frontend approach
+
+**Origin: Human-written (not AI-generated).**
+
+Analyze the backend sub directory as well as the product-overview.md and determine the best approach to implement the front end for the cross platform mobile app, using the tech stack outlined in the product-overview.md and following the guidelines of the agents.md.
+
+### Parallel frontend implementation prompts
+
+**Origin: Human-written (not AI-generated).**
+
+Extract the contents of the front-implementation-plan.md and provide them to me as concise narrowly scoped prompts optimized for GPT 6 luna on high reasoning that can run in parallel, in separate branches. After doing this delete the front-implementation-plan.md.
+
+Append this prompt to prompts.md in the human written prompts section
+
 ## AI-generated prompts
 
 ### Photon HTTP delivery endpoint
