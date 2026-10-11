@@ -1,4 +1,4 @@
-# Copy outside the checkout and replace every <PLACEHOLDER> literally.
+# Legacy local ingress validation fixture; production ingress is managed by deployment/cloudflare.py.
 # cloudflared does not expand environment variables in this file.
 tunnel: "<TUNNEL_UUID>"
 credentials-file: "<ABSOLUTE_TUNNEL_CREDENTIALS_JSON_PATH>"
@@ -9,7 +9,7 @@ metrics: 127.0.0.1:20241
 ingress:
   - hostname: "<PUBLIC_API_HOSTNAME>"
     # Only the current API routes, including optional trailing slashes.
-    path: '^/(auth/(signup|verify|login|refresh|logout|logout-all|recovery|reset|resend|enrollment|enrollment/verify)/?|account(/phone(/verify)?)?/?|lessons/?|lessons/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(/cancel)?/?)$'
+    path: '^/(auth/(signup|verify|login|refresh|logout|logout-all|recovery|reset|resend|enrollment|enrollment/verify)/?|account(/phone(/verify)?|/delete)?/?|lessons/?|lessons/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(/cancel)?/?)$'
     service: "<API_ORIGIN>"
   # Mandatory catch-all: no fallback to another service or private network.
   - service: http_status:404

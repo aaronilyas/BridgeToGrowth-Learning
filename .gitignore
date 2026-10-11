@@ -9,3 +9,6 @@ dist/
 .env.*
 !.env.example
 .local/iphone-testing/
+
+# Durable deployment ownership, generated Compose env and connector credentials.
+.local/backend/

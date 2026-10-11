@@ -1,6 +1,6 @@
 // Spectrum 12.10.1: inbound read messages have reader + outbound target.
 import { createHash, createHmac } from "node:crypto";
-import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export interface ReadEvent {
@@ -37,7 +37,8 @@ export function signedReceipt(event: ReadEvent, secret: string, now = Math.floor
 // Durable metadata only: this spool never stores credentials, codes or videos.
 export class ReceiptForwarder {
   private flushing = false;
-  constructor(private directory: string, private url: string, private secret: string) {
+  constructor(private directory: string, private url: string, private secret: string,
+              private now = () => Date.now()) {
     if (secret.length < 32) throw Error("RECEIPT_SECRET must contain at least 32 characters");
     const target = new URL(url);
     if (!["http:", "https:"].includes(target.protocol) || target.pathname !== "/internal/receipts"
@@ -56,8 +57,15 @@ export class ReceiptForwarder {
     try {
       await mkdir(this.directory, { recursive: true, mode: 0o700 });
       for (const file of await readdir(this.directory)) {
-        if (!/^[a-f0-9]{64}\.json$/.test(file)) continue;
+        if (!/^[a-f0-9]{64}\.(json|tmp)(\.rejected)?$/.test(file)) continue;
         const path = join(this.directory, file);
+        // All spool metadata, including quarantined evidence, has bounded retention.
+        // Arrival mtime avoids discarding a legitimate delayed read event immediately.
+        if (this.now() - (await stat(path)).mtimeMs >= 7 * 86400 * 1000) {
+          await unlink(path);
+          continue;
+        }
+        if (!file.endsWith(".json")) continue;
         const event = JSON.parse(await readFile(path, "utf8")) as ReadEvent;
         const { body, headers } = signedReceipt(event, this.secret);
         try {

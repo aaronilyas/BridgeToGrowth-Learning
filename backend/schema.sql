@@ -22,6 +22,7 @@ CREATE TABLE users (
     id UUID NOT NULL,
     phone_number VARCHAR(32) NOT NULL,
     password_hash TEXT,
+    deletion_requested_at TIMESTAMP WITH TIME ZONE,
     phone_verified_at TIMESTAMP WITH TIME ZONE,
     enrollment_hash VARCHAR(64),
     enrollment_expires_at TIMESTAMP WITH TIME ZONE,

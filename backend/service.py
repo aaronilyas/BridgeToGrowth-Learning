@@ -4,12 +4,13 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import logging
+import os
 import threading
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, func, or_, delete
 
-from .models import LessonJob, ReceiptEvent, User, UserContainer, VideoDelivery
+from .models import AuthSession, AuthToken, Verification, LessonJob, ReceiptEvent, User, UserContainer, VideoDelivery
 from .auth import utc
 
 log = logging.getLogger(__name__)
@@ -24,6 +25,12 @@ class Conflict(ValueError):
     pass
 
 
+class AdmissionLimited(ValueError):
+    def __init__(self, message, retry_after):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 class Service:
     def __init__(self, sessions, integrations, runtime, clock=None):
         self.sessions, self.integrations, self.runtime = sessions, integrations, runtime
@@ -33,11 +40,18 @@ class Service:
         self.execution = defaultdict(threading.Lock)
         self.recovering = set()
         self.receipt_lock = threading.RLock()
+        # The database advisory guard enforces one coordinator. This lock makes
+        # global count + insert atomic across accounts; durable counts survive restarts.
+        self.admission_lock = threading.RLock()
+        self.request_limit = int(os.environ.get('LESSON_REQUEST_LIMIT', '10'))
+        self.request_window = int(os.environ.get('LESSON_REQUEST_WINDOW_SECONDS', '86400'))
+        self.account_job_limit = int(os.environ.get('LESSON_ACCOUNT_JOB_LIMIT', '2'))
+        self.global_job_limit = int(os.environ.get('LESSON_GLOBAL_JOB_LIMIT', '8'))
 
     def touch(self, identity):
         with self.locks[identity], self.sessions() as db:
             user = db.get(User, identity)
-            if user is None or user.container is None:
+            if user is None or user.container is None or user.deletion_requested_at:
                 return False
             user.container.last_authenticated_request_at = self.clock()
             db.commit()
@@ -46,7 +60,10 @@ class Service:
     def submit(self, identity, intent, voiceover=False, idempotency_key=None, admission=False):
         fingerprint = hashlib.sha256(json.dumps({'topic': intent, 'voiceover': voiceover},
                                     sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-        with self.locks[identity], self.sessions() as db:
+        with self.admission_lock, self.locks[identity], self.sessions() as db:
+            user = db.get(User, identity)
+            if not user or user.deletion_requested_at:
+                raise Conflict('Account is unavailable or pending deletion')
             if idempotency_key:
                 existing = db.scalar(select(LessonJob).where(LessonJob.user_id == identity,
                     LessonJob.idempotency_key == idempotency_key))
@@ -57,7 +74,15 @@ class Service:
             pending = db.scalar(select(LessonJob.id).where(LessonJob.user_id == identity, LessonJob.cleanup_required.is_(True), LessonJob.status.in_(TERMINAL)).limit(1))
             if identity in self.recovering or pending:
                 raise Conflict('Previous work is being recovered; try again later')
-            job = LessonJob(user_id=identity, original_request=intent, status='queued', voiceover=voiceover,
+            unfinished = or_(LessonJob.status.not_in(TERMINAL), LessonJob.cleanup_required.is_(True))
+            if db.scalar(select(func.count()).select_from(LessonJob).where(unfinished)) >= self.global_job_limit:
+                raise AdmissionLimited('Global lesson capacity reached; try again later', 30)
+            if db.scalar(select(func.count()).select_from(LessonJob).where(LessonJob.user_id == identity, unfinished)) >= self.account_job_limit:
+                raise AdmissionLimited('Account pending/active lesson limit reached', 30)
+            window_start = self.clock() - timedelta(seconds=self.request_window)
+            if db.scalar(select(func.count()).select_from(LessonJob).where(LessonJob.user_id == identity, LessonJob.created_at > window_start)) >= self.request_limit:
+                raise AdmissionLimited('Account lesson request allowance reached', self.request_window)
+            job = LessonJob(user_id=identity, original_request=intent, status='queued', voiceover=voiceover, created_at=self.clock(),
                             idempotency_key=idempotency_key, request_hash=fingerprint)
             db.add(job)
             db.commit()
@@ -265,6 +290,10 @@ class Service:
 
     def receipt(self, event_id, message_id, phone, read_at):
         with self.receipt_lock, self.sessions() as db:
+            # A late callback must not recreate personal data after account removal.
+            if not db.scalar(select(User.id).where(User.phone_number == phone)) and not db.scalar(
+                    select(VideoDelivery.id).where(VideoDelivery.recipient_phone == phone)):
+                return
             existing = db.get(ReceiptEvent, event_id)
             if existing:
                 if (existing.provider_message_id != message_id or existing.recipient_phone != phone
@@ -332,8 +361,47 @@ class Service:
             db.commit()
         self.active[identity] = 0
         self.recovering.discard(identity)
+        self.finish_deletion(identity)
+
+    def finish_deletion(self, identity):
+        """Caller owns execution + account lock. Remove runtime before personal rows.
+
+        Failures leave deletion_requested_at durable; reconcile/sweep retry safely.
+        Active jobs are allowed to complete, including the irreversible send cutoff.
+        """
+        with self.sessions() as db:
+            user = db.get(User, identity)
+            if not user or not user.deletion_requested_at or self.active[identity]:
+                return False
+            if db.scalar(select(LessonJob.id).where(LessonJob.user_id == identity,
+                         or_(LessonJob.status.not_in(TERMINAL), LessonJob.cleanup_required.is_(True))).limit(1)):
+                return False
+            state = self.runtime.state(identity)
+            if state.get('busy'):
+                return False
+            if state['running']:
+                self.runtime.command(state['handle'], 'cleanup', uuid.UUID(int=0))
+            self.runtime.remove(identity)
+            # Serialize callbacks with removal so late receipts cannot race deletion.
+            with self.receipt_lock:
+                message_ids = select(VideoDelivery.provider_message_id).join(LessonJob).where(LessonJob.user_id == identity)
+                db.execute(delete(ReceiptEvent).where(or_(ReceiptEvent.recipient_phone == user.phone_number,
+                                                         ReceiptEvent.provider_message_id.in_(message_ids))))
+                db.execute(delete(Verification).where(or_(Verification.user_id == identity,
+                    Verification.phone_number == user.phone_number)))
+                session_ids = select(AuthSession.id).where(AuthSession.user_id == identity)
+                db.execute(delete(AuthToken).where(AuthToken.session_id.in_(session_ids)))
+                db.execute(delete(AuthSession).where(AuthSession.user_id == identity))
+                db.delete(user)  # ORM cascades lesson/delivery/container metadata too.
+                db.commit()
+            self.recovering.discard(identity)
+            return True
 
     def sweep(self):
+        # Unmatched late receipt evidence is metadata only and expires after 7 days.
+        with self.receipt_lock, self.sessions() as db:
+            db.execute(delete(ReceiptEvent).where(ReceiptEvent.received_at < self.clock() - timedelta(days=7)))
+            db.commit()
         with self.sessions() as db:
             identities = list(db.scalars(select(UserContainer.user_id)))
         for identity in identities:
@@ -348,6 +416,8 @@ class Service:
                         self.reconcile_user(identity)
                         continue
                     container = db.scalar(select(UserContainer).where(UserContainer.user_id == identity))
+                    if container is None:
+                        continue
                     for job in cleanup_jobs:
                         try:
                             self.runtime.command(container.container_handle, 'cleanup', job.id)
@@ -356,6 +426,14 @@ class Service:
                             self.active[identity] = max(0, self.active[identity] - 1)
                         except Exception:
                             log.warning('Cleanup retry pending for lesson %s', job.id)
+                    if db.get(User, identity).deletion_requested_at:
+                        # Close this read transaction before deletion in a separate session.
+                        db.rollback()
+                        try:
+                            self.finish_deletion(identity)
+                        except Exception:
+                            log.warning('Account deletion cleanup pending for account %s', identity)
+                        continue
                     active_job = db.scalar(select(LessonJob.id).where(LessonJob.user_id == identity,
                         LessonJob.status.not_in(TERMINAL)).limit(1))
                     last = container.last_authenticated_request_at

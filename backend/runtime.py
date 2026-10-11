@@ -119,3 +119,31 @@ class DockerRuntime:
     def stop(self, handle):
         self._run('stop', handle)
         self._run('stop', handle + '-egress')
+
+    def remove(self, user_id):
+        """Remove only this account's idle runtime, after durable deletion admission."""
+        user_id = str(uuid.UUID(str(user_id)))
+        name = f'btg-user-{user_id}'
+        state = self.state(user_id)
+        if state.get('busy'):
+            raise RuntimeError('Account runtime is still busy')
+        # Never use force removal; ownership is checked even on interrupted retries.
+        for container, label in ((name, 'btg.user'), (name + '-egress', 'btg.egress.user')):
+            info = self.inspect(container)
+            if info:
+                if info['Config']['Labels'].get(label) != user_id:
+                    raise RuntimeError('Account runtime ownership mismatch')
+                if info['State']['Running']:
+                    self._run('stop', '--time=-1', container)
+                self._run('rm', container)
+        network = name + '-network'
+        try:
+            info = json.loads(self._run('network', 'inspect', network))[0]
+        except subprocess.CalledProcessError:
+            networks = self._run('network', 'ls', '--format', '{{.Name}}').decode().splitlines()
+            if network in networks:
+                raise
+            return
+        if info.get('Labels', {}).get('btg.user') != user_id or info.get('Containers'):
+            raise RuntimeError('Account network ownership/attachment mismatch')
+        self._run('network', 'rm', network)

@@ -94,7 +94,7 @@ class Accounts:
         result['account'] = self.account(user)
         return result
 
-    def resolve(self, token):
+    def resolve(self, token, allow_deleting=False):
         if len(token) > 128:
             raise invalid()
         with self.lock, self.sessions() as db:
@@ -102,8 +102,9 @@ class Accounts:
             session = db.get(AuthSession, row.session_id) if row else None
             user = db.get(User, session.user_id) if session else None
             if (not row or row.kind != 'access' or utc(row.expires_at) <= self.clock()
-                    or not session or session.revoked_at or utc(session.expires_at) <= self.clock()
-                    or not user or not user.password_hash or not user.phone_verified_at):
+                    or not session or (session.revoked_at and not (allow_deleting and user and user.deletion_requested_at)) or utc(session.expires_at) <= self.clock()
+                    or not user or not user.password_hash or not user.phone_verified_at
+                    or (user.deletion_requested_at and not allow_deleting)):
                 raise invalid()
             return user.id, session.id
 
@@ -112,7 +113,7 @@ class Accounts:
         with self.lock, self.sessions() as db:
             user = db.scalar(select(User).where(User.phone_number == phone))
             valid = password_matches(user.password_hash if user else None, password)
-            if not valid or not user.phone_verified_at:
+            if not valid or not user.phone_verified_at or user.deletion_requested_at:
                 raise invalid()
             if PASSWORDS.check_needs_rehash(user.password_hash):
                 user.password_hash = PASSWORDS.hash(password)
@@ -134,6 +135,8 @@ class Accounts:
                 raise invalid()
             if session.revoked_at or utc(session.expires_at) <= self.clock() or utc(row.expires_at) <= self.clock():
                 raise invalid()
+            if db.get(User, session.user_id).deletion_requested_at:
+                raise invalid()
             row.used_at = self.clock()
             # Rotating invalidates old access tokens from this session as well.
             for access in db.scalars(select(AuthToken).where(AuthToken.session_id == session.id, AuthToken.kind == 'access')):
@@ -148,6 +151,17 @@ class Accounts:
             query = query.where(AuthSession.id == session_id)
         for session in db.scalars(query):
             session.revoked_at = self.clock()
+
+    def request_deletion(self, user_id, password):
+        with self.lock, self.sessions() as db:
+            user = db.get(User, user_id)
+            if not user or not password_matches(user.password_hash, password):
+                raise invalid()
+            if not user.deletion_requested_at:
+                user.deletion_requested_at = self.clock()
+            self.revoke(db, user_id)
+            db.commit()
+            return {'status': 'pending_deletion', 'message': 'Sessions revoked; deletion resumes automatically after jobs and runtime cleanup finish'}
 
     def logout(self, user_id, session_id, all_sessions=False):
         with self.lock, self.sessions() as db:
@@ -171,6 +185,8 @@ class Accounts:
                     raise invalid()
                 occupied = db.scalar(select(User.id).where(User.phone_number == phone))
                 eligible = occupied is None and phone != user.phone_number
+            if user and user.deletion_requested_at:
+                eligible = False
             previous = db.scalar(select(Verification).where(Verification.phone_number == phone).order_by(Verification.sent_at.desc()).limit(1))
             # Same response for occupied, unknown, cooling down, and valid recipients.
             if previous and self.clock() - utc(previous.sent_at) < timedelta(seconds=60):
@@ -243,7 +259,7 @@ class Accounts:
                 db.commit()
                 raise HTTPException(400, 'Invalid or expired verification')
             user = db.get(User, row.user_id) if row.user_id else None
-            if user and (row.credential_snapshot != user.password_hash
+            if user and (user.deletion_requested_at or row.credential_snapshot != user.password_hash
                          or (purpose in ('recovery', 'enrollment') and row.phone_number != user.phone_number)):
                 row.consumed_at = self.clock()
                 db.commit()

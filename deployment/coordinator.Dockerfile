@@ -9,4 +9,4 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY backend/*.py /app/backend/
 # Root is required for the default host Docker socket. Only this service has
 # that mount; no renderer or Photon SDK is installed in this image.
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--no-proxy-headers"]

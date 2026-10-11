@@ -22,7 +22,7 @@ from .database import SessionLocal, engine
 from .integrations import Integrations
 from .models import User
 from .runtime import DockerRuntime
-from .service import Conflict, Service
+from .service import AdmissionLimited, Conflict, Service
 
 
 class Body(BaseModel):
@@ -34,6 +34,10 @@ class Phone(Body):
 
 
 class Credentials(Phone):
+    password: str = Field(min_length=12, max_length=128)
+
+
+class DeleteAccount(Body):
     password: str = Field(min_length=12, max_length=128)
 
 
@@ -80,6 +84,8 @@ def create_app(service=None, coordinator_guard=True, accounts=None, receipt_secr
         guard = None
         if production:
             validate_settings()
+            from .check_schema import check_schema
+            check_schema()
             app.state.accounts = Accounts(service.sessions, service.integrations, os.environ['AUTH_CODE_SECRET'], service.clock)
             app.state.receipt_secret = os.environ['RECEIPT_SECRET']
         if coordinator_guard:
@@ -93,7 +99,12 @@ def create_app(service=None, coordinator_guard=True, accounts=None, receipt_secr
                 while True:
                     await asyncio.sleep(30)
                     try:
-                        await asyncio.to_thread(service.sweep)
+                        operation = asyncio.create_task(asyncio.to_thread(service.sweep))
+                        try:
+                            await asyncio.shield(operation)
+                        except asyncio.CancelledError:
+                            await operation  # Drain cleanup before releasing coordinator ownership.
+                            raise
                     except Exception:
                         logging.getLogger(__name__).warning('Inactivity sweep failed')
             task = asyncio.create_task(cleanup())
@@ -144,6 +155,24 @@ def create_app(service=None, coordinator_guard=True, accounts=None, receipt_secr
         if not service.touch(account[0]):
             raise invalid()
         return account
+
+    @app.get('/healthz', include_in_schema=False)
+    def health():
+        with service.sessions() as db:
+            db.execute(text('SELECT 1'))
+        return {'status': 'ok'}
+
+    @app.post('/account/delete', status_code=202)
+    def delete_account(body: DeleteAccount, request: Request,
+                       credentials: HTTPAuthorizationCredentials | None = Depends(bearer), accounts=Depends(auth)):
+        if not credentials:
+            raise invalid()
+        # A revoked, unexpired token may ONLY retry this password-confirmed endpoint
+        # while deletion is pending. All other endpoints reject it immediately.
+        identity, _ = accounts.resolve(credentials.credentials, allow_deleting=True)
+        accounts.throttle('reauth', client(request), str(identity))
+        with service.locks[identity]:
+            return accounts.request_deletion(identity, body.password)
 
     @app.post('/auth/signup', status_code=202)
     def signup(body: Credentials, request: Request, background: BackgroundTasks, accounts=Depends(auth)):
@@ -211,6 +240,8 @@ def create_app(service=None, coordinator_guard=True, accounts=None, receipt_secr
                idempotency_key: str | None = Header(default=None, min_length=1, max_length=128, pattern=r'^[A-Za-z0-9._:-]+$')):
         try:
             job_id, created = service.submit(account[0], body.topic, body.voiceover, idempotency_key, admission=True)
+        except AdmissionLimited as error:
+            raise HTTPException(429, str(error), headers={'Retry-After': str(error.retry_after)}) from None
         except Conflict as error:
             raise HTTPException(409, str(error)) from None
         if created:

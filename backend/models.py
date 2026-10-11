@@ -43,6 +43,7 @@ class User(Base):
     phone_number: Mapped[str] = mapped_column(String(32), nullable=False)
     password_hash: Mapped[str | None] = mapped_column(Text)
     phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     enrollment_hash: Mapped[str | None] = mapped_column(String(64))
     enrollment_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(

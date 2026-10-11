@@ -19,6 +19,10 @@ def validate_settings():
         raise RuntimeError('DATABASE_URL must use PostgreSQL with psycopg')
     if not re.fullmatch(r'[a-zA-Z0-9._-]+', os.environ['GEMINI_MODEL']):
         raise RuntimeError('Invalid GEMINI_MODEL')
+    for key in ('LESSON_REQUEST_LIMIT', 'LESSON_REQUEST_WINDOW_SECONDS', 'LESSON_ACCOUNT_JOB_LIMIT', 'LESSON_GLOBAL_JOB_LIMIT'):
+        value = os.environ.get(key, '1')
+        if not value.isdigit() or int(value) < 1:
+            raise RuntimeError(key + ' must be a positive integer')
     url = urlsplit(os.environ['MESSAGING_URL'])
     if url.scheme not in ('http', 'https') or not url.hostname or url.username or url.query or url.fragment or url.path != '/video':
         raise RuntimeError('MESSAGING_URL must be the trusted service /video URL')
