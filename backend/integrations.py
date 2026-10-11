@@ -3,10 +3,9 @@ import base64
 import json
 import io
 import os
-import re
 import logging
 import time
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 
@@ -17,33 +16,21 @@ def request_json(url, payload=None, headers=None):
         return json.load(response)
 
 
-DEFAULT_GEMINI_MODELS = ('gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite')
-
-
-def gemini_policy(purpose):
-    """Resolve a bounded stage-specific chain independently of scope assessment."""
-    setting, thinking = {'code': ('GEMINI_CODE_MODELS', 'medium'),
-                         'video': ('GEMINI_VIDEO_MODELS', 'high')}[purpose]
-    models = tuple(model.strip() for model in
-                   os.environ.get(setting, ','.join(DEFAULT_GEMINI_MODELS)).split(','))
-    if (not 1 <= len(models) <= 3 or len(set(models)) != len(models)
-            or any(not re.fullmatch(r'[a-zA-Z0-9._-]+', model) for model in models)):
-        raise RuntimeError(setting + ' must contain 1–3 distinct, safe model IDs in priority order')
-    return models, thinking
-
-
-def _gemini_request(parts, model, generation_config, attempts):
+def gemini(prompt, video=None):
+    parts = [{"text": prompt}]
+    if video is not None:
+        parts.append({"inlineData": {"mimeType": "video/mp4", "data": base64.b64encode(video).decode()}})
     # Retry only Gemini's transient HTTP failures, never a messaging send.
-    for attempt in range(attempts):
+    for attempt in range(3):
         try:
             result = request_json(
-                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-                {"contents": [{"parts": parts}], "generationConfig": generation_config},
+                f"https://generativelanguage.googleapis.com/v1beta/models/{os.environ['GEMINI_MODEL']}:generateContent",
+                {"contents": [{"parts": parts}], "generationConfig": {"responseMimeType": "application/json"}},
                 {"x-goog-api-key": os.environ["GEMINI_API_KEY"]},
             )
-            return result
+            break
         except HTTPError as error:
-            if error.code not in (429, 500, 502, 503, 504) or attempt == attempts - 1:
+            if error.code not in (429, 500, 502, 503, 504) or attempt == 2:
                 raise
             status = error.code
             delay = 2 ** attempt
@@ -77,37 +64,9 @@ def _gemini_request(parts, model, generation_config, attempts):
             error.close()
             logging.getLogger(__name__).warning('Gemini HTTP %s; retry %s/2', status, attempt + 1)
             time.sleep(delay)
-
-
-def gemini(prompt, video=None, *, purpose=None):
-    parts = [{"text": prompt}]
-    if video is not None:
-        parts.append({"inlineData": {"mimeType": "video/mp4", "data": base64.b64encode(video).decode()}})
-    generation_config = {"responseMimeType": "application/json"}
-    if purpose is None:
-        # Preserve the existing scope model and its bounded same-model retry policy.
-        result = _gemini_request(parts, os.environ['GEMINI_MODEL'], generation_config, attempts=3)
-    else:
-        models, thinking = gemini_policy(purpose)
-        generation_config['thinkingConfig'] = {'thinkingLevel': thinking}
-        for index, model in enumerate(models):
-            try:
-                # Bound the chain to three calls; the worker retains its overall deadline.
-                result = _gemini_request(parts, model, generation_config, attempts=1)
-                break
-            except (HTTPError, URLError, TimeoutError, ConnectionError) as error:
-                if ((isinstance(error, HTTPError) and error.code not in (404, 429, 500, 502, 503, 504))
-                        or index == len(models) - 1):
-                    raise
-                logging.getLogger(__name__).warning('Gemini %s model %s failed (%s); falling back to %s',
-                    purpose, model, error.code if isinstance(error, HTTPError) else type(error).__name__,
-                    models[index + 1])
-                if isinstance(error, HTTPError):
-                    error.close()
     if not isinstance(result, dict) or result.get("promptFeedback", {}).get("blockReason"):
         raise ValueError("Invalid Gemini response")
-    parsed = json.loads("".join(p.get("text", "") for p in result["candidates"][0]["content"]["parts"]
-                               if not p.get('thought')))
+    parsed = json.loads("".join(p.get("text", "") for p in result["candidates"][0]["content"]["parts"]))
     # Some models return one JSON object wrapped in a singleton array.
     if isinstance(parsed, list) and len(parsed) == 1 and isinstance(parsed[0], dict):
         parsed = parsed[0]
@@ -139,7 +98,7 @@ class Integrations:
                      if voiceover else '')
         result = gemini('Evaluate this actual video against the original intent: ' + json.dumps(intent) +
                         '. Check accuracy, visual defects and inconsistencies. Return JSON booleans '
-                        'accurate, defect_free, consistent; and findings (string).' + narration, video, purpose='video')
+                        'accurate, defect_free, consistent; and findings (string).' + narration, video)
         keys = ("accurate", "defect_free", "consistent") + (("narration_accurate", "narration_intelligible", "narration_consistent") if voiceover else ())
         if any(type(result.get(k)) is not bool for k in keys) or not isinstance(result.get("findings"), str):
             raise ValueError("Invalid evaluation")

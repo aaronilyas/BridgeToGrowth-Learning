@@ -3,7 +3,7 @@ import io
 import json
 import unittest
 from unittest.mock import patch
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 
 from backend.integrations import Integrations, gemini
 
@@ -81,7 +81,6 @@ class IntegrationTests(unittest.TestCase):
             with patch('backend.integrations.gemini', return_value=result) as gemini:
                 self.assertFalse(Integrations().evaluate('original intent', b'actual video')['approved'])
                 self.assertEqual(gemini.call_args.args[1], b'actual video')
-                self.assertEqual(gemini.call_args.kwargs, {'purpose': 'video'})
                 self.assertIn('original intent', gemini.call_args.args[0])
         with patch('backend.integrations.gemini', return_value={'accurate': 'true'}):
             with self.assertRaises(ValueError):
@@ -114,112 +113,3 @@ class IntegrationTests(unittest.TestCase):
             with patch('backend.integrations.gemini', return_value=bad):
                 with self.assertRaises(ValueError):
                     Integrations().evaluate('intent', b'video', voiceover=True)
-
-
-class GeminiFallbackTests(unittest.TestCase):
-    def setUp(self):
-        environment = patch.dict('os.environ', {'GEMINI_API_KEY': 'private-test-key',
-                                                'GEMINI_MODEL': 'scope-model'}, clear=True)
-        environment.start()
-        self.addCleanup(environment.stop)
-        self.response = {'candidates': [{'content': {'parts': [{'text': '{"ok":true}'}]}}]}
-
-    def error(self, status, body=b'private provider response'):
-        return HTTPError('https://example.test', status, 'failed', {}, io.BytesIO(body))
-
-    def models(self, request):
-        return [call.args[0].split('/models/')[1].split(':')[0] for call in request.call_args_list]
-
-    def test_primary_and_both_fallbacks_preserve_stage_reasoning_and_input(self):
-        for purpose, thinking, video in (('code', 'medium', None), ('video', 'high', b'actual video')):
-            with self.subTest(purpose=purpose), \
-                    patch('backend.integrations.request_json', side_effect=[self.error(503), self.error(429), self.response]) as request, \
-                    patch('backend.integrations.time.sleep') as sleep:
-                self.assertEqual(gemini('original intent', video, purpose=purpose), {'ok': True})
-                self.assertEqual(self.models(request), ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'])
-                for call in request.call_args_list:
-                    self.assertEqual(call.args[1]['generationConfig'], {'responseMimeType': 'application/json',
-                        'thinkingConfig': {'thinkingLevel': thinking}})
-                    self.assertEqual(call.args[1]['contents'], request.call_args_list[0].args[1]['contents'])
-                parts = request.call_args.args[1]['contents'][0]['parts']
-                self.assertEqual(parts[0], {'text': 'original intent'})
-                if video:
-                    self.assertEqual(parts[1]['inlineData']['mimeType'], 'video/mp4')
-                    self.assertEqual(parts[1]['inlineData']['data'], 'YWN0dWFsIHZpZGVv')
-                sleep.assert_not_called()
-
-    def test_successful_primary_stops_without_using_fallbacks(self):
-        with patch('backend.integrations.request_json', return_value=self.response) as request:
-            gemini('prompt', purpose='code')
-            self.assertEqual(self.models(request), ['gemini-3.8-flash'])
-
-    def test_model_availability_quota_transient_and_connection_failures_fall_back(self):
-        errors = [self.error(status) for status in (404, 429, 500, 502, 503, 504)]
-        errors += [URLError('private connection details'), TimeoutError(), ConnectionError()]
-        daily_quota = json.dumps({'error': {'details': [
-            {'@type': 'type.googleapis.com/google.rpc.QuotaFailure',
-             'violations': [{'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier'}]},
-            {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '38785s'}]}}).encode()
-        errors.append(self.error(429, daily_quota))
-        for error in errors:
-            with self.subTest(error=type(error).__name__, status=getattr(error, 'code', None)), \
-                    patch('backend.integrations.request_json', side_effect=[error, self.response]) as request, \
-                    patch('backend.integrations.time.sleep') as sleep, \
-                    self.assertLogs('backend.integrations', level='WARNING') as logs:
-                self.assertEqual(gemini('prompt', purpose='code'), {'ok': True})
-                self.assertEqual(self.models(request), ['gemini-3.8-flash', 'gemini-3.5-flash'])
-                sleep.assert_not_called()
-                self.assertNotIn('private', ''.join(logs.output))
-
-    def test_exhausted_chain_preserves_final_error_body(self):
-        final = self.error(503)
-        with patch('backend.integrations.request_json', side_effect=[self.error(503), self.error(503), final]) as request:
-            with self.assertRaises(HTTPError) as outcome:
-                gemini('prompt', purpose='video')
-            self.assertEqual(request.call_count, 3)
-            self.assertIs(outcome.exception, final)
-            self.assertEqual(outcome.exception.read(), b'private provider response')
-
-    def test_permanent_request_errors_do_not_fall_back(self):
-        for status in (400, 401, 403):
-            with self.subTest(status=status), patch('backend.integrations.request_json', side_effect=self.error(status)) as request:
-                with self.assertRaises(HTTPError):
-                    gemini('prompt', purpose='code')
-                self.assertEqual(request.call_count, 1)
-
-    def test_blocked_or_malformed_results_do_not_fall_back(self):
-        responses = [{'promptFeedback': {'blockReason': 'SAFETY'}},
-                     {'candidates': [{'content': {'parts': [{'text': 'invalid json'}]}}]}]
-        for response in responses:
-            with self.subTest(response=response), patch('backend.integrations.request_json', return_value=response) as request:
-                with self.assertRaises(ValueError):
-                    gemini('prompt', purpose='video')
-                self.assertEqual(request.call_count, 1)
-
-    def test_rejected_video_does_not_try_another_evaluator(self):
-        result = dict(accurate=False, defect_free=True, consistent=True, findings='incorrect explanation')
-        self.response['candidates'][0]['content']['parts'][0]['text'] = json.dumps(result)
-        with patch('backend.integrations.request_json', return_value=self.response) as request:
-            self.assertFalse(Integrations().evaluate('intent', b'actual video')['approved'])
-            self.assertEqual(request.call_count, 1)
-            self.assertEqual(request.call_args.args[1]['generationConfig']['thinkingConfig']['thinkingLevel'], 'high')
-
-    def test_scope_assessment_keeps_existing_model_without_stage_reasoning(self):
-        with patch('backend.integrations.request_json', return_value=self.response) as request:
-            gemini('scope prompt')
-            self.assertEqual(self.models(request), ['scope-model'])
-            self.assertEqual(request.call_args.args[1]['generationConfig'], {'responseMimeType': 'application/json'})
-
-    def test_stage_overrides_are_independent_and_keep_reasoning(self):
-        with patch.dict('os.environ', {'GEMINI_CODE_MODELS': 'custom-code, custom-backup', 'GEMINI_VIDEO_MODELS': 'custom-video'}), \
-                patch('backend.integrations.request_json', side_effect=[self.error(404), self.response, self.response]) as request:
-            gemini('code', purpose='code')
-            gemini('review', b'video', purpose='video')
-            self.assertEqual(self.models(request), ['custom-code', 'custom-backup', 'custom-video'])
-            self.assertEqual([call.args[1]['generationConfig']['thinkingConfig']['thinkingLevel']
-                              for call in request.call_args_list], ['medium', 'medium', 'high'])
-
-    def test_thought_parts_are_excluded_from_json_parsing(self):
-        self.response['candidates'][0]['content']['parts'].insert(0, {'thought': True, 'text': 'private reasoning'})
-        with patch('backend.integrations.request_json', return_value=self.response):
-            self.assertEqual(gemini('prompt', purpose='code'), {'ok': True})

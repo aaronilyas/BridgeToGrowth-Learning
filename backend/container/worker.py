@@ -118,7 +118,7 @@ def main():
                         'and separated from other objects. Return JSON with code (string). '
                         'Use Manim Voiceover with GTTSService when '
                         'voiceover is enabled. Voiceover enabled: ' + str(payload['voiceover']) +
-                        '. Original intent: ' + json.dumps(payload['intent']), purpose='code')
+                        '. Original intent: ' + json.dumps(payload['intent']))
         if not isinstance(result.get('code'), str) or not result['code'].strip():
             raise ValueError('Invalid generated code')
         (root / 'lesson.py').write_text(result['code'])

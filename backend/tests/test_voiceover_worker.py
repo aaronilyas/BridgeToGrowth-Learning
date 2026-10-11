@@ -52,9 +52,8 @@ class VoiceoverWorkerTests(unittest.TestCase):
 
     def generate(self, voiceover):
         # The placeholder is never executed; run() is replaced in every host render test.
-        with patch.object(worker, 'gemini', return_value={'code': '# never executed'}) as generate:
+        with patch.object(worker, 'gemini', return_value={'code': '# never executed'}):
             self.command('generate', {'intent': 'Explain gravity', 'voiceover': voiceover})
-            self.assertEqual(generate.call_args.kwargs, {'purpose': 'code'})
 
     def render(self, streams, duration='90', probe_error=None):
         candidate = self.root / 'media/videos/lesson/480p15/Lesson.mp4'

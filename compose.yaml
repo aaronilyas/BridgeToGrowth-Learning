@@ -63,8 +63,6 @@ services:
       RENDERER_EGRESS_IMAGE: ${RENDERER_EGRESS_IMAGE:-btg-egress:local}
       GEMINI_API_KEY: ${GEMINI_API_KEY:?Set GEMINI_API_KEY in deployment/.env}
       GEMINI_MODEL: ${GEMINI_MODEL:?Set GEMINI_MODEL in deployment/.env}
-      GEMINI_CODE_MODELS: ${GEMINI_CODE_MODELS-gemini-3.8-flash,gemini-3.5-flash,gemini-3.1-flash-lite}
-      GEMINI_VIDEO_MODELS: ${GEMINI_VIDEO_MODELS-gemini-3.8-flash,gemini-3.5-flash,gemini-3.1-flash-lite}
       MESSAGING_URL: http://messaging:3001/video
       MESSAGING_TOKEN: ${MESSAGING_TOKEN:?Set MESSAGING_TOKEN in deployment/.env}
       USER_CONTAINER_IMAGE: ${USER_CONTAINER_IMAGE:-btg-renderer:local}

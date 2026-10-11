@@ -118,7 +118,7 @@ class FixtureRuntime(DockerRuntime):
 sys.path.insert(0, '/opt')
 import worker
 payload = json.load(sys.stdin)
-worker.gemini = lambda prompt, **kwargs: {'code': payload['code']}
+worker.gemini = lambda prompt: {'code': payload['code']}
 sys.stdin = io.StringIO(json.dumps(payload['request']))
 sys.argv = ['worker.py', 'generate', payload['job']]
 print(json.dumps(worker.main()))

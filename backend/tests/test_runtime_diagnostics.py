@@ -10,17 +10,6 @@ from backend.runtime import DockerRuntime
 
 
 class RuntimeDiagnosticTests(unittest.TestCase):
-    def test_generation_forwards_code_policy_only_to_trusted_worker(self):
-        for environment, expected in (({}, 'gemini-3.8-flash,gemini-3.5-flash,gemini-3.1-flash-lite'),
-                                      ({'GEMINI_CODE_MODELS': 'custom-code, backup'}, 'custom-code,backup')):
-            with self.subTest(environment=environment), patch.dict('os.environ', environment, clear=True), \
-                    patch.object(DockerRuntime, '_run', return_value=b'{}') as run:
-                DockerRuntime().command('btg-user-test', 'generate', uuid.uuid4())
-                self.assertIn('GEMINI_API_KEY', run.call_args.args)
-                self.assertIn('GEMINI_CODE_MODELS=' + expected, run.call_args.args)
-                DockerRuntime().command('btg-user-test', 'render', uuid.uuid4())
-                self.assertFalse(any(arg.startswith('GEMINI_') for arg in run.call_args.args))
-
     def test_failed_generation_records_only_bounded_stderr(self):
         identifier = uuid.uuid4()
         error = subprocess.CalledProcessError(1, ['docker'], output=b'never store video stdout',

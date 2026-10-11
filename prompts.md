@@ -58,12 +58,6 @@ Append this prompt to prompts.md in the human written prompts section
 
 Generate a start script for the backend and a stop script for the backend. After that append this prompt to the hand written prompt section of the prompts.md
 
-### Gemini defaults, reasoning levels, and fallback models
-
-**Origin: Human-written (not AI-generated).**
-
-Have the coding part default to 3.8 flash on medium reasoning and the video analysis part default to 3.8 flash on high reasoning, then setup two fall back models, with the second being gemini 3.5 flash same reasoning levels as previously discussed and the other being gemini 3.1 flash lite on the same reasoning levels mentioned originally
-
 ## AI-generated prompts
 
 ### BridgeToGrowth — Fully Automated macOS & Physical iPhone Testing Prerequisites

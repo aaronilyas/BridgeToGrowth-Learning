@@ -2,7 +2,6 @@
 import os
 import re
 from urllib.parse import urlsplit
-from .integrations import gemini_policy
 
 
 def validate_settings():
@@ -20,8 +19,6 @@ def validate_settings():
         raise RuntimeError('DATABASE_URL must use PostgreSQL with psycopg')
     if not re.fullmatch(r'[a-zA-Z0-9._-]+', os.environ['GEMINI_MODEL']):
         raise RuntimeError('Invalid GEMINI_MODEL')
-    for purpose in ('code', 'video'):
-        gemini_policy(purpose)
     url = urlsplit(os.environ['MESSAGING_URL'])
     if url.scheme not in ('http', 'https') or not url.hostname or url.username or url.query or url.fragment or url.path != '/video':
         raise RuntimeError('MESSAGING_URL must be the trusted service /video URL')
