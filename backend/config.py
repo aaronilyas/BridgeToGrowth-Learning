@@ -11,8 +11,8 @@ def validate_settings():
     if missing:
         raise RuntimeError('Missing required settings: ' + ', '.join(missing))
     for key in ('AUTH_CODE_SECRET', 'RECEIPT_SECRET', 'MESSAGING_TOKEN'):
-        if len(os.environ[key]) < 32:
-            raise RuntimeError(key + ' must contain at least 32 characters')
+        if len(os.environ[key]) < 32 or len(set(os.environ[key])) < 10:
+            raise RuntimeError(key + ' must contain at least 32 varied random characters')
     if len({os.environ[k] for k in ('AUTH_CODE_SECRET', 'RECEIPT_SECRET', 'MESSAGING_TOKEN')}) != 3:
         raise RuntimeError('Account, receipt and messaging secrets must be distinct')
     if not os.environ['DATABASE_URL'].startswith('postgresql+psycopg://'):

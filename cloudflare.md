@@ -1,152 +1,128 @@
-# Standalone Cloudflare Tunnel
+# Existing Cloudflare Tunnel
 
-Run a locally managed named tunnel with a host-installed `cloudflared`. This
-setup works independently of Docker Compose and forwards only the existing API
-paths to an operator-selected origin. It does not start the API or its services.
+This deployment reuses the existing host connector, domain
+`bridgetogrowth-learning.com`, and origin `http://127.0.0.1:8000`.
+The public API origin is `https://bridgetogrowth-learning.com`. No `api.*`
+hostname, new tunnel, DNS record, connector login, credential rotation or Docker
+connector is required. The root `.env` is the single backend configuration source.
 
-## Prerequisites and private origin
+## Operator prerequisites for external mode
 
-Install `cloudflared` using Cloudflare's
-[installation guide](https://developers.cloudflare.com/tunnel/features/locally-managed-tunnels/create-local-tunnel/).
-On macOS, `brew install cloudflared` is sufficient. Use a Cloudflare account
-with a DNS zone you control and permission to create a tunnel and DNS record.
+Keep the backend stopped on port 8000 while reviewing the route. Set:
 
-Start the backend according to [backend/README.md](backend/README.md), including
-its environment settings. For a host API, explicitly bind to loopback:
-
-```sh
-.venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000 --workers 1
+```dotenv
+CLOUDFLARE_ENABLED=true
+CLOUDFLARE_TUNNEL_MODE=external
+CLOUDFLARE_HOSTNAME=bridgetogrowth-learning.com
+CLOUDFLARE_TUNNEL_ID=<existing tunnel UUID>
+CLOUDFLARE_ACCOUNT_ID=<account ID>
+CLOUDFLARE_ZONE_ID=<zone ID>
+CLOUDFLARE_API_TOKEN=<scoped read-only API token>
+API_PORT=8000
+LOCAL_API_PORT=18000
 ```
 
-Choose `API_ORIGIN` relative to the machine running `cloudflared`: for that
-example it is `http://127.0.0.1:8000`. A different port or an HTTPS origin is
-supported. Use a base HTTP(S) URL with no path, query, or embedded credentials,
-pointing directly to FastAPI rather than a proxy that also serves private
-services. HTTPS origins need a certificate trusted by the connector; keep TLS
-verification enabled. If the API is already containerized, provide a reachable
-private origin, such as a port published only on the connector host's loopback.
-No Compose service names, files, or networks are assumed here.
+External mode needs inspection access, **not provisioning/connector credentials**.
+Create a scoped user API token with Account Cloudflare Tunnel Read, Account
+Rulesets Read, Workers Scripts Read (for Worker custom domains), and Zone Read,
+DNS Read, Zone Settings Read, Page Rules Read, Workers Routes Read and Cache
+Rules Read (permission names can appear as Cache Settings Read). Scope it to
+this account/zone. Missing/denied inspections fail readiness before starting the
+origin. Token verification alone does not establish these permissions.
+The operator makes GET requests only in external mode and never fetches a
+connector token or adopts remote resources.
 
-Do not publish PostgreSQL, the Node messaging service, Docker control ports, or
-renderer ports publicly. Keep their listeners on loopback or a private network
-with firewall rules restricting callers. Do not give the connector a Docker
-socket, user-container files, or renderer mounts. The tunnel's route restriction
-does not secure ports independently exposed by the host. The existing backend
-continues to own authentication, isolated rendering, temporary video cleanup,
-and the 25-minute idle-container policy.
+For a remotely configured existing tunnel, the loaded ingress must be exactly
+these two rules (use the `path` verbatim from
+[deployment/cloudflare.py](deployment/cloudflare.py), or the reference below):
 
-## Provision and configure
-
-Run these commands as the operator who owns the Cloudflare zone, replacing
-`<TUNNEL_NAME>` with your chosen name:
-
-```sh
-cloudflared tunnel login
-cloudflared tunnel create '<TUNNEL_NAME>'
+```yaml
+ingress:
+  - hostname: bridgetogrowth-learning.com
+    path: '^/(auth/(signup|verify|login|refresh|logout|logout-all|recovery|reset|resend|enrollment|enrollment/verify)/?|account(/phone(/verify)?|/delete)?/?|lessons/?|lessons/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(/cancel)?/?)$'
+    service: http://127.0.0.1:8000
+  - service: http_status:404
 ```
 
-Keep the returned UUID and JSON credentials path. Login creates an account
-management certificate (`cert.pem`); the connector runtime needs the tunnel's
-JSON credentials, not that account certificate. Keep both outside the checkout
-and restrict access to their owner. Never commit them or copy them into user
-containers.
+Operator action, if this differs: edit only the existing tunnel's ingress under
+its established owner's control, preserve its origin/DNS/credentials, restrict
+the path, and retain the final 404. Review any shared routes rather than removing
+unrelated routes automatically. No global/per-route origin overrides are accepted.
+All connected replicas must report the current configuration version before
+port 8000 opens. An offline or stale external connector fails readiness; its
+owner must inspect its logs and restore connectivity. Startup never launches a
+replacement connector. A locally configured connector cannot be verified through
+the remote configurations API; automatic production startup fails clearly.
+Its owner must validate the actual loaded local ingress against
+[config.example.yml](deploy/cloudflare/config.example.yml) and establish a
+reviewable verification method; private staging remains available. Do not switch
+connector ownership or migrate it merely to bypass this failure.
 
-From this worktree's root, copy the template to a dedicated local configuration:
+Only auth, account (including `POST /account/delete`), lesson submission/status
+and cancellation paths reach FastAPI. `/internal/receipts`, `/video`,
+`/verification`, `/docs`, `/redoc`, `/openapi.json`, `/healthz`, Docker and renderer
+interfaces stay private. No public provider webhook is needed.
 
-```sh
-mkdir -p "$HOME/.cloudflared"
-chmod 700 "$HOME/.cloudflared"
-cp deploy/cloudflare/config.example.yml "$HOME/.cloudflared/btg-api.yml"
-chmod 600 "$HOME/.cloudflared/btg-api.yml"
-```
+## Cache and routing policy
 
-Edit `btg-api.yml` and replace these literal placeholders. YAML does not expand
-shell variables here, so the credentials path must be absolute, with no `~`.
+Create one enabled Cache Rule with expression
+`(http.host eq "bridgetogrowth-learning.com")`, action `set_cache_settings`, and
+parameters `{"cache":false}`. Operator action: review/remove or explicitly exclude
+this hostname from conflicting Page Rules, Worker routes/custom domains, cache
+eligibility/TTL overrides, account cache policies, cache response rules,
+header/URL transformations, origin rules, redirects and snippets. Do not edit
+unrelated policies. The automated inspector intentionally fails on policies whose
+expressions it cannot prove safe (only simple `http.host eq`/`ne` or
+`not (http.host eq ...)` exclusions are recognized); it does not claim arbitrary edge rules are safe.
+Page Rule/Worker matching considers the entire hostname regardless of path,
+including `/auth`, `/lessons`, `/account/delete`, private paths and query patterns.
 
-- `<TUNNEL_UUID>`: UUID returned when creating your tunnel.
-- `<ABSOLUTE_TUNNEL_CREDENTIALS_JSON_PATH>`: path to that tunnel's JSON file.
-- `<PUBLIC_API_HOSTNAME>`: chosen hostname in your zone, without a scheme or path.
-- `<API_ORIGIN>`: reachable private API base URL described above.
+FastAPI sends `Cache-Control: no-store` on all responses. Public readiness also
+requires unauthenticated account/lesson responses to be 401, `no-store`,
+`CF-Cache-Status: DYNAMIC` or `BYPASS`, and no `Age`; private-route probes must be
+404. These probes supplement configuration evidence and do not prove every
+possible request is safe. Remote changes after verification require another
+operator review/startup. Maintain change control on this hostname's policies.
 
-Restrict the credentials file to its owner with `chmod 600`. The template exposes the documented `/auth/*` endpoints, `/account`,
-`/account/phone`, `/account/phone/verify`, `/lessons`, `/lessons/<UUID>` and
-`/lessons/<UUID>/cancel` (also with trailing slashes).
-All other paths and hostnames return 404, including `/video`, `/verification`, `/internal/receipts`, `/docs`, `/redoc`,
-and `/openapi.json`. HTTP methods and bearer-session validation remain the API's
-responsibility. Path matching does not grant authorization.
+API behavior was checked against current official documentation:
+[ordered ingress, regex paths and catch-all](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/local-management/configuration-file/),
+[cache action and phase](https://developers.cloudflare.com/cache/how-to/cache-rules/create-api/),
+[Worker routes](https://developers.cloudflare.com/api/resources/workers/subresources/routes/methods/list/),
+[tunnel configurations](https://developers.cloudflare.com/api/resources/zero_trust/subresources/tunnels/subresources/cloudflared/subresources/configurations/methods/get/),
+[connector config versions](https://developers.cloudflare.com/api/resources/zero_trust/subresources/tunnels/subresources/cloudflared/subresources/connections/methods/get/).
+Whole-ruleset replacement can delete unrelated rules; this operator never does it.
 
-## Validate, route DNS, and start
-
-Validate the edited file before provisioning DNS:
-
-```sh
-cloudflared tunnel --config "$HOME/.cloudflared/btg-api.yml" ingress validate
-cloudflared tunnel --config "$HOME/.cloudflared/btg-api.yml" ingress rule 'https://<PUBLIC_API_HOSTNAME>/lessons'
-cloudflared tunnel --config "$HOME/.cloudflared/btg-api.yml" ingress rule 'https://<PUBLIC_API_HOSTNAME>/video'
-```
-
-After replacing the hostname in those commands, `/lessons` must select rule 0
-and `/video` must select the final 404 rule. Check `/docs` and a different
-hostname as well. These commands check configuration only, without connecting
-to Cloudflare or requiring a running API.
-
-Create the DNS route and start the foreground connector:
-
-```sh
-cloudflared tunnel route dns '<TUNNEL_UUID>' '<PUBLIC_API_HOSTNAME>'
-sh deploy/cloudflare/start.sh "$HOME/.cloudflared/btg-api.yml"
-```
-
-The script validates ingress and then runs the named tunnel. It accepts an
-absolute configuration path and requires no additional packages. Use Ctrl-C to
-stop only the connector; backend jobs and user containers continue normally.
-For unattended operation, supervise this same command as a dedicated user with
-read access to its configuration and tunnel credentials. Metrics bind only to
-`127.0.0.1:20241`; choose another loopback port if occupied.
-
-## Verify and troubleshoot
-
-From a separate machine, with your configured hostname:
+## Start, stop and private staging
 
 ```sh
-curl -i 'https://<PUBLIC_API_HOSTNAME>/lessons/00000000-0000-0000-0000-000000000000'
-curl -i 'https://<PUBLIC_API_HOSTNAME>/video'
-curl -i 'https://<PUBLIC_API_HOSTNAME>/docs'
+./start-backend.sh
+./stop-backend.sh
+# After stopping the public backend, private staging on LOCAL_API_PORT:
+./start-backend.sh --local-only
+./stop-backend.sh
 ```
 
-The first request should be rejected by API authentication (currently HTTP 401);
-the others should return the tunnel's 404. Use the backend signup/verification/login flow to obtain an access bearer for
-account retrieval and lesson polling. Full mobile integration is deferred until
-the frontend is ready; see [mobile token expectations](backend/AUTHENTICATION.md). Do not put real
-tokens in committed examples. Configure Cloudflare cache rules to bypass
-caching for this API hostname, so user-specific status responses stay private.
-Cloudflare Access, if desired, needs a separately agreed mobile authentication
-flow; no Access policy or production hostname is assumed by this setup.
+Local service health, public HTTPS readiness and external connector status are
+reported separately. Backend shutdown leaves the external connector running;
+it does not claim to stop it. `--local-only` and `CLOUDFLARE_ENABLED=false` select
+loopback port 18000 by default, **never 8000**. The existing port-8000 route cannot
+reach that backend. Reserve the staging port for local use: do not configure
+another tunnel/proxy/port forward to it. Stop before switching modes; running
+port/configuration mismatches fail instead of silently keeping the public origin.
+A host administrator can always change forwarding, so this is isolation from the
+specified existing route, not protection against the host administrator.
 
-For a 502, check origin reachability from the connector host and the configured
-scheme/port. For an unavailable tunnel, check the connector process, credentials,
-and DNS route. Ensure outbound connector traffic is allowed per Cloudflare's
-network requirements; no inbound forwarding to service ports is needed.
+## Optional managed mode for other deployments
 
-Cloudflare's [configuration reference](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/local-management/configuration-file/)
-documents ordered ingress rules, path matching, and the final catch-all.
-Live DNS, credentials, firewall policy, and the final deployment topology must
-be supplied by the operator before an end-to-end connectivity check.
-
-## Compose origin
-
-For [the Compose stack](compose.md), run `cloudflared` directly on the Docker
-host and set `<API_ORIGIN>` to `http://127.0.0.1:8000` (or the selected `API_PORT`).
-Compose publishes only this loopback coordinator port. PostgreSQL and messaging
-have no published ports; Docker control is a private Unix socket mounted only
-in the coordinator. Use the template's path allowlist and 404 fallback. Do not
-run the connector in a normal bridge container pointed at `127.0.0.1`: that
-address would refer to the connector container itself.
-
-`backend/tests/run_acceptance.py` verifies these rules with synthetic config
-and a real disposable coordinator bound to loopback; no tunnel or DNS is created.
-
-The receipt consumer uses the authenticated Spectrum cloud stream and a private
-Node-to-coordinator HMAC callback. No provider callback needs public exposure.
-Never broaden the tunnel allowlist to `/internal/receipts` or Node verification
-transport. Auth and account routes must bypass Cloudflare caching.
+`CLOUDFLARE_TUNNEL_MODE=managed` retains the existing owned remote-tunnel/DNS/cache
+provisioner and Compose connector. **Do not use it for this existing host route.**
+It requires Tunnel Edit, DNS Edit, Cache Rules Edit plus the inspection permissions
+above. First provisioning requires unused tunnel name and DNS hostname; resources
+are never adopted without saved ownership IDs. Apex hostnames are supported, but
+an existing apex record is a conflict. Repeated startup checks saved identity and
+configuration and reuses owned remote resources. Only the owned hostname cache
+rule is appended; unrelated rules are not replaced. Lost creation responses or
+ownership conflicts require operator review/restoration, not blind retries.
+`.local/backend` is mode 0700; saved state, normalized Compose configuration and
+connector-token files are atomically written as 0600. Managed stop preserves
+remote tunnel, DNS, tokens and persistent volumes.

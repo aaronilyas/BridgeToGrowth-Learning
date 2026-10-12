@@ -6,7 +6,10 @@ recipient. Videos stay in request-local memory; no video files are written.
 
 ## Environment
 
-On a fresh checkout, copy `.env.example` to `.env` and configure:
+Backend deployment uses the single repository-root `.env` and
+[operator lifecycle](../../compose.md); do not create a second service secret file.
+Compose derives private transport/callback addresses and limits. Standalone
+transport development must supply these settings through its process manager:
 
 - `PROJECT_ID` and `PROJECT_SECRET`: Spectrum project credentials from the
   [Photon dashboard](https://app.photon.codes).
@@ -29,13 +32,12 @@ From `services/messaging/`:
 npm ci
 npm run typecheck
 npm run build
-npm start
 ```
 
 Node.js 22.6+ runs the compiled `dist/index.js` entry point. Node does not
 automatically load `.env`; supply environment variables through your process
-manager, Compose, or explicitly use `node --env-file=.env dist/index.js` as an
-operator. `npm run dev` builds and watches emitted JavaScript. Rebuild TypeScript with
+manager or Compose. `npm start` connects the configured service to Photon;
+use the root deployment operator for the deployed backend. `npm run dev` builds and watches emitted JavaScript. Rebuild TypeScript with
 `npm run build` after editing, or run `npm run build -- --watch` in another
 terminal. No TypeScript runtime loader is required. The service implements the authenticated Photon
 video endpoint. Shutdown finishes active
@@ -119,12 +121,23 @@ Receipt JSON is `{ "event_id": "<SDK event ID>", "message_id": "<outbound target
 uses `X-Receipt-Timestamp` (Unix seconds) and `X-Receipt-Signature` (hex HMAC-SHA256
 over `timestamp + "." + exact UTF-8 JSON bytes`). Node queues metadata atomically,
 retries backend outages every five seconds with a fresh signature and a ten-second
-request timeout, and removes an item only after 204. A 400/409 rejection is
+request timeout, and removes successfully acknowledged items after 204. A 400/409 rejection is
 quarantined as `.rejected` metadata and logged generically for operator review.
 A failed consumer or enqueue stops new service admission; callback failures
 retain queued metadata for retry. Never silently acknowledge
 receipt evidence that could not be recorded. Authentication and ownership checks
 remain in FastAPI. No public Photon webhook route is necessary.
+
+Spool JSON, interrupted `.tmp` writes and quarantined `.rejected` evidence expire
+at seven days from filesystem arrival time. Expiry runs before callback retries
+so a failing young callback cannot retain older files. Malformed JSON is
+quarantined and continues to expire. Processing outages extend retention until
+retry processing resumes. Account deletion cannot retract an accepted message;
+spool evidence can remain until acknowledgement or expiry. The coordinator
+discards late callbacks for removed recipients without surviving account/delivery
+records. Database account history and backup retention are documented in
+[account deletion](../../backend/AUTHENTICATION.md#admission-and-durable-account-deletion)
+and [backup/restore policy](../../compose.md).
 
 ## Provider contract evidence
 

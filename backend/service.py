@@ -4,8 +4,10 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import logging
+import math
 import os
 import threading
+import time
 import uuid
 
 from sqlalchemy import select, func, or_, delete
@@ -80,8 +82,13 @@ class Service:
             if db.scalar(select(func.count()).select_from(LessonJob).where(LessonJob.user_id == identity, unfinished)) >= self.account_job_limit:
                 raise AdmissionLimited('Account pending/active lesson limit reached', 30)
             window_start = self.clock() - timedelta(seconds=self.request_window)
-            if db.scalar(select(func.count()).select_from(LessonJob).where(LessonJob.user_id == identity, LessonJob.created_at > window_start)) >= self.request_limit:
-                raise AdmissionLimited('Account lesson request allowance reached', self.request_window)
+            requests = list(db.scalars(select(LessonJob.created_at).where(
+                LessonJob.user_id == identity, LessonJob.created_at > window_start).order_by(LessonJob.created_at)))
+            if len(requests) >= self.request_limit:
+                # Wait until enough of this rolling window expires, also if the limit was lowered.
+                expiry = utc(requests[len(requests) - self.request_limit]) + timedelta(seconds=self.request_window)
+                raise AdmissionLimited('Account lesson request allowance reached',
+                                       max(1, math.ceil((expiry - self.clock()).total_seconds())))
             job = LessonJob(user_id=identity, original_request=intent, status='queued', voiceover=voiceover, created_at=self.clock(),
                             idempotency_key=idempotency_key, request_hash=fingerprint)
             db.add(job)
@@ -363,6 +370,19 @@ class Service:
         self.recovering.discard(identity)
         self.finish_deletion(identity)
 
+    def drain(self):
+        """Uvicorn has stopped admissions and drained in-process background tasks.
+
+        Recovered renderer processes can outlive an interrupted coordinator. Wait
+        for their observed completion and cleanup too; never impose a kill deadline
+        or assume a failed runtime observation means the old process is gone.
+        """
+        while True:
+            self.reconcile()
+            if not self.recovering:
+                return
+            time.sleep(1)
+
     def finish_deletion(self, identity):
         """Caller owns execution + account lock. Remove runtime before personal rows.
 
@@ -400,7 +420,7 @@ class Service:
     def sweep(self):
         # Unmatched late receipt evidence is metadata only and expires after 7 days.
         with self.receipt_lock, self.sessions() as db:
-            db.execute(delete(ReceiptEvent).where(ReceiptEvent.received_at < self.clock() - timedelta(days=7)))
+            db.execute(delete(ReceiptEvent).where(ReceiptEvent.received_at <= self.clock() - timedelta(days=7)))
             db.commit()
         with self.sessions() as db:
             identities = list(db.scalars(select(UserContainer.user_id)))

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -50,4 +50,49 @@ test("receipt metadata survives a restart and retries failed callbacks without v
   };
   await second.flush();
   assert.equal((await readdir(directory)).length, 0);
+});
+
+
+test("spool JSON, interrupted writes and quarantined receipts expire at seven days", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "btg-expiry-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const arrived = new Date("2026-10-01T00:00:00Z");
+  let now = arrived.getTime() + 7 * 86400 * 1000 - 1;
+  const forwarder = new ReceiptForwarder(directory, "http://coordinator.test/internal/receipts",
+    "synthetic-receipt-secret-".repeat(2), () => now);
+  const names = ["a".repeat(64)+".json", "b".repeat(64)+".tmp", "c".repeat(64)+".json.rejected"];
+  for (const name of names) {
+    await writeFile(join(directory, name), JSON.stringify(readEvent(message, "dm")));
+    await utimes(join(directory, name), arrived, arrived);
+  }
+  const original = globalThis.fetch;
+  t.after(() => { globalThis.fetch = original; });
+  globalThis.fetch = async () => new Response(null, {status: 503});
+  await forwarder.flush();
+  assert.equal((await readdir(directory)).length, 3);
+  now += 1;
+  await forwarder.flush();
+  assert.equal((await readdir(directory)).length, 0);
+});
+
+test("failed young callbacks cannot block expiry and malformed files are quarantined", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "btg-spool-recovery-"));
+  t.after(() => rm(directory, {recursive:true,force:true}));
+  const now = new Date("2026-10-10T00:00:00Z").getTime();
+  const fresh = join(directory, "a".repeat(64)+".json");
+  const expired = join(directory, "b".repeat(64)+".tmp");
+  await writeFile(fresh, JSON.stringify(readEvent(message,"dm")));
+  await utimes(fresh,new Date(now),new Date(now));
+  await writeFile(expired,"interrupted");
+  await utimes(expired,new Date(now-7*86400*1000),new Date(now-7*86400*1000));
+  const original=globalThis.fetch;
+  t.after(()=>{globalThis.fetch=original;});
+  globalThis.fetch=async()=>new Response(null,{status:503});
+  const forwarder=new ReceiptForwarder(directory,"http://coordinator.test/internal/receipts","synthetic-receipt-secret-".repeat(2),()=>now);
+  await forwarder.flush();
+  assert.deepEqual(await readdir(directory),["a".repeat(64)+".json"]);
+  await writeFile(fresh,"{broken");
+  await utimes(fresh,new Date(now),new Date(now));
+  await forwarder.flush();
+  assert.deepEqual(await readdir(directory),["a".repeat(64)+".json.rejected"]);
 });

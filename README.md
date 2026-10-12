@@ -52,6 +52,28 @@ BridgeToGrowth-Learning is organized around a React Native mobile app and a Fast
 
 A major part of the backend is the use of two Gemini API instances for different purposes: one for generating the Manim animation and another for analyzing the resulting video and providing feedback when changes are needed. This process takes place alongside the Docker-based rendering environment, with Photon being used primarily for getting the completed animation to the user.
 
+## Backend deployment
+
+Use the single root `.env` and [deployment lifecycle](compose.md). This machine's
+existing host Cloudflare Tunnel forwards `https://bridgetogrowth-learning.com`
+to `http://127.0.0.1:8000`; [external-tunnel mode](cloudflare.md) verifies ingress
+and cache prerequisites without creating DNS/tunnels or managing its connector.
+
+```sh
+test -e .env || cp .env.example .env
+chmod 600 .env
+# Fill required secrets and existing Cloudflare inspection IDs/token locally.
+./start-backend.sh
+./stop-backend.sh
+# Private staging after stopping: ./start-backend.sh --local-only
+```
+
+Keep this host awake and online. Existing databases need backup and only missing
+migrations (including 003); startup never automatically upgrades them. Admission
+limits and password-confirmed durable account deletion are backend-owned; see
+[API contracts](backend/AUTHENTICATION.md) and [verification](backend/tests/README.md).
+Mobile deletion integration remains a later frontend change.
+
 ## AI Assistance and Project Ownership
 
 This README was generated with the assistance of **OpenAI's ChatGPT**, based on my own product pitch and high-level overview of how the application works.

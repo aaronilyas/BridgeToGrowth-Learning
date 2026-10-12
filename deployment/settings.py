@@ -9,7 +9,9 @@ class DeploymentError(RuntimeError):
 
 DEFAULTS = dict(API_PORT='8000', GEMINI_MODEL='gemini-2.5-flash', USER_CONTAINER_IMAGE='btg-renderer:local',
                 RENDERER_EGRESS_IMAGE='btg-egress:local', DOCKER_SOCKET_PATH='/var/run/docker.sock',
-                CLOUDFLARE_ENABLED='true', CLOUDFLARE_TUNNEL_NAME='btg-learning-api',
+                CLOUDFLARE_ENABLED='true', CLOUDFLARE_TUNNEL_MODE='external',
+                CLOUDFLARE_HOSTNAME='bridgetogrowth-learning.com', LOCAL_API_PORT='18000',
+                CLOUDFLARE_TUNNEL_NAME='btg-learning-api',
                 LESSON_REQUEST_LIMIT='10', LESSON_REQUEST_WINDOW_SECONDS='86400',
                 LESSON_ACCOUNT_JOB_LIMIT='2', LESSON_GLOBAL_JOB_LIMIT='8')
 SECRETS = ('AUTH_CODE_SECRET', 'RECEIPT_SECRET', 'MESSAGING_TOKEN')
@@ -57,15 +59,15 @@ def validate(values, local_only=False):
         value = values[key]
         if len(value) < 32 or len(set(value)) < 10 or any(word in value.lower() for word in ('replace-with', 'changeme', 'your-secret')):
             raise DeploymentError(f'{key} must be an independently generated random secret (openssl rand -hex 32).')
-    if len({values[key] for key in SECRETS}) != 3:
-        raise DeploymentError('AUTH_CODE_SECRET, RECEIPT_SECRET and MESSAGING_TOKEN must be distinct.')
-    if len(values['POSTGRES_PASSWORD']) < 20 or not re.fullmatch(r'[A-Za-z0-9_-]+', values['POSTGRES_PASSWORD']):
+    if len({values[key] for key in (*SECRETS, 'POSTGRES_PASSWORD')}) != 4:
+        raise DeploymentError('AUTH_CODE_SECRET, RECEIPT_SECRET, MESSAGING_TOKEN and POSTGRES_PASSWORD must be distinct.')
+    if len(values['POSTGRES_PASSWORD']) < 20 or len(set(values['POSTGRES_PASSWORD'])) < 10 or not re.fullmatch(r'[A-Za-z0-9_-]+', values['POSTGRES_PASSWORD']):
         raise DeploymentError('POSTGRES_PASSWORD must be at least 20 URL-safe characters; generate with openssl rand -hex 32.')
     if not re.fullmatch(r'[a-zA-Z0-9._-]+', values['GEMINI_MODEL']):
         raise DeploymentError('Invalid GEMINI_MODEL.')
-    for key in ('API_PORT', 'LESSON_REQUEST_LIMIT', 'LESSON_REQUEST_WINDOW_SECONDS', 'LESSON_ACCOUNT_JOB_LIMIT', 'LESSON_GLOBAL_JOB_LIMIT'):
-        if not values[key].isdigit() or int(values[key]) < 1 or (key == 'API_PORT' and int(values[key]) > 65535):
-            raise DeploymentError(f'{key} must be a positive integer' + (' <= 65535.' if key == 'API_PORT' else '.'))
+    for key in ('API_PORT', 'LOCAL_API_PORT', 'LESSON_REQUEST_LIMIT', 'LESSON_REQUEST_WINDOW_SECONDS', 'LESSON_ACCOUNT_JOB_LIMIT', 'LESSON_GLOBAL_JOB_LIMIT'):
+        if not values[key].isdigit() or int(values[key]) < 1 or (key in ('API_PORT', 'LOCAL_API_PORT') and int(values[key]) > 65535):
+            raise DeploymentError(f'{key} must be a positive integer' + (' <= 65535.' if key in ('API_PORT', 'LOCAL_API_PORT') else '.'))
     for key in ('USER_CONTAINER_IMAGE', 'RENDERER_EGRESS_IMAGE'):
         if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9./:_-]*', values[key]):
             raise DeploymentError(f'Invalid {key} image tag.')
@@ -73,14 +75,26 @@ def validate(values, local_only=False):
         raise DeploymentError('DOCKER_SOCKET_PATH must be an absolute daemon-side path.')
     if values['CLOUDFLARE_ENABLED'] not in ('true', 'false'):
         raise DeploymentError('CLOUDFLARE_ENABLED must be true or false.')
+    if values['CLOUDFLARE_TUNNEL_MODE'] not in ('external', 'managed'):
+        raise DeploymentError('CLOUDFLARE_TUNNEL_MODE must be external or managed.')
+    if values['API_PORT'] != '8000':
+        raise DeploymentError('API_PORT must be 8000 for the existing public origin; use LOCAL_API_PORT for private staging.')
+    if int(values['LOCAL_API_PORT']) == 8000:
+        raise DeploymentError('LOCAL_API_PORT must differ from 8000: the existing connector forwards to port 8000.')
     enabled = not local_only and values['CLOUDFLARE_ENABLED'] == 'true'
     if enabled:
         for key in ('CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_ZONE_ID'):
             if not re.fullmatch(r'[a-fA-F0-9]{32}', values.get(key, '')):
                 raise DeploymentError(f'{key} must be the 32-character Cloudflare identifier.')
         if not re.fullmatch(r'[A-Za-z0-9_-]{20,}', values.get('CLOUDFLARE_API_TOKEN', '')):
-            raise DeploymentError('CLOUDFLARE_API_TOKEN must be a populated scoped API token.')
-        if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}', values['CLOUDFLARE_TUNNEL_NAME']):
+            raise DeploymentError('Public prerequisites unavailable: set a scoped read-only CLOUDFLARE_API_TOKEN for external mode (see cloudflare.md); no backend will start on port 8000.')
+        if values['CLOUDFLARE_TUNNEL_MODE'] == 'external':
+            import uuid
+            try:
+                uuid.UUID(values.get('CLOUDFLARE_TUNNEL_ID', ''))
+            except ValueError:
+                raise DeploymentError('External mode requires the existing CLOUDFLARE_TUNNEL_ID; do not create a new tunnel.') from None
+        if values['CLOUDFLARE_TUNNEL_MODE'] == 'managed' and not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}', values['CLOUDFLARE_TUNNEL_NAME']):
             raise DeploymentError('Invalid CLOUDFLARE_TUNNEL_NAME.')
         hostname = values.get('CLOUDFLARE_HOSTNAME', '')
         if (hostname != hostname.lower() or len(hostname) > 253 or '.' not in hostname

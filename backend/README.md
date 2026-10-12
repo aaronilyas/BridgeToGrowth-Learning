@@ -155,14 +155,15 @@ least 32 characters and must be distinct random deployment secrets. Optional
 and support video input. Missing images, proxy initialization failure or legacy
 unrestricted containers fail closed before generated execution. Keep PostgreSQL,
 Node, Docker socket and receipt callbacks private. Use the credential-free
-[deployment example](../deployment/.env.example), [egress policy](../deployment/egress/README.md)
+[root configuration example](../.env.example), [egress policy](../deployment/egress/README.md)
 and [Cloudflare route allowlist](../cloudflare.md).
 
 ## Database upgrade
 
 Fresh databases use `schema.sql` only. Existing original databases require
-`001_delivery_acceptance.sql` then `002_owned_auth_and_recovery.sql`, each once;
-if 001 was already applied, run only 002. Drain/stop the coordinator, back up
+`001_delivery_acceptance.sql`, `002_owned_auth_and_recovery.sql`, then
+`003_account_deletion.sql`, each once; run only missing migrations. A database
+already at 002 needs only 003. Drain/stop the coordinator, back up
 PostgreSQL, and use `psql -v ON_ERROR_STOP=1`. These are transactional offline
 migrations, never automatic startup writes to a live database. Existing UUIDs,
 foreign keys, phone numbers and historical delivery metadata are preserved.
@@ -203,3 +204,15 @@ Later checklist:
   offline/resumed sessions, receipt UI and `delivery_unknown` without duplicate sends.
 - [ ] Controlled crash during rendering/evaluation/send and persisted cleanup
   recovery in the final deployed topology, using disposable test accounts.
+
+
+## Deployment and lifecycle security
+
+Use root `.env` and `./start-backend.sh` / `./stop-backend.sh` from the repository
+root; see [compose.md](../compose.md) for migration, backup/restore, logs, rotation
+and drain commands. [Existing-tunnel mode](../cloudflare.md) preserves the host
+connector and root public origin. Private staging uses a separate port, never
+8000. Local health is separate from public readiness and external connector status.
+See [admission/deletion/retention contracts](AUTHENTICATION.md#admission-and-durable-account-deletion)
+and [disposable verification](tests/README.md). No deployment startup automatically
+migrates production or accesses provider APIs for validation.

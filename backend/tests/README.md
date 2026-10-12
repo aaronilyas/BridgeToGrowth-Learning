@@ -75,3 +75,45 @@ includes actual phone onboarding, mobile secure token storage, provider quota an
 read-receipt availability, production proxy connectivity, DNS/TLS and controlled
 crash tests in the final deployed topology. Missing read receipts must remain
 unconfirmed; acceptance never proves receipt.
+
+
+## Deployment and account-lifecycle additions
+
+`test_deployment_operator.py` uses synthetic env, disposable state and injectable
+Docker/Cloudflare transports. It covers external read-only mode, owned managed
+provision/reuse, apex hostname, cache/Page Rule/Worker conflicts across all paths,
+connector config convergence, permission failure, no-origin-before-prerequisites,
+private-port staging, ownership/mode conflicts, token file modes/redaction and
+indefinite ordered/repeated stops with preserved data.
+`test_account_lifecycle.py` covers rolling admission windows, accurate Retry-After,
+matching idempotency without new dispatch, atomic cross-account capacity, failed
+cleanup, deletion credentials/retries/revocation, active drain/queued cancellation,
+busy interrupted recovery, removal failure/restart, late receipts/other-account
+isolation and Python receipt expiry. Node tests verify spool expiry at seven days.
+The exact 003 deletion migration is included in the PostgreSQL upgrade fixture.
+
+After building the current acceptance images above, run the disposable private
+operator exercise (no Cloudflare, Gemini or Photon access):
+
+```sh
+.venv/bin/python -m backend.tests.run_local_lifecycle
+```
+
+It uses a temporary checkout, unique Compose project, a free loopback staging
+port, real PostgreSQL/ASGI/Node services and explicit provider/runtime substitutes.
+It verifies start, running reuse, active-work drain before dependency shutdown,
+repeated stop and restart, retained account,
+session/job evidence, a synthetic receipt-spool marker and both persistent volumes. It excludes the host Docker
+socket. Builds are substituted with already-built acceptance images. Only its
+unique disposable project/volumes are removed after graceful stop; production
+operator stop never deletes volumes. This exercise supplements the actual renderer
+isolation tests in `run_acceptance`, which require Docker and cloudflared.
+
+
+The 2026-10-12 audit of the existing Photon SDK dependency chain reports 14 moderate npm audit
+findings through vulnerable OpenTelemetry Core baggage propagation. `npm audit
+--omit=dev` fails for these advisories; typechecking/tests/build do not resolve
+advisories. The suggested force fix includes a Spectrum downgrade incompatible
+with the installed 12.x API. Review a compatible upstream Photon telemetry upgrade
+or a separately tested dependency override; this work retains the existing SDK
+architecture and does not apply that breaking downgrade.

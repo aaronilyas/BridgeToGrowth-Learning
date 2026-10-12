@@ -103,6 +103,9 @@ class Operator:
     def start(self, local_only=False):
         values = load_env(self.root / '.env')
         enabled = validate(values, local_only)
+        managed = enabled and values['CLOUDFLARE_TUNNEL_MODE'] == 'managed'
+        if not enabled:
+            values['API_PORT'] = values['LOCAL_API_PORT']
         # Do not let inherited shell variables override the one configured root file.
         for key in values:
             self.env.pop(key, None)
@@ -119,22 +122,44 @@ class Operator:
         self.stage = 'port and Compose validation'
         if not existing.get('coordinator', {}).get('State', {}).get('Running'):
             with socket.socket() as test:
+                # Closed accepted connections can leave TIME_WAIT after graceful
+                # drain. Match normal listener reuse without allowing an active listener.
+                test.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 try:
                     test.bind(('127.0.0.1', int(values['API_PORT'])))
                 except OSError:
-                    raise DeploymentError('API_PORT is already in use; choose another loopback port in .env.') from None
+                    raise DeploymentError('Requested loopback port is already in use; stop its owner or choose another LOCAL_API_PORT for staging.') from None
         self.compose = ['docker','compose','--project-directory',str(self.root),'--env-file',str(self.state.directory / 'compose.env'), '-f', str(self.root / 'compose.yaml')]
-        if enabled:
+        if managed:
             self.compose += ['-f', str(self.root / 'compose.cloudflare.yaml')]
         self.command([*self.compose,'config','--quiet'], 'Compose validation')
         expanded = json.loads(self.command([*self.compose,'config','--format','json'], 'Compose configuration inspection'))
         for name, info in existing.items():
             if name == 'cloudflared' or not info['State']['Running']:
                 continue
+            if name == 'coordinator':
+                bindings = info.get('HostConfig', {}).get('PortBindings', {}).get('8000/tcp', [])
+                if bindings != [{'HostIp': '127.0.0.1', 'HostPort': values['API_PORT']}]:
+                    raise DeploymentError('Running coordinator port differs from requested mode. Run ./stop-backend.sh before changing public/private modes.')
             configured = expanded['services'][name].get('environment', {})
             current = dict(value.split('=',1) for value in info['Config'].get('Env',[]) if '=' in value)
             if any(str(value) != current.get(key) for key, value in configured.items()):
                 raise DeploymentError(f'Running {name} configuration differs from .env. Run ./stop-backend.sh before restarting with changed settings; database password changes require explicit SQL rotation.')
+        cf = None
+        if enabled:
+            self.stage = 'public routing/cache prerequisites'
+            print('Verifying full-hostname ingress, DNS and edge policy before new origin startup.', flush=True)
+            cf = Cloudflare(values, self.state)
+            try:
+                if managed:
+                    cf.provision()
+                else:
+                    cf.inspect_external()
+            except Exception:
+                # An already-running owned coordinator must also fail closed.
+                # Drain; never touch an external host connector or unrelated process.
+                self.stop_service('coordinator', existing)
+                raise
         self.stage = 'image builds'
         print('Building renderer, restricted egress, messaging and coordinator images.', flush=True)
         for dockerfile, key in [('deployment/egress/Dockerfile','RENDERER_EGRESS_IMAGE'), ('backend/container/Dockerfile','USER_CONTAINER_IMAGE')]:
@@ -148,6 +173,9 @@ class Operator:
         # Read-only preflight in a disposable one-off coordinator. No migration writes.
         self.command([*self.compose,'run','--rm','--no-deps','-T','coordinator','python','-m','backend.check_schema'],
                      'Database schema check (apply documented offline migrations in compose.md if incompatible)', timeout=90)
+        if enabled and not managed:
+            self.stage = 'final external prerequisites before origin exposure'
+            cf.inspect_external()  # Recheck after long image builds/dependency startup.
         self.stage = 'coordinator readiness'
         self.command([*self.compose,'up','-d','--wait','--wait-timeout','180',*reuse,'coordinator'], 'Coordinator health checks', timeout=240)
         origin = 'http://127.0.0.1:' + values['API_PORT']
@@ -155,13 +183,10 @@ class Operator:
             raise DeploymentError('Local API readiness/authentication check failed; public activation stopped.')
         self.local_ready = True
         if enabled:
-            self.stage = 'Cloudflare provisioning'
-            print('Local backend healthy. Validating Cloudflare ownership, DNS and cache policy.', flush=True)
-            cf = Cloudflare(values, self.state)
-            cf.provision()
             self.stage = 'connector/public HTTPS readiness'
             # Recreate just connector to reopen an atomically rotated token bind inode.
-            self.command([*self.compose,'up','-d','--no-deps','--force-recreate','cloudflared'], 'Cloudflare connector startup')
+            if managed:
+                self.command([*self.compose,'up','-d','--no-deps','--force-recreate','cloudflared'], 'Cloudflare connector startup')
             deadline = time.monotonic() + 180
             public = 'https://' + values['CLOUDFLARE_HOSTNAME']
             while True:
@@ -175,10 +200,13 @@ class Operator:
                     raise DeploymentError('Public lesson bearer protection or cache policy check failed.')
             for path in ('/internal/receipts','/video','/verification','/docs','/redoc','/openapi.json','/healthz','/docker'):
                 if not self.checker(public, path, 404):
-                    raise DeploymentError('Public private-route rejection check failed; connector will be stopped.')
+                    raise DeploymentError('Public private-route rejection check failed; owned backend will drain. External connector remains untouched.')
             self.public_ready = True
         print('Backend: healthy | Database: healthy | Messaging: healthy')
-        print('Tunnel: ' + ('healthy (HTTPS and route checks passed)' if enabled else 'disabled'))
+        print('Public HTTPS readiness: ' + ('passed' if self.public_ready else 'not checked (private staging)'))
+        print('Connector: ' + ('owned Compose connector, healthy' if managed else
+                               'externally managed; API reports healthy' if enabled else
+                               'external status unknown; existing port-8000 route untouched'))
         print('Local API: ' + origin)
         if enabled:
             print('Public API: https://' + values['CLOUDFLARE_HOSTNAME'])
@@ -201,7 +229,7 @@ class Operator:
         remaining = self.containers()
         if any(info['State']['Running'] for info in remaining.values()):
             raise DeploymentError('Shutdown incomplete; retry ./stop-backend.sh. Persistent data preserved.')
-        print('Connector, coordinator, messaging and PostgreSQL stopped. Volumes, tunnel, DNS and credentials preserved.')
+        print('Owned backend services and any owned Compose connector stopped. External host connector untouched (status unknown). Volumes, receipt metadata, tunnel, DNS and credentials preserved.')
 
 
 def main():
@@ -235,9 +263,12 @@ def main():
         if operator:
             if args.action == 'start' and not operator.public_ready:
                 try:
-                    operator.stop_service('cloudflared', operator.containers())
+                    owned = operator.containers()
+                    operator.stop_service('cloudflared', owned)
+                    operator.stop_service('coordinator', owned)
+                    operator.local_ready = False
                 except DeploymentError:
-                    print('Connector stop could not be confirmed; retry ./stop-backend.sh before exposing traffic.', file=sys.stderr)
+                    print('Owned ingress/backend stop could not be confirmed; retry ./stop-backend.sh. External connector was not stopped.', file=sys.stderr)
             print(f'Failed step: {operator.stage}. Local readiness: {operator.local_ready}; public readiness: {operator.public_ready}.', file=sys.stderr)
         print('Partial services may remain running. Safe recovery: ./stop-backend.sh; correct the error; ./start-backend.sh. No volumes or remote resources were removed.', file=sys.stderr)
         return 1

@@ -56,17 +56,25 @@ export class ReceiptForwarder {
     this.flushing = true;
     try {
       await mkdir(this.directory, { recursive: true, mode: 0o700 });
+      const retained: string[] = [];
+      // Purge every expired record before network retries; a failed callback must
+      // not prevent later files (including interrupted writes) from expiring.
       for (const file of await readdir(this.directory)) {
         if (!/^[a-f0-9]{64}\.(json|tmp)(\.rejected)?$/.test(file)) continue;
         const path = join(this.directory, file);
-        // All spool metadata, including quarantined evidence, has bounded retention.
-        // Arrival mtime avoids discarding a legitimate delayed read event immediately.
         if (this.now() - (await stat(path)).mtimeMs >= 7 * 86400 * 1000) {
           await unlink(path);
+        } else if (file.endsWith(".json")) retained.push(path);
+      }
+      for (const path of retained) {
+        let event: ReadEvent;
+        try {
+          event = JSON.parse(await readFile(path, "utf8")) as ReadEvent;
+        } catch {
+          await rename(path, path + ".rejected");
+          console.error("Malformed receipt metadata quarantined");
           continue;
         }
-        if (!file.endsWith(".json")) continue;
-        const event = JSON.parse(await readFile(path, "utf8")) as ReadEvent;
         const { body, headers } = signedReceipt(event, this.secret);
         try {
           const response = await fetch(this.url, { method: "POST", body, headers, signal: AbortSignal.timeout(10000), redirect: "error" });

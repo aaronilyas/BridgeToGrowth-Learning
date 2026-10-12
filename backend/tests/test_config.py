@@ -22,7 +22,7 @@ class ConfigurationTests(unittest.TestCase):
     def test_required_settings_validate_secrets_model_database_and_transport(self):
         with patch.dict('os.environ', VALID, clear=True):
             validate_settings()
-        for field, value in [('AUTH_CODE_SECRET', 'short'), ('DATABASE_URL', 'sqlite://'),
+        for field, value in [('AUTH_CODE_SECRET', 'short'), ('AUTH_CODE_SECRET', 'a' * 64), ('DATABASE_URL', 'sqlite://'),
                              ('GEMINI_MODEL', 'model/../../secret'), ('MESSAGING_URL', 'http://user:password@host/video'),
                              ('MESSAGING_URL', 'http://host/private'), ('RECEIPT_SECRET', VALID['AUTH_CODE_SECRET'])]:
             with self.subTest(field=field), patch.dict('os.environ', {**VALID, field: value}, clear=True):

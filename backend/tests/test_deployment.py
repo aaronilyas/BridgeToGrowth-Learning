@@ -78,11 +78,12 @@ class DeploymentTests(unittest.TestCase):
             path.write_text(config)
             cli = ['cloudflared','tunnel','--config',str(path),'ingress']
             subprocess.run([*cli,'validate'],check=True,capture_output=True)
-            for route in ('/auth/signup','/auth/enrollment/verify','/auth/logout-all','/account/phone/verify','/lessons/'+str(uuid.uuid4())+'/cancel','/account','/lessons','/lessons/'+str(uuid.uuid4()),'/lessons/'):
+            for route in ('/auth/signup','/auth/enrollment/verify','/auth/logout-all','/account/phone/verify','/lessons/'+str(uuid.uuid4())+'/cancel','/account/delete','/account/delete','/account','/lessons','/lessons/'+str(uuid.uuid4()),'/lessons/'):
                 output = subprocess.check_output([*cli,'rule','https://lessons.example.test'+route]).decode()
                 self.assertIn('Matched rule #0',output)
                 self.assertIn(origin,output)
             for url in ('https://lessons.example.test/video','https://lessons.example.test/docs',
+                        'https://lessons.example.test/redoc','https://lessons.example.test/healthz',
                         'https://lessons.example.test/openapi.json','https://lessons.example.test/docker','https://lessons.example.test/verification','https://lessons.example.test/internal/receipts',
                         'https://lessons.example.test/lessons/not-a-uuid','https://other.example.test/lessons'):
                 output = subprocess.check_output([*cli,'rule',url]).decode()

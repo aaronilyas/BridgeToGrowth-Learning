@@ -144,3 +144,56 @@ Deploy behind the documented private loopback origin. If using forwarded client
 addresses, configure Uvicorn's `FORWARDED_ALLOW_IPS` only for the connector's
 specific trusted source address; never trust arbitrary client headers or `*`.
 Without that configuration, clients sharing a proxy share the address limit.
+
+
+## Admission and durable account deletion
+
+New lesson requests count toward `LESSON_REQUEST_LIMIT` over the rolling
+`LESSON_REQUEST_WINDOW_SECONDS`, persisted as job history. Matching account-scoped
+idempotent retries return the same job without counting or dispatching again;
+changed content with that key returns 409. `LESSON_ACCOUNT_JOB_LIMIT` and
+`LESSON_GLOBAL_JOB_LIMIT` count pending/active jobs and terminal jobs whose runtime
+cleanup is still required. Capacity rejection returns 429 with `Retry-After`
+(30 seconds for capacity, remaining rolling-window time for allowance). Failed
+cleanup protects capacity across coordinator restarts. Use exactly one coordinator.
+No `X-Forwarded-For` or `CF-Connecting-IP` input affects identity/rate keys; clients
+behind the host connector share its address throttle unless a separately verified
+trust boundary is explicitly implemented.
+
+`POST /account/delete` requires `Authorization: Bearer <access_token>` and JSON
+`{"password":"<current password>"}`. Credential failures return 401; malformed
+bodies return 422 without echoing credentials. Reauthentication is throttled.
+202 means durable `pending_deletion`, not completed removal. Sessions are revoked
+and new work/login/refresh is refused. Queued work is durably cancellation-requested;
+active work may finish, including an irreversible messaging send. No active runtime
+is force-killed. The same unexpired access token plus password can retry deletion
+while pending; it cannot access other endpoints. After removal/expiry it returns
+401. A missing response after successful admission does not justify duplicate work.
+
+Reconciliation and 30-second sweeps finish deletion only when jobs/processes are
+idle and required cleanup succeeds. Runtime removal validates account labels and
+network ownership, removes only that account's idle containers/egress/network,
+and precedes deletion of account/job/delivery/session/token/verification records.
+Failures preserve the account's pending deletion and protection for restart/retry.
+Late receipts for a removed recipient with no surviving account/delivery are
+acknowledged without recreating personal rows. Other users remain intact.
+
+Retention: active account/job/delivery history has no automatic age expiry and
+is removed by completed account deletion. Database receipt-event metadata expires
+at seven days on sweeps; acceptance/read status on retained job history persists.
+Node receipt spool JSON, interrupted `.tmp` writes and rejected evidence expire
+at seven days from filesystem arrival time during retry sweeps; outage retention
+can extend until processing resumes. Account-linked verification/session/token
+history is removed on deletion; HMAC-keyed abuse-rate counters are shared security
+metadata and are not removed on deletion (their enforcement window is 15 minutes).
+Backups are operator-owned snapshots and are not erased by this endpoint; see
+[backup/restore and expiry policy](../compose.md). No generated video is backed up
+or persisted by the application. Already accepted provider messages cannot be
+retracted by account deletion.
+
+Later frontend integration: add a credential-confirmation flow calling this
+endpoint with bearer auth, treat 202 as pending, clear local access/refresh tokens
+and cached account/jobs, and explain that active work may finish. Handle 401/422/429
+and uncertain network responses; never describe 202 as immediate erasure. Use
+`EXPO_PUBLIC_API_BASE_URL=https://bridgetogrowth-learning.com` for the mobile build.
+This backend change does not modify the mobile UI.

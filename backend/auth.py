@@ -159,6 +159,11 @@ class Accounts:
                 raise invalid()
             if not user.deletion_requested_at:
                 user.deletion_requested_at = self.clock()
+                # Queued jobs have not crossed any side-effect boundary. Their owning
+                # background task (or restart reconciliation) records cancellation.
+                from .models import LessonJob
+                for job in db.scalars(select(LessonJob).where(LessonJob.user_id == user_id, LessonJob.status == 'queued')):
+                    job.cancel_requested = True
             self.revoke(db, user_id)
             db.commit()
             return {'status': 'pending_deletion', 'message': 'Sessions revoked; deletion resumes automatically after jobs and runtime cleanup finish'}

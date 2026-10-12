@@ -1,4 +1,5 @@
-# Legacy local ingress validation fixture; production ingress is managed by deployment/cloudflare.py.
+# Reference for the existing host connector allowlist and disposable ingress tests.
+# Never launch a second connector with this file. See cloudflare.md for ownership.
 # cloudflared does not expand environment variables in this file.
 tunnel: "<TUNNEL_UUID>"
 credentials-file: "<ABSOLUTE_TUNNEL_CREDENTIALS_JSON_PATH>"

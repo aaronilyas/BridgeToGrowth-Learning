@@ -12,3 +12,6 @@ dist/
 
 # Durable deployment ownership, generated Compose env and connector credentials.
 .local/backend/
+
+# Operator database/spool snapshots must never be committed.
+backups/

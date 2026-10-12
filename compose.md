@@ -1,129 +1,161 @@
-# Compose deployment
+# Backend deployment lifecycle
 
-The stack runs PostgreSQL 17, one FastAPI coordinator and the Node/TypeScript
-Photon transport. Accounts and credentials belong to FastAPI. There is no
-external identity-provider dependency. Read [backend/mobile contracts](backend/AUTHENTICATION.md),
-[job behavior](backend/README.md), [renderer egress](deployment/egress/README.md)
-and [messaging transport](services/messaging/README.md) before deployment.
+PostgreSQL 17, one FastAPI coordinator and the Node/TypeScript Photon transport
+run in Compose. Generated Manim runs only in restricted per-account containers.
+Use a dedicated Docker daemon. Keep the machine running continuously with reliable
+internet and outbound Cloudflare/provider connectivity; sleep or internet loss
+makes public access unavailable. See [Cloudflare prerequisites](cloudflare.md),
+[account contracts](backend/AUTHENTICATION.md) and [tests](backend/tests/README.md).
 
-## Configure and build
+## Configure the existing host tunnel
 
-```sh
-cp deployment/.env.example deployment/.env
-chmod 600 deployment/.env
-# Fill blanks locally. Generate a distinct value for each secret:
-# openssl rand -hex 32
-# Keep the PostgreSQL password URL-safe because Compose embeds it in DATABASE_URL.
-docker compose --env-file deployment/.env config --quiet
-docker build -f backend/container/Dockerfile -t btg-renderer:local .
-docker build -f deployment/egress/Dockerfile -t btg-egress:local .
-docker compose --env-file deployment/.env build
-# Only start after completing any existing-volume upgrade below.
-docker compose --env-file deployment/.env up -d --wait
-docker compose --env-file deployment/.env ps
-```
-
-Set `AUTH_CODE_SECRET`, `RECEIPT_SECRET` and `MESSAGING_TOKEN` to distinct random
-secrets of at least 32 characters. Also set database/Photon/Gemini settings from
-the example. Startup fails with missing/invalid required settings. Build the
-renderer and egress images on the same daemon used by the coordinator; changed
-image tags must match `USER_CONTAINER_IMAGE` and `RENDERER_EGRESS_IMAGE`.
-The coordinator alone receives the Docker socket and CLI. `DOCKER_SOCKET_PATH`
-is a daemon-side bind path (including Docker Desktop's VM); a missing socket
-fails rather than creating a directory. Use a dedicated deployment daemon.
-
-PostgreSQL and messaging publish no ports. Only FastAPI publishes
-`127.0.0.1:${API_PORT:-8000}`. Run host `cloudflared` with that loopback origin
-and the [public auth/account/lesson allowlist](cloudflare.md). `/verification`,
-`/video`, `/internal/receipts`, PostgreSQL and Docker control stay private.
-`RECEIPT_URL=http://coordinator:8000/internal/receipts` is reachable only within
-the trusted stack (and private loopback origin); it is HMAC-authenticated anyway.
-The connector has no Docker socket. Configure trusted forwarded client addresses
-only for the connector's actual source; default requests behind a proxy share
-its address rate limit. Never set a blanket forwarded-address trust policy.
-
-Compose's database network is internal. Its delivery network gives only the
-coordinator and Node the required outbound access. Renderers do not join either.
-They use per-account enforced proxy namespaces. Coordinator/Node filesystems
-are read-only, with dropped capabilities and temporary `/tmp`. Node runs UID
-1000. Narrow build contexts exclude credential `.env` files. The `receipt-metadata`
-volume contains JSON read-event evidence only, never credentials, codes or videos;
-the PostgreSQL volume stores account and lifecycle metadata only.
-
-## Fresh databases and upgrades
-
-New `postgres-data` volumes initialize from `backend/schema.sql` once. Do not
-run upgrade SQL on a fresh current schema. Existing original volumes require
-001 then 002; volumes already upgraded through 001 need only 002. Initialization
-scripts do not upgrade existing volumes automatically.
-
-Before upgrading, stop new admissions, drain existing jobs, keep dependencies
-available during drain, stop the coordinator, and back up PostgreSQL. Then:
+From this checkout:
 
 ```sh
-# Run only migrations not already applied, in order. Never ignore SQL errors.
-docker compose --env-file deployment/.env exec -T postgres psql -U btg -d btg -v ON_ERROR_STOP=1 < backend/migrations/001_delivery_acceptance.sql
-docker compose --env-file deployment/.env exec -T postgres psql -U btg -d btg -v ON_ERROR_STOP=1 < backend/migrations/002_owned_auth_and_recovery.sql
+cd /home/aaron/new-projects/BridgeToGrowth-Learning
+# First setup only: never overwrite an existing configured .env.
+test -e .env || cp .env.example .env
+chmod 600 .env
+# Edit .env locally. Generate three DISTINCT secrets and a URL-safe DB password:
+openssl rand -hex 32
+# Repeat independently for AUTH_CODE_SECRET, RECEIPT_SECRET, MESSAGING_TOKEN,
+# and POSTGRES_PASSWORD. Supply Gemini and Photon project credentials locally.
+# Set existing tunnel/account/zone IDs and a scoped READ token per cloudflare.md.
+./start-backend.sh
+./stop-backend.sh
 ```
 
-Existing account UUIDs/relationships survive, with null password and verification
-columns. Issue enrollment invitations with `python -m backend.enroll <account-uuid>`
-from an operator environment or `docker compose exec coordinator python -m
-backend.enroll <account-uuid>` after startup, and hand stdout privately to the
-verified original holder. See [safe enrollment](backend/AUTHENTICATION.md).
-Duplicate historical provider IDs intentionally block the uniqueness migration
-until ambiguous evidence is reviewed; never infer send-time phones or receipts.
+Root `.env` is the only backend configuration source. `deployment/.env` is obsolete.
+The operator parses literal values without shell evaluation and writes a private
+normalized `.local/backend/compose.env`; that file is derived, not a second source.
+Inherited shell values cannot override configured keys. Protect `.env` as 0600.
+Do not publish full `docker compose config`, container environments or secret files.
 
-Drain and stop/remove each old unrestricted `btg-user-<uuid>` container and its
-old network before enrolling/starting new work. Preserve PostgreSQL. The new
-runtime fails closed on a legacy network mode. Never delete a container with
-active work. Updating image templates does not update already-created dynamic
-containers: drain and recreate the affected renderer AND its egress helper.
-Changing `POSTGRES_PASSWORD` in Compose does not rotate an existing database
-credential; rotate that database role and configuration together. Do not use
-`down -v` for updates because it deletes accounts and receipt evidence.
+Default `CLOUDFLARE_TUNNEL_MODE=external` reuses the existing host-managed connector
+and `https://bridgetogrowth-learning.com` → `http://127.0.0.1:8000`. Startup verifies
+public ingress/cache/DNS/connector configuration **before** exposing port 8000.
+No tunnel/DNS/connector credential mutation occurs in this mode. Missing or
+ambiguous evidence fails production readiness and gives an operator action.
+`--local-only` or `CLOUDFLARE_ENABLED=false` uses `127.0.0.1:18000` (configurable
+`LOCAL_API_PORT`, never 8000); reserve that port without any forwarding route.
+Stop before changing modes/configuration. A pre-existing unowned Compose project
+is never adopted: restore this checkout's ownership state or drain/migrate the
+legacy deployment under its owner's control first.
 
-## Health, shutdown and recovery
+Startup builds images, checks Docker/Compose, validates configuration, starts
+PostgreSQL/messaging, runs a **read-only** schema compatibility check, then starts
+one coordinator. It never automatically migrates an existing database. Running
+owned services with matching configuration are reused without recreation; stop
+then start to apply newly built images. `DOCKER_SOCKET_PATH` must be the real
+daemon-side Unix socket; bind creation is disabled. No Docker TCP listener is used.
+Only FastAPI has a host port; PostgreSQL, messaging and renderer/egress interfaces
+have none. The coordinator alone receives the Docker socket. No proxy headers
+are trusted (`--no-proxy-headers`); authentication IP throttles share the connector
+address. Do not enable blanket forwarded-header trust.
 
-Health checks use PostgreSQL TCP readiness, unauthenticated `/video` returning
-401, and FastAPI `/openapi.json`. They send no message, consume no verification
-code and refresh no account activity. They establish local service readiness,
-with no claim about live provider credentials or narration quality.
+## Database initialization and missing migrations
 
-Uvicorn uses exactly one worker and holds a PostgreSQL advisory guard. Do not
-scale coordinators or share the deployment daemon with another BTG database.
-The single coordinator atomically admits jobs and protects active work from
-25-minute inactivity shutdown. Normal completion removes `/work` and `/tmp`
-files; failed cleanup remains durable and protected.
-
-For maintenance, stop admission at the public origin, let jobs and cleanup
-finish, and stop coordinator before dependencies:
+Fresh volumes initialize once from `backend/schema.sql`; do not run upgrades on
+the current fresh schema. Existing volumes retain passwords and tables across
+stop/start. Changing `.env` does not rotate an existing PostgreSQL role password.
+Back up first, stop the coordinator with the operator, and start **only PostgreSQL**
+for offline maintenance. Use the saved normalized config after a startup attempt:
 
 ```sh
-docker compose --env-file deployment/.env stop coordinator
-docker compose --env-file deployment/.env stop messaging postgres
+./stop-backend.sh
+docker compose --env-file .local/backend/compose.env -f compose.yaml up -d --no-deps --wait postgres
+mkdir -p backups
+chmod 700 backups
+umask 077
+docker compose --env-file .local/backend/compose.env -f compose.yaml exec -T postgres pg_dump -U btg -d btg -Fc > backups/btg-before-upgrade.dump
+# Inspect columns/constraints against schema and keep an operator migration ledger.
+docker compose --env-file .local/backend/compose.env -f compose.yaml exec -T postgres psql -U btg -d btg -c '\d users'
+# Execute ONLY missing migrations, in order; each uses an explicit transaction.
+docker compose --env-file .local/backend/compose.env -f compose.yaml exec -T postgres psql -U btg -d btg -v ON_ERROR_STOP=1 < backend/migrations/001_delivery_acceptance.sql
+docker compose --env-file .local/backend/compose.env -f compose.yaml exec -T postgres psql -U btg -d btg -v ON_ERROR_STOP=1 < backend/migrations/002_owned_auth_and_recovery.sql
+docker compose --env-file .local/backend/compose.env -f compose.yaml exec -T postgres psql -U btg -d btg -v ON_ERROR_STOP=1 < backend/migrations/003_account_deletion.sql
+./stop-backend.sh
+./start-backend.sh
 ```
 
-Graceful coordinator shutdown drains background tasks. Node drains active sends
-before disconnecting Spectrum. Thirty-minute stop grace periods are finite;
-verify drained work before stopping and never force-remove active user containers.
-Dynamic containers are outside Compose's lifecycle. Leave the coordinator running
-when normal inactivity cleanup is desired.
+These are manual operator commands, never implementation/test actions on live data.
+A database already at 002 needs **only 003**, which adds
+`users.deletion_requested_at`; a database at 001 needs 002 then 003. Compare
+columns/constraints and the migration ledger to determine prior application; these
+SQL files intentionally fail on repeated application. Test the dump restore on an
+isolated database before relying on it. `backend.check_schema` checks required
+columns read-only and reports incompatibility; it is not a complete migration ledger.
+Legacy UUIDs/relationships remain; unverified legacy users need explicit enrollment
+invitations as documented in [AUTHENTICATION.md](backend/AUTHENTICATION.md).
+Drain/remove old unrestricted renderer containers under their original owner's
+control before new work; no active user container may be force-removed.
 
-After an abrupt coordinator crash, startup reconciles actual owned container
-processes, preserves active work, cleans abandoned artifacts after processes
-stop, restores inactivity eligibility, and retries persisted cleanup obligations.
-Committed acceptance is retained; uncertain sends become `delivery_unknown` and
-are never resent automatically. Runtime/DB uncertainty keeps protection until
-observations succeed. See [precise terminal outcomes](backend/README.md#status-meanings-and-cancellation).
-The receipt spool survives Node/backend outages; signature timestamps are regenerated
-on retry and accepted read evidence survives in PostgreSQL.
+## Backup, restore and credential rotation
 
-## Automated checks and deferred live work
+Back up PostgreSQL using `pg_dump -Fc` after coordinator drain. Restore first to a
+new isolated database using `pg_restore --exit-on-error`; verify schema, accounts
+and lifecycle records there. For an intentional live restore, keep coordinator and
+messaging stopped, have a rollback dump, and apply the reviewed dump to the selected
+database using `pg_restore -U btg -d btg --exit-on-error` (a nonempty target needs an
+explicit operator replacement plan). Never restore older rows and immediately
+serve them: an older backup can restore deleted accounts or expired sessions.
+Reapply recorded deletions/revocations before restarting.
 
-Follow [tests/README.md](backend/tests/README.md) to run disposable PostgreSQL,
-real restricted renderers, message substitutes and synthetic tunnel-rule tests.
-The runner never migrates a production database, reads credential files or sends
-real provider messages. Live Gemini/GTTS/Photon, production DNS/TLS and full mobile
-integration are deferred until the frontend is ready; use the checklist in
-[backend/README.md](backend/README.md#verification-and-later-integration).
+Back up receipt-metadata separately while messaging is stopped; it contains only
+read-event JSON, temporary files and quarantined evidence. Protect backups and
+`.local/backend/state.json` as secrets; managed deployments also need their saved
+connector token. Keep ownership state with its original checkout path and deployment
+ID. Define and enforce a backup expiry schedule: **the application does not expire
+or rewrite backups**. Recommended operator policy is 30 days, with deletion requests
+recorded outside restored snapshots so removal can be reapplied. Provider message
+retention remains under Photon/iMessage policy, outside this application.
+
+Drain before credential changes. Rotate PostgreSQL with interactive `psql` `\password
+btg`, then update root `.env` together; do not pass passwords on a command line.
+Generate independent replacement application secrets locally; update account/receipt/
+messaging configuration together as needed and stop/start. Rotating `AUTH_CODE_SECRET`
+invalidates outstanding code hashes and changes throttle-key derivation; it does
+not revoke stored opaque sessions, so revoke sessions explicitly if required.
+Rotate Photon/Gemini/inspection credentials in their provider dashboards, update
+root `.env`, and restart. External tunnel connector credentials remain owned by its
+host administrator; backend rotation/shutdown never rotates them.
+
+## Status, logs, shutdown and interrupted starts
+
+```sh
+docker compose --env-file .local/backend/compose.env -f compose.yaml ps
+docker compose --env-file .local/backend/compose.env -f compose.yaml logs --tail=100 coordinator messaging postgres
+./stop-backend.sh
+```
+
+Treat logs as sensitive; trusted bounded renderer stderr diagnostics reside in
+coordinator tmpfs and disappear on recreation. No generated videos are persisted.
+Local `/healthz` checks database reachability; private Node `/video` 401 and
+PostgreSQL TCP checks establish local services, not provider credential validity.
+Public HTTPS readiness includes auth/no-store/edge status and private-route 404
+checks. External connector status comes from read-only Cloudflare evidence and is
+reported independently; it is unknown during private staging/shutdown.
+
+Stop order is any **owned** Compose connector, coordinator, messaging, PostgreSQL.
+The coordinator drains work, including recovered active renderers and required cleanup,
+before dependencies stop. Runtime observation/cleanup failures can keep stop waiting;
+restore the dependency/ownership issue instead of imposing a kill timeout. Operator Docker stops use
+`--time=-1` and no subprocess timeout: active work has no force-kill deadline.
+Avoid direct `docker compose stop/down` on active services: finite Compose grace
+periods do not provide this guarantee. Repeated stops are safe. Stop never removes
+persistent volumes, receipt metadata, remote tunnel, DNS or credentials, and never
+kills or claims to stop the existing host connector. Dynamic renderer resources
+remain governed by coordinator activity/cleanup and durable account deletion.
+
+On partial startup/error, owned services may remain; the CLI attempts to drain
+owned ingress/coordinator on failure. External connector remains untouched. Run
+`./stop-backend.sh`, correct the reported prerequisite, then restart. Preserve
+`.local/backend` and volumes; do not delete ownership state to get past conflicts.
+An interrupted remote creation with lost IDs requires operator inspection and
+state recovery, not creation of duplicates. On coordinator restart, busy recovered
+work remains protected; once idle, artifacts are cleaned and uncertain sends become
+`delivery_unknown` without resend. Failed runtime cleanup/deletion remains durable
+and retries on reconciliation/sweeps. Never use `down -v` on real data.
+
+See [test instructions](backend/tests/README.md) for mocked Cloudflare/lifecycle
+checks, disposable PostgreSQL/renderer acceptance and private restart exercises.

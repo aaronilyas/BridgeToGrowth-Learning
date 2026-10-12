@@ -116,6 +116,7 @@ def create_app(service=None, coordinator_guard=True, accounts=None, receipt_secr
                     await task
                 except asyncio.CancelledError:
                     pass
+                await asyncio.to_thread(service.drain)
         finally:
             if guard:
                 guard.execute(text('SELECT pg_advisory_unlock(78264019)'))
