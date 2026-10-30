@@ -1,0 +1,138 @@
+import { z } from "zod";
+import { ChatRequest, CreateLessonRequest, LessonPlan, type StepPublic } from "../../shared/api.ts";
+import { sql } from "../db.ts";
+import { HttpError, json, route } from "../http.ts";
+import { loadSettings, resolveModel, StoredCitations } from "../learn/core.ts";
+import { retrievePapers } from "../lit/openalex.ts";
+import { filterCitations, toCitations } from "../lit/core.ts";
+import { chatJson, chatStream } from "../llm/gateway.ts";
+import { upsertTopics } from "../topics/sql.ts";
+import { StepContent, StepOut, allCitations, buildChatContext, buildPlanPrompt, buildStepPrompt, buildTutorSystem, normalizePlan, normalizeStep, pickLessonModel, toStepPublic } from "./core.ts";
+import { ensureConversation, findLesson, insertLesson, insertStep, insertMessagePair, listLessons, listMessages, listPapers, listSteps, type LessonRow } from "./sql.ts";
+
+const IdParams = z.strictObject({ id: z.uuid() });
+const StepParams = z.strictObject({ id: z.uuid(), idx: z.coerce.number().int().min(0).max(7) });
+const ListQuery = z.strictObject({ limit: z.coerce.number().int().min(1).max(20).default(20) });
+const MessagesQuery = z.strictObject({ before: z.string().regex(/^\d{1,18}$/).optional(), limit: z.coerce.number().int().min(1).max(50).default(50) });
+
+function query(req: Request): Record<string, string> {
+  return Object.fromEntries(new URL(req.url).searchParams);
+}
+
+async function requireLesson(uid: string, params: Record<string, string>): Promise<LessonRow> {
+  const p = IdParams.safeParse({ id: params.id });
+  const lesson = p.success ? await findLesson(uid, p.data.id) : null;
+  if (!lesson) throw new HttpError(404, "not_found");
+  return lesson;
+}
+
+function readPlan(lesson: LessonRow): LessonPlan {
+  const p = LessonPlan.safeParse(lesson.plan);
+  if (!p.success) throw new Error("stored plan is invalid");
+  return p.data;
+}
+
+function stepOf(r: Awaited<ReturnType<typeof listSteps>>[number]): StepPublic {
+  return toStepPublic(r.idx, StepContent.parse(r.content), r.question);
+}
+
+const create = route({ entitled: true, body: CreateLessonRequest, rate: { key: "lesson", cap: 10, perMin: 10 } }, async (c) => {
+  const uid = c.user.id;
+  const settings = loadSettings(c.user);
+  const model = resolveModel(settings, c.plan, c.body.model);
+  const papers = await retrievePapers(c.body.prompt, 5);
+  const r = await chatJson({ who: { uid, plan: c.plan, capMicros: c.capMicros }, model, kind: "lesson", system: buildPlanPrompt(settings, papers), user: c.body.prompt, schema: LessonPlan, maxTokens: 1500 });
+  const plan = normalizePlan(r.data, settings.bite.stepsPerLesson);
+  const lessonId = await sql.begin(async (tx) => {
+    const ids = await upsertTopics(tx, uid, [plan.topic, ...plan.related], plan.related.map((rel, i) => ({ src: 0, dst: i + 1, kind: rel.kind })));
+    const topicId = ids[0];
+    if (!topicId) throw new HttpError(502, "llm_bad_output");
+    return insertLesson(tx, uid, topicId, plan, papers.map((p) => p.id), model);
+  });
+  return json({ lessonId, plan, grounded: papers.length > 0 });
+});
+
+const list = route({ auth: true }, async (c) => {
+  const q = ListQuery.safeParse(query(c.req));
+  if (!q.success) throw new HttpError(400, "bad_request");
+  const rows = await listLessons(c.user.id, q.data.limit);
+  return json(rows.map((l) => ({ id: l.id, title: l.title, createdAt: l.created_at.toISOString() })));
+});
+
+const get = route({ auth: true }, async (c) => {
+  const lesson = await requireLesson(c.user.id, c.params);
+  const [papers, steps] = await Promise.all([listPapers(lesson.paper_ids), listSteps(c.user.id, lesson.id)]);
+  return json({ id: lesson.id, title: lesson.title, plan: readPlan(lesson), steps: steps.map(stepOf), citations: allCitations(papers) });
+});
+
+const makeStep = route({ entitled: true, rate: { key: "step", cap: 30, perMin: 30 } }, async (c) => {
+  const uid = c.user.id;
+  const p = StepParams.safeParse({ id: c.params.id, idx: c.params.idx });
+  const lesson = p.success ? await findLesson(uid, p.data.id) : null;
+  if (!p.success || !lesson) throw new HttpError(404, "not_found");
+  const plan = readPlan(lesson);
+  const idx = p.data.idx;
+  const planned = plan.steps[idx];
+  if (!planned) throw new HttpError(404, "not_found");
+  const have = (await listSteps(uid, lesson.id, idx))[0];
+  if (have) return json(stepOf(have));
+  const settings = loadSettings(c.user);
+  const papers = await listPapers(lesson.paper_ids);
+  const r = await chatJson({
+    who: { uid, plan: c.plan, capMicros: c.capMicros },
+    model: pickLessonModel(lesson.model, settings, c.plan),
+    kind: "step",
+    system: buildStepPrompt(settings, plan, idx, papers),
+    user: plan.title,
+    schema: StepOut,
+    maxTokens: 1500,
+  });
+  const step = normalizeStep(r.data, planned.title, settings.bite.maxWordsPerStep, papers);
+  await insertStep(uid, lesson, idx, step);
+  const row = (await listSteps(uid, lesson.id, idx))[0];
+  if (!row) throw new Error("step missing after insert");
+  return json(stepOf(row));
+});
+
+const chat = route({ entitled: true, body: ChatRequest, rate: { key: "chat", cap: 20, perMin: 20 } }, async (c) => {
+  const uid = c.user.id;
+  const lesson = await requireLesson(uid, c.params);
+  const settings = loadSettings(c.user);
+  const papers = await listPapers(lesson.paper_ids);
+  const system = buildTutorSystem(settings, readPlan(lesson), papers);
+  const model = pickLessonModel(lesson.model, settings, c.plan);
+  const convId = await ensureConversation(uid, lesson.id);
+  const recent = await listMessages(uid, lesson.id, null, 12);
+  const stream = chatStream({
+    who: { uid, plan: c.plan, capMicros: c.capMicros },
+    model,
+    kind: "chat",
+    system,
+    messages: buildChatContext([{ role: "user", content: c.body.message }, ...recent.map((m) => ({ role: m.role, content: m.content }))]),
+    maxTokens: 900,
+    signal: c.req.signal,
+    onDone: async (text) => {
+      const f = filterCitations(text, papers.length);
+      const citations = toCitations(f.used, papers);
+      await insertMessagePair(uid, convId, c.body.message, f.text, citations);
+      return { citations };
+    },
+  });
+  return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-store" } });
+});
+
+const messages = route({ auth: true }, async (c) => {
+  const lesson = await requireLesson(c.user.id, c.params);
+  const q = MessagesQuery.safeParse(query(c.req));
+  if (!q.success) throw new HttpError(400, "bad_request");
+  const rows = await listMessages(c.user.id, lesson.id, q.data.before ?? null, q.data.limit);
+  return json(rows.map((m) => ({ id: m.id, role: m.role, content: m.content, citations: StoredCitations.parse(m.citations), createdAt: m.created_at.toISOString() })));
+});
+
+export const teachRoutes = {
+  "/api/lessons": { GET: list, POST: create },
+  "/api/lessons/:id": { GET: get },
+  "/api/lessons/:id/steps/:idx": { POST: makeStep },
+  "/api/lessons/:id/chat": { POST: chat },
+  "/api/lessons/:id/messages": { GET: messages },
+};

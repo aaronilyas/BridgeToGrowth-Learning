@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly BridgeToGrowth Learning database backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+Unit=btg-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,27 @@
+# Runs the built app (bun run build) as an unprivileged user behind the Cloudflare Tunnel.
+# /etc/btg/btg.env is root-owned, mode 0600; systemd reads it before dropping privileges.
+# MemoryDenyWriteExecute must stay off: the JSC JIT needs writable and executable pages.
+[Unit]
+Description=BridgeToGrowth Learning
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=btg
+WorkingDirectory=/opt/btg
+EnvironmentFile=/etc/btg/btg.env
+Environment=NODE_ENV=production
+ExecStart=/usr/local/bin/bun dist/index.js
+Restart=on-failure
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
