@@ -1,21 +1,20 @@
-export type Tier = "trial" | "pro";
+import { env } from "../env.ts";
+
+export type Tier = "free";
 export type ModelInfo = { id: string; label: string; tier: Tier; vision: boolean };
 export type Price = { promptPerTok: number; completionPerTok: number; ctx: number };
 export type SystemModelKey = "grade" | "extract" | "insight";
 
+export const FREE_PRICE: Price = { promptPerTok: 0, completionPerTok: 0, ctx: 200_000 };
+
 export const MODELS: readonly ModelInfo[] = [
-  { id: "anthropic/claude-haiku-5.5", label: "Claude Haiku 5.5", tier: "trial", vision: true },
-  { id: "openai/gpt-6-luna", label: "GPT-6 Luna", tier: "trial", vision: true },
-  { id: "anthropic/claude-opus-5.5", label: "Claude Opus 5.5", tier: "pro", vision: true },
-  { id: "openai/gpt-6.1-sol", label: "GPT-6.1 Sol", tier: "pro", vision: true },
-  { id: "google/gemini-4-argon", label: "Gemini 4 Argon", tier: "pro", vision: true },
-  { id: "x-ai/grok-4.7", label: "Grok 4.7", tier: "pro", vision: true },
+  { id: env.OPENROUTER_MODEL, label: "Free Models Router", tier: "free", vision: true },
 ];
 
 export const SYSTEM_MODELS: { grade: string; extract: string; insight: string } = {
-  grade: "openai/gpt-6-luna",
-  extract: "anthropic/claude-haiku-5.5",
-  insight: "openai/gpt-6-luna",
+  grade: env.OPENROUTER_MODEL,
+  extract: env.OPENROUTER_MODEL,
+  insight: env.OPENROUTER_MODEL,
 };
 
 let pricing: Map<string, Price> | null = null;

@@ -39,7 +39,7 @@ function stepOf(r: Awaited<ReturnType<typeof listSteps>>[number]): StepPublic {
 const create = route({ entitled: true, body: CreateLessonRequest, rate: { key: "lesson", cap: 10, perMin: 10 } }, async (c) => {
   const uid = c.user.id;
   const settings = loadSettings(c.user);
-  const model = resolveModel(settings, c.plan, c.body.model);
+  const model = resolveModel(settings, c.body.model);
   const papers = await retrievePapers(c.body.prompt, 5);
   const r = await chatJson({ who: { uid, plan: c.plan, capMicros: c.capMicros }, model, kind: "lesson", system: buildPlanPrompt(settings, papers), user: c.body.prompt, schema: LessonPlan, maxTokens: 1500 });
   const plan = normalizePlan(r.data, settings.bite.stepsPerLesson);
@@ -80,7 +80,7 @@ const makeStep = route({ entitled: true, rate: { key: "step", cap: 30, perMin: 3
   const papers = await listPapers(lesson.paper_ids);
   const r = await chatJson({
     who: { uid, plan: c.plan, capMicros: c.capMicros },
-    model: pickLessonModel(lesson.model, settings, c.plan),
+    model: pickLessonModel(lesson.model, settings),
     kind: "step",
     system: buildStepPrompt(settings, plan, idx, papers),
     user: plan.title,
@@ -100,7 +100,7 @@ const chat = route({ entitled: true, body: ChatRequest, rate: { key: "chat", cap
   const settings = loadSettings(c.user);
   const papers = await listPapers(lesson.paper_ids);
   const system = buildTutorSystem(settings, readPlan(lesson), papers);
-  const model = pickLessonModel(lesson.model, settings, c.plan);
+  const model = pickLessonModel(lesson.model, settings);
   const convId = await ensureConversation(uid, lesson.id);
   const recent = await listMessages(uid, lesson.id, null, 12);
   const stream = chatStream({

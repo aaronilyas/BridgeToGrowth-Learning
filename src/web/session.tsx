@@ -1,9 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type JSX, type ReactNode } from "react";
-import { z } from "zod";
 import { MeResponse } from "../shared/api.ts";
 import { Season, SeasonResponse, seasonOf } from "../shared/season.ts";
 import { Settings, type SettingsPatch } from "../shared/settings.ts";
-import { api, isApiError } from "./api.ts";
+import { api } from "./api.ts";
 
 export type Me = Omit<MeResponse, "settings"> & { settings: Settings };
 export type SessionState = {
@@ -11,7 +10,6 @@ export type SessionState = {
   season: Season;
   refresh: () => Promise<void>;
   updateSettings: (patch: SettingsPatch) => Promise<Settings>;
-  signOut: () => Promise<void>;
 };
 
 const SessionContext = createContext<SessionState | null>(null);
@@ -23,7 +21,7 @@ function applySeason(s: Season): void {
 }
 
 // O(1) per fetch
-// INV: me is undefined while loading, null when signed out
+// INV: me is undefined while loading, null when the local profile cannot be loaded
 export function SessionProvider({ children }: { children: ReactNode }): JSX.Element {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [auto, setAuto] = useState<Season>(() => seasonOf(new Date().getUTCMonth(), "N"));
@@ -32,9 +30,8 @@ export function SessionProvider({ children }: { children: ReactNode }): JSX.Elem
     try {
       const m = await api("/api/me", MeResponse);
       setMe({ ...m, settings: Settings.parse(m.settings) });
-    } catch (e) {
-      if (isApiError(e) && e.status === 401) setMe(null);
-      else throw e;
+    } catch {
+      setMe(null);
     }
   }, []);
 
@@ -44,13 +41,8 @@ export function SessionProvider({ children }: { children: ReactNode }): JSX.Elem
     return next;
   }, []);
 
-  const signOut = useCallback(async (): Promise<void> => {
-    await api("/api/auth/logout", z.undefined(), { method: "POST" });
-    setMe(null);
-  }, []);
-
   useEffect(() => {
-    void refresh().catch(() => setMe(null));
+    void refresh();
     void api("/api/season", SeasonResponse).then((r) => setAuto(r.season), () => undefined);
   }, [refresh]);
 
@@ -58,7 +50,7 @@ export function SessionProvider({ children }: { children: ReactNode }): JSX.Elem
   const season = pref === "auto" ? auto : pref;
   useEffect(() => applySeason(season), [season]);
 
-  const value = useMemo<SessionState>(() => ({ me, season, refresh, updateSettings, signOut }), [me, season, refresh, updateSettings, signOut]);
+  const value = useMemo<SessionState>(() => ({ me, season, refresh, updateSettings }), [me, season, refresh, updateSettings]);
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
@@ -70,10 +62,10 @@ export function useSession(): SessionState {
 }
 
 // O(1)
-// INV: only call inside the authenticated shell, where the guard guarantees me is loaded
+// INV: only call inside the shell, where the guard guarantees me is loaded
 export function useMe(): Me {
   const { me } = useSession();
-  if (!me) throw new Error("useMe outside the auth guard");
+  if (!me) throw new Error("useMe outside the shell");
   return me;
 }
 

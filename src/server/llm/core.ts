@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { Plan } from "../../shared/api.ts";
 import { HttpError } from "../http.ts";
 import { MODELS, type ModelInfo, type Price } from "./models.ts";
 
@@ -30,17 +29,15 @@ export function estimateMicros(p: Price, promptChars: number, maxTokens: number)
   return BigInt(Math.ceil(Math.ceil(promptChars / 3) * p.promptPerTok + maxTokens * p.completionPerTok));
 }
 
-// O(m) in allowlist size, a constant
-// SEC: the only gate between a client-supplied id and the upstream request; pro may use trial-tier models
-export function assertModelAllowed(id: string, plan: Plan): void {
-  const m = MODELS.find((x) => x.id === id);
-  if (!m || plan === "none" || (m.tier === "pro" && plan !== "pro")) throw new HttpError(400, "model_not_allowed");
+// O(1)
+// SEC: the only gate between a client-supplied id and the upstream request; only OPENROUTER_MODEL is allowed
+export function assertModelAllowed(id: string): void {
+  if (!MODELS.some((m) => m.id === id)) throw new HttpError(400, "model_not_allowed");
 }
 
-// O(m)
-export function listModelsForPlan(plan: Plan): ModelInfo[] {
-  if (plan === "none") return [];
-  return MODELS.filter((m) => plan === "pro" || m.tier === "trial");
+// O(1)
+export function listModels(): ModelInfo[] {
+  return [...MODELS];
 }
 
 // O(n) in payload size

@@ -31,11 +31,8 @@ jobs:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/btg_test
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/btg_test
       OPENROUTER_API_KEY: ci
-      STRIPE_SECRET_KEY: sk_ci
-      STRIPE_WEBHOOK_SECRET: whsec_ci
-      STRIPE_PRICE_ID: price_ci
-      TURNSTILE_SITE_KEY: ci
-      TURNSTILE_SECRET: ci
+      OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
+      OPENROUTER_MODEL: openrouter/free
       OPENALEX_MAILTO: ci@example.com
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
