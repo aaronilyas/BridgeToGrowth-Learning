@@ -24,7 +24,7 @@ SECURITY (MUST):
 TESTS: bun test. Write only the tests listed in a prompt. No network: mock with `mock.module`. DB tests use TEST_DATABASE_URL and truncate their tables.
 DONE: `bun run typecheck && bun test` is green and the prompt's VERIFY passes.
 MODULE MAP (append one line per module: path · purpose · key exports):
-- src/server/http.ts · route wrapper, errors, free entitlement · route, HttpError, json, freeEntitlement
+- src/server/http.ts · route wrapper, errors, free entitlement · route, HttpError, json, freeEntitlement, originAllowed
 - src/server/rate.ts · token bucket · takeToken
 - src/server/env.ts · validated env · env
 - src/server/db.ts · shared Bun.sql pool · sql
