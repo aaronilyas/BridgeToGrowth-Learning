@@ -1,0 +1,200 @@
+import { z } from "zod";
+import type { ErrorCode, Plan } from "../../shared/api.ts";
+import { parseSseChunk } from "../../shared/sse.ts";
+import { env } from "../env.ts";
+import { HttpError } from "../http.ts";
+import { assertModelAllowed, buildMessages, countPromptChars, estimateMicros, parseJsonOutput, parsePricing, periodOf, readCompletion, readDelta, toSchemaName, type ChatMessage, type FilePart, type Turn, type Usage } from "./core.ts";
+import { MODELS, SYSTEM_MODELS, isModelListed, priceOf, setPricing, type SystemModelKey } from "./models.ts";
+import { reserveQuota, settleQuota } from "./sql.ts";
+
+export type Who = { uid: string; plan: Plan; capMicros: bigint };
+export type ModelChoice = string | { system: SystemModelKey };
+export type JsonCall<T> = { who: Who; model: ModelChoice; kind: string; system: string; user: string; schema: z.ZodType<T>; maxTokens: number; files?: FilePart[]; signal?: AbortSignal };
+export type StreamCall = { who: Who; model: ModelChoice; kind: string; system: string; messages: Turn[]; maxTokens: number; signal: AbortSignal; onDone: (text: string) => Promise<void> };
+
+type Prepared = { uid: string; model: string; kind: string; period: string; est: bigint; cap: bigint; messages: ChatMessage[] };
+
+const JSON_TIMEOUT_MS = 60_000;
+const STREAM_TIMEOUT_MS = 120_000;
+const DAY_MS = 86_400_000;
+const enc = new TextEncoder();
+
+// O(n) in the /models payload
+// INV: failure keeps the previous pricing (null on first boot ⇒ calls fail with 502 upstream, the allowlist stays intact)
+export async function refreshPricing(fetchFn: typeof fetch = fetch): Promise<void> {
+  try {
+    const res = await fetchFn(`${env.OPENROUTER_BASE_URL}/models`, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    const wanted = new Set([...MODELS.map((m) => m.id), ...Object.values(SYSTEM_MODELS)]);
+    const map = parsePricing(await res.json(), wanted);
+    if (map.size === 0) throw new Error("no allowlisted models listed");
+    const dropped = [...wanted].filter((id) => !map.has(id));
+    if (dropped.length > 0) console.error(`llm: dropping unlisted models: ${dropped.join(", ")}`);
+    setPricing(map);
+  } catch (e) {
+    console.error(`llm: /models refresh failed: ${e instanceof Error ? e.message : "unknown"}`);
+  }
+}
+
+// O(1)
+export function startPricingRefresh(): void {
+  void refreshPricing();
+  setInterval(() => void refreshPricing(), DAY_MS).unref();
+}
+
+// O(1)
+// SEC: a string model is client-chosen and checked against the plan allowlist; system models are server-chosen
+function resolveModel(who: Who, choice: ModelChoice): string {
+  if (who.plan === "none") throw new HttpError(402, "payment_required");
+  if (typeof choice !== "string") return SYSTEM_MODELS[choice.system];
+  assertModelAllowed(choice, who.plan);
+  if (!isModelListed(choice)) throw new HttpError(400, "model_not_allowed");
+  return choice;
+}
+
+// O(n) in message size
+function prepareCall(who: Who, choice: ModelChoice, kind: string, messages: ChatMessage[], maxTokens: number): Prepared {
+  const model = resolveModel(who, choice);
+  const { loaded, price } = priceOf(model);
+  if (!price) throw loaded ? new HttpError(400, "model_not_allowed") : new HttpError(502, "upstream");
+  const est = estimateMicros(price, countPromptChars(messages), maxTokens);
+  if (est > who.capMicros) throw new HttpError(429, "quota_exceeded");
+  return { uid: who.uid, model, kind, period: periodOf(new Date()), est, cap: who.capMicros, messages };
+}
+
+// O(1)
+async function reserveOrThrow(p: Prepared): Promise<void> {
+  if (!(await reserveQuota(p.uid, p.period, p.est, p.cap))) throw new HttpError(429, "quota_exceeded");
+}
+
+// O(1)
+// SEC: fixed headers; no tools, no function calling; the API key never leaves this function
+function postCompletion(p: Prepared, maxTokens: number, extra: Record<string, unknown>, signal: AbortSignal): Promise<Response> {
+  return fetch(`${env.OPENROUTER_BASE_URL}/chat/completions`, {
+    method: "POST",
+    signal,
+    headers: { authorization: `Bearer ${env.OPENROUTER_API_KEY}`, "content-type": "application/json", "HTTP-Referer": env.APP_ORIGIN, "X-Title": "BridgeToGrowth Learning" },
+    body: JSON.stringify({ model: p.model, messages: p.messages, max_tokens: maxTokens, usage: { include: true }, ...extra }),
+  });
+}
+
+// O(1)
+function finalUsage(p: Prepared, u: Usage | null, conservative: boolean): Usage & { costMicros: bigint } {
+  const cost = conservative || !u || u.costMicros === null ? p.est : u.costMicros;
+  return { costMicros: cost, promptTokens: u?.promptTokens ?? null, completionTokens: u?.completionTokens ?? null };
+}
+
+// O(n) in response size
+// SEC: upstream bodies are never forwarded; any failure is 502 upstream
+async function runJsonAttempt(p: Prepared, maxTokens: number, format: Record<string, unknown>, signal: AbortSignal | undefined): Promise<{ content: string | null; costMicros: bigint }> {
+  await reserveOrThrow(p);
+  let usage: Usage | null = null;
+  try {
+    const timeout = AbortSignal.timeout(JSON_TIMEOUT_MS);
+    const res = await postCompletion(p, maxTokens, format, signal ? AbortSignal.any([signal, timeout]) : timeout).catch(() => null);
+    if (!res || !res.ok) {
+      await res?.body?.cancel();
+      throw new HttpError(502, "upstream");
+    }
+    const out = readCompletion(await res.json().catch(() => null));
+    usage = out.usage;
+    return { content: out.content, costMicros: finalUsage(p, usage, false).costMicros };
+  } finally {
+    await settleQuota(p.uid, p.period, p.kind, p.model, p.est, finalUsage(p, usage, false));
+  }
+}
+
+// O(n) in prompt and response size
+// INV: each attempt reserves and settles on its own; one retry on unparseable output, then 502 llm_bad_output
+export async function chatJson<T>(o: JsonCall<T>): Promise<{ data: T; costMicros: bigint }> {
+  const messages = buildMessages(o.system, [{ role: "user", content: o.user }], o.files);
+  const p = prepareCall(o.who, o.model, o.kind, messages, o.maxTokens);
+  const format = { response_format: { type: "json_schema", json_schema: { name: toSchemaName(o.kind), strict: true, schema: z.toJSONSchema(o.schema) } } };
+  let total = 0n;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await runJsonAttempt(p, o.maxTokens, format, o.signal);
+    total += r.costMicros;
+    const data = parseJsonOutput(r.content, o.schema);
+    if (data !== null) return { data, costMicros: total };
+  }
+  throw new HttpError(502, "llm_bad_output");
+}
+
+// O(1)
+function frameEvent(e: { t: "d"; v: string } | { t: "end" } | { t: "err"; code: ErrorCode }): Uint8Array {
+  return enc.encode(`data:${JSON.stringify(e)}\n\n`);
+}
+
+// O(n) in streamed size
+// INV: model/plan/pricing/cap errors throw synchronously so the route answers with a status; later errors arrive as an err event
+// INV: a client abort aborts upstream and settles at est
+export function chatStream(o: StreamCall): ReadableStream<Uint8Array> {
+  const p = prepareCall(o.who, o.model, o.kind, buildMessages(o.system, o.messages), o.maxTokens);
+  const upstream = new AbortController();
+  let closed = false;
+  const send = (ctrl: ReadableStreamDefaultController<Uint8Array>, chunk: Uint8Array): void => {
+    if (closed) return;
+    try {
+      ctrl.enqueue(chunk);
+    } catch {
+      closed = true;
+    }
+  };
+  const run = async (ctrl: ReadableStreamDefaultController<Uint8Array>): Promise<void> => {
+    let usage: Usage | null = null;
+    let reserved = false;
+    try {
+      await reserveOrThrow(p);
+      reserved = true;
+      const res = await postCompletion(p, o.maxTokens, { stream: true }, AbortSignal.any([upstream.signal, o.signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)])).catch(() => null);
+      if (!res || !res.ok || !res.body) {
+        await res?.body?.cancel();
+        throw new HttpError(502, "upstream");
+      }
+      const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buf = "";
+      let text = "";
+      for (;;) {
+        const chunk = await reader.read().catch(() => null);
+        if (!chunk) throw new HttpError(502, "upstream");
+        if (chunk.done) break;
+        const parsed = parseSseChunk(buf + chunk.value);
+        buf = parsed.rest;
+        for (const ev of parsed.events) {
+          const d = readDelta(ev);
+          if (d.failed) throw new HttpError(502, "upstream");
+          if (d.usage) usage = d.usage;
+          if (d.text) {
+            text += d.text;
+            send(ctrl, frameEvent({ t: "d", v: d.text }));
+          }
+        }
+      }
+      await o.onDone(text);
+      send(ctrl, frameEvent({ t: "end" }));
+    } catch (e) {
+      const code: ErrorCode = e instanceof HttpError ? e.code : "internal";
+      if (!(e instanceof HttpError)) console.error(e instanceof Error ? e.message : "stream failed");
+      send(ctrl, frameEvent({ t: "err", code }));
+    } finally {
+      if (reserved) await settleQuota(p.uid, p.period, p.kind, p.model, p.est, finalUsage(p, usage, o.signal.aborted || upstream.signal.aborted)).catch((e) => console.error(e instanceof Error ? e.message : "settle failed"));
+      if (!closed) {
+        closed = true;
+        try {
+          ctrl.close();
+        } catch {
+          closed = true;
+        }
+      }
+    }
+  };
+  return new ReadableStream<Uint8Array>({
+    start(ctrl) {
+      void run(ctrl);
+    },
+    cancel() {
+      closed = true;
+      upstream.abort();
+    },
+  });
+}

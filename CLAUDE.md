@@ -33,3 +33,4 @@ MODULE MAP (append one line per module: path · purpose · key exports):
 - src/server/auth/{core,sql,routes,turnstile}.ts · email+password auth, opaque sessions, Turnstile · authRoutes, AuthUser, hashToken, readSessionToken, findSession, verifyTurnstile
 - src/server/testkit.ts · test env + test DB helpers (import statically, server modules dynamically after boot) · bootTestServer, createTestUser, callRoute, TEST_ORIGIN
 - src/server/billing/{core,sql,routes,stripe}.ts · Stripe checkout/portal/cancel/resume, order-independent webhook, entitlement · billingRoutes, entitlementOf, snapshotSubscription, applyStripeEvent, fetchSubscription
+- src/server/llm/{models,core,sql,gateway,routes}.ts + src/shared/sse.ts · OpenRouter gateway, plan allowlist, reserve/settle quota, usage · MODELS, SYSTEM_MODELS, chatJson, chatStream, refreshPricing, assertModelAllowed, reserveQuota, llmRoutes, parseSseChunk
