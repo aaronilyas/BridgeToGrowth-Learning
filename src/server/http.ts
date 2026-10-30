@@ -79,7 +79,7 @@ export function route<B = undefined, A extends boolean = false, E extends boolea
       return await fn({ req, ip, params: req.params ?? {}, body, user: user as Ctx<B, A, E>["user"], plan: ent?.plan as Ctx<B, A, E>["plan"], capMicros: ent?.capMicros as Ctx<B, A, E>["capMicros"] });
     } catch (e) {
       if (e instanceof HttpError) return json({ error: e.code }, e.status);
-      console.error(e instanceof Error ? `${e.message}\n${e.stack ?? ""}` : "non-error thrown");
+      console.error("request failed");
       return json({ error: "internal" }, 500);
     }
   };

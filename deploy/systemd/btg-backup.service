@@ -1,0 +1,19 @@
+[Unit]
+Description=Back up the BridgeToGrowth Learning database
+After=postgresql.service
+
+[Service]
+Type=oneshot
+User=btg
+Group=btg
+UMask=0077
+ExecStartPre=/usr/bin/install -d -o btg -g btg -m 0700 /var/backups/btg
+ExecStart=/bin/bash -c 'set -euo pipefail; pg_dump -Fc btg > "/var/backups/btg/btg-$(date +%%F).dump"; find /var/backups/btg -type f -name "btg-*.dump" -mtime +14 -delete'
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ReadWritePaths=/var/backups
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX

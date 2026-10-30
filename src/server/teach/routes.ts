@@ -8,7 +8,7 @@ import { filterCitations, toCitations } from "../lit/core.ts";
 import { chatJson, chatStream } from "../llm/gateway.ts";
 import { upsertTopics } from "../topics/sql.ts";
 import { StepContent, StepOut, allCitations, buildChatContext, buildPlanPrompt, buildStepPrompt, buildTutorSystem, normalizePlan, normalizeStep, pickLessonModel, toStepPublic } from "./core.ts";
-import { ensureConversation, findLesson, insertLesson, insertStep, insertMessage, listLessons, listMessages, listPapers, listSteps, type LessonRow } from "./sql.ts";
+import { ensureConversation, findLesson, insertLesson, insertStep, insertMessagePair, listLessons, listMessages, listPapers, listSteps, type LessonRow } from "./sql.ts";
 
 const IdParams = z.strictObject({ id: z.uuid() });
 const StepParams = z.strictObject({ id: z.uuid(), idx: z.coerce.number().int().min(0).max(7) });
@@ -102,20 +102,19 @@ const chat = route({ entitled: true, body: ChatRequest, rate: { key: "chat", cap
   const system = buildTutorSystem(settings, readPlan(lesson), papers);
   const model = pickLessonModel(lesson.model, settings, c.plan);
   const convId = await ensureConversation(uid, lesson.id);
-  await insertMessage(uid, convId, "user", c.body.message, []);
   const recent = await listMessages(uid, lesson.id, null, 12);
   const stream = chatStream({
     who: { uid, plan: c.plan, capMicros: c.capMicros },
     model,
     kind: "chat",
     system,
-    messages: buildChatContext(recent.map((m) => ({ role: m.role, content: m.content }))),
+    messages: buildChatContext([{ role: "user", content: c.body.message }, ...recent.map((m) => ({ role: m.role, content: m.content }))]),
     maxTokens: 900,
     signal: c.req.signal,
     onDone: async (text) => {
       const f = filterCitations(text, papers.length);
       const citations = toCitations(f.used, papers);
-      await insertMessage(uid, convId, "assistant", f.text, citations);
+      await insertMessagePair(uid, convId, c.body.message, f.text, citations);
       return { citations };
     },
   });

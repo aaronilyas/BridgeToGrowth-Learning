@@ -89,10 +89,16 @@ export async function ensureConversation(uid: string, lessonId: string): Promise
 }
 
 // O(1)
-export async function insertMessage(uid: string, convId: string, role: "user" | "assistant", content: string, citations: Citation[]): Promise<void> {
-  await sql`
-    INSERT INTO messages (conv_id, role, content, citations)
-    SELECT c.id, ${role}, ${content}, ${JSON.stringify(citations)}::text::jsonb FROM conversations c WHERE c.id = ${convId} AND c.user_id = ${uid}`;
+// INV: both turns commit together, after the model stream succeeds
+export async function insertMessagePair(uid: string, convId: string, userContent: string, assistantContent: string, citations: Citation[]): Promise<void> {
+  await sql.begin(async (tx) => {
+    await tx`
+      INSERT INTO messages (conv_id, role, content, citations)
+      SELECT c.id, 'user', ${userContent}, '[]'::jsonb FROM conversations c WHERE c.id = ${convId} AND c.user_id = ${uid}`;
+    await tx`
+      INSERT INTO messages (conv_id, role, content, citations)
+      SELECT c.id, 'assistant', ${assistantContent}, ${JSON.stringify(citations)}::text::jsonb FROM conversations c WHERE c.id = ${convId} AND c.user_id = ${uid}`;
+  });
 }
 
 // O(limit)

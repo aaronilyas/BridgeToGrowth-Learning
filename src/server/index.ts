@@ -35,4 +35,4 @@ startPricingRefresh();
 
 Bun.serve({ hostname: "127.0.0.1", port: env.PORT, maxRequestBodySize: 12 * 2 ** 20, routes });
 
-setInterval(() => void deleteExpiredSessions().catch((e) => console.error(e instanceof Error ? e.message : "session sweep failed")), 3_600_000).unref();
+setInterval(() => void deleteExpiredSessions().catch(() => console.error("session sweep failed")), 3_600_000).unref();

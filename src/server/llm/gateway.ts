@@ -32,7 +32,7 @@ export async function refreshPricing(fetchFn: typeof fetch = fetch): Promise<voi
     if (dropped.length > 0) console.error(`llm: dropping unlisted models: ${dropped.join(", ")}`);
     setPricing(map);
   } catch (e) {
-    console.error(`llm: /models refresh failed: ${e instanceof Error ? e.message : "unknown"}`);
+    console.error("llm: /models refresh failed");
   }
 }
 
@@ -174,10 +174,10 @@ export function chatStream(o: StreamCall): ReadableStream<Uint8Array> {
       send(ctrl, frameEvent(extra?.citations ? { t: "end", citations: extra.citations } : { t: "end" }));
     } catch (e) {
       const code: ErrorCode = e instanceof HttpError ? e.code : "internal";
-      if (!(e instanceof HttpError)) console.error(e instanceof Error ? e.message : "stream failed");
+      if (!(e instanceof HttpError)) console.error("llm: stream failed");
       send(ctrl, frameEvent({ t: "err", code }));
     } finally {
-      if (reserved) await settleQuota(p.uid, p.period, p.kind, p.model, p.est, finalUsage(p, usage, o.signal.aborted || upstream.signal.aborted)).catch((e) => console.error(e instanceof Error ? e.message : "settle failed"));
+      if (reserved) await settleQuota(p.uid, p.period, p.kind, p.model, p.est, finalUsage(p, usage, o.signal.aborted || upstream.signal.aborted)).catch(() => console.error("llm: quota settlement failed"));
       if (!closed) {
         closed = true;
         try {
