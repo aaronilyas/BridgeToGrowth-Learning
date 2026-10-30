@@ -35,6 +35,7 @@ MODULE MAP (append one line per module: path · purpose · key exports):
 - src/server/llm/{models,core,sql,gateway,routes}.ts + src/shared/sse.ts · OpenRouter Free Models Router, reserve/settle usage, usage API · MODELS, SYSTEM_MODELS, chatJson, chatStream, refreshPricing, assertModelAllowed, reserveQuota, llmRoutes, parseSseChunk
 - src/server/lit/{core,sql,openalex}.ts · OpenAlex grounding, 7-day cache, citation filtering · retrievePapers, buildSourcesBlock, filterCitations, toCitations, GROUNDING_RULES, normalizeQuery, abstractFromInverted
 - src/shared/settings.ts · Settings schema with defaults, deep-partial patch, merge · Settings, SettingsPatch, mergeSettings
+- src/shared/math.ts · wrap bare lesson LaTeX in $ delimiters before storage and render · wrapBareMath, MATH_DELIM_RULE
 - src/server/learn/{core,sql,routes}.ts · SM-2, attempt pipeline, practice queue, settings routes · qualityOf, scheduleSm2, nextMastery, foldTopicStats, loadSettings, resolveModel, toQuestionPublic, insertCards, recordAttempt, learnRoutes
 - src/server/topics/{core,sql}.ts · topic slugs, batched topic and edge upsert, lesson topic release · slugOf, upsertTopics, topicsReleasedByLesson
 - src/server/gen/{core,sql,routes}.ts · standard and style-mimic question generation, strict-mode GenOut, count normalizer · genRoutes, GenOut, splitCounts, buildGenPrompt, normalizeQuestions, insertQuestions

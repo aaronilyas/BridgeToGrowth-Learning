@@ -3,6 +3,7 @@ import type { JSX } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkMath from "remark-math";
+import { wrapBareMath } from "../../shared/math.ts";
 
 // SEC: model output is untrusted: no raw HTML, no images, links only for http(s) and always in a new, opener-less tab
 const components: Components = {
@@ -23,7 +24,7 @@ export function Md({ text, className = "" }: { text: string; className?: string 
   return (
     <div className={`md leading-relaxed ${className}`}>
       <ReactMarkdown skipHtml remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]} components={components}>
-        {text}
+        {wrapBareMath(text)}
       </ReactMarkdown>
     </div>
   );

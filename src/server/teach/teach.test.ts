@@ -176,3 +176,31 @@ test("deleting a lesson replays mastery from the attempts that remain", async ()
       (SELECT count(*)::int FROM cards WHERE question_id = ${keepQ} OR question_id = ${practiceQ}) AS cards`;
   expect(counts).toEqual({ lessons: 1, dropped: 0, kept: 1, practice: 1, related: 1, cards: 2 });
 });
+
+test("a generated quick check stores math inside dollar delimiters", async () => {
+  const { normalizeStep, buildStepPrompt } = await import("./core.ts");
+  const { Settings } = await import("../../shared/settings.ts");
+  const { MATH_DELIM_RULE } = await import("../../shared/math.ts");
+  expect(buildStepPrompt(Settings.parse({}), { title: "T", topic: { name: "X", domain: "math" }, related: [], steps: [{ title: "s", summary: "s" }] }, 0, [])).toContain(MATH_DELIM_RULE);
+  const step = normalizeStep(
+    {
+      explanationMd: "An ODE has the form $dy/dx = f(x, y)$.",
+      keyIdea: "Separate the variables.",
+      example: "Solve $dy/dx = x y$.",
+      check: {
+        stem: "Which of the following first-order ODEs is separable?",
+        choices: ["dy/dx = x + y", "dy/dx = x^2 y^3", "dy/dx = sin(x+y)", "dy/dx = e^{x} + e^{y}"],
+        answerIndex: 1,
+        explanation: "Only option B factors as a product of a function of x (x^2) and a function of y (y^3), allowing separation into dy/y^3 = x^2 dx.",
+      },
+    },
+    "Separable",
+    180,
+    [],
+  );
+  expect(step.check.choices).toEqual(["$dy/dx = x + y$", "$dy/dx = x^2 y^3$", "$dy/dx = sin(x+y)$", "$dy/dx = e^{x} + e^{y}$"]);
+  expect(step.check.stem).toBe("Which of the following first-order ODEs is separable?");
+  expect(step.check.explanation).toBe("Only option B factors as a product of a function of $x (x^2)$ and a function of $y (y^3)$, allowing separation into $dy/y^3 = x^2 dx$.");
+  expect(step.content.explanationMd).toBe("An ODE has the form $dy/dx = f(x, y)$.");
+  expect(step.content.example).toBe("Solve $dy/dx = x y$.");
+});
