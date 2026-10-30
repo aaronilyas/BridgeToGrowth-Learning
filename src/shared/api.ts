@@ -141,3 +141,28 @@ export type ChatRequest = z.infer<typeof ChatRequest>;
 
 export const StepPublic = z.strictObject({ idx: z.int().min(0), title: z.string(), explanationMd: z.string(), keyIdea: z.string(), example: z.string().nullable(), check: QuestionPublic, citations: z.array(Citation) });
 export type StepPublic = z.infer<typeof StepPublic>;
+
+const Rate = z.number().min(0).nullable();
+export const Metrics = z.strictObject({ attempts: z.int().nonnegative(), accuracy: Rate, retention: Rate, calibrationError: Rate, masteredShare: Rate });
+export type Metrics = z.infer<typeof Metrics>;
+
+export const MetricKey = z.enum(["attempts", "accuracy", "retention", "calibrationError", "masteredShare", "streakDays", "dueNow"]);
+export type MetricKey = z.infer<typeof MetricKey>;
+
+export const GraphNode = z.strictObject({ id: z.uuid(), name: z.string(), domain: z.string(), mastery: z.number(), attempts: z.int().nonnegative(), lastSeenAt: z.iso.datetime().nullable() });
+export const GraphResponse = z.strictObject({ nodes: z.array(GraphNode), edges: z.array(z.strictObject({ src: z.uuid(), dst: z.uuid(), kind: EdgeKind })) });
+export type GraphResponse = z.infer<typeof GraphResponse>;
+
+export const StatsQuery = z.strictObject({ days: z.coerce.number().int().min(7).max(365).default(30) });
+export type StatsQuery = z.infer<typeof StatsQuery>;
+
+export const StatsResponse = z.strictObject({
+  totals: Metrics.extend({ streakDays: z.int().nonnegative(), dueNow: z.int().nonnegative(), topicsStarted: z.int().nonnegative(), goalToday: z.strictObject({ done: z.int().nonnegative(), target: z.int().positive() }) }),
+  daily: z.array(Metrics.extend({ day: z.iso.date() })),
+  byDomain: z.array(Metrics.extend({ domain: z.string() })),
+  byTopic: z.array(Metrics.extend({ id: z.uuid(), name: z.string(), domain: z.string() })),
+});
+export type StatsResponse = z.infer<typeof StatsResponse>;
+
+export const InsightsResponse = z.strictObject({ day: z.iso.date(), trends: z.array(z.strictObject({ text: z.string().max(200), metric: MetricKey, direction: z.enum(["up", "down", "flat"]) })).max(5) });
+export type InsightsResponse = z.infer<typeof InsightsResponse>;
