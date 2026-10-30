@@ -18,6 +18,15 @@
 
 :root,
 [data-season="spring"] {
+  --d-math: #6f9bff;
+  --d-physics: #2fc7c0;
+  --d-chemistry: #f2c14e;
+  --d-biology: #8fd06a;
+  --d-cs: #b68cf2;
+  --d-engineering: #f09a5a;
+  --d-statistics: #f27fb0;
+  --d-earth: #c9a27a;
+  --d-other: #a3b0bd;
   --bg: #0d1413;
   --panel: #151e1d;
   --panel-2: #1b2725;
@@ -87,6 +96,20 @@
   --art-2: #dcebfb;
   --art-3: #4b93f2;
   --art-leaf: #a9cdf5;
+}
+
+[data-season="summer"],
+[data-season="fall"],
+[data-season="winter"] {
+  --d-math: #6f9bff;
+  --d-physics: #2fc7c0;
+  --d-chemistry: #f2c14e;
+  --d-biology: #8fd06a;
+  --d-cs: #b68cf2;
+  --d-engineering: #f09a5a;
+  --d-statistics: #f27fb0;
+  --d-earth: #c9a27a;
+  --d-other: #a3b0bd;
 }
 
 html {
