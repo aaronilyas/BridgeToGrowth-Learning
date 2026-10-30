@@ -101,3 +101,26 @@ export type AttemptResponse = z.infer<typeof AttemptResponse>;
 
 export const QueueQuery = z.strictObject({ limit: z.coerce.number().int().min(1).max(50).default(20) });
 export type QueueQuery = z.infer<typeof QueueQuery>;
+
+export const GenerateRequest = z.strictObject({
+  topic: z.string().trim().min(2).max(120),
+  count: z.int().min(1).max(20),
+  kind: z.enum(["mcq", "free", "mix"]).default("mix"),
+  styleId: z.uuid().optional(),
+  model: z.string().min(1).max(100).optional(),
+});
+export type GenerateRequest = z.infer<typeof GenerateRequest>;
+
+export const StyleProfile = z.strictObject({
+  subject: z.string().max(80),
+  domain: Domain,
+  level: z.enum(["intro", "undergrad", "grad"]),
+  questionTypes: z.array(z.string().max(60)).max(5),
+  multiPart: z.boolean(),
+  notation: z.enum(["latex", "plain"]),
+  usesUnits: z.boolean(),
+  difficulty: z.int().min(1).max(5),
+  length: z.enum(["short", "medium", "long"]),
+  exemplars: z.array(z.string().max(300)).max(3),
+});
+export type StyleProfile = z.infer<typeof StyleProfile>;

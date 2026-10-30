@@ -21,7 +21,7 @@ export type Ctx<B, A extends boolean = false, E extends boolean = false> = {
   plan: true extends E ? Plan : undefined;
   capMicros: true extends E ? bigint : undefined;
 };
-export type RouteOpts<B, A extends boolean = false, E extends boolean = false> = { auth?: A; entitled?: E; body?: z.ZodType<B>; rate?: { key: string; cap: number; perMin: number }; csrf?: boolean; maxBody?: number };
+export type RouteOpts<B, A extends boolean = false, E extends boolean = false> = { auth?: A; entitled?: E; body?: z.ZodType<B>; rate?: { key: string; cap: number; perMin: number }; csrf?: boolean; maxBody?: number; raw?: boolean };
 
 const JSON_HEADERS = { "content-type": "application/json", "cache-control": "no-store", "x-content-type-options": "nosniff" };
 
@@ -38,6 +38,7 @@ function readIp(req: Request): string {
 
 // O(n) in body size
 // INV: check order is size, csrf, rate limit, auth, body parse, handler
+// INV: raw skips body parsing so the handler reads the stream itself (multipart); size is capped by content-length here and by the handler
 // INV: entitled implies auth; plan none is 402, decided from the session row with no extra query
 export function route<B = undefined, A extends boolean = false, E extends boolean = false>(opts: RouteOpts<B, A, E>, fn: (c: Ctx<B, A, E>) => Promise<Response>): (req: Request & { params?: Record<string, string> }) => Promise<Response> {
   const maxBody = opts.maxBody ?? 64 * 1024;
@@ -62,7 +63,7 @@ export function route<B = undefined, A extends boolean = false, E extends boolea
         if (ent.plan === "none") throw new HttpError(402, "payment_required");
       }
       let body = undefined as B;
-      if (opts.body) {
+      if (opts.body && !opts.raw) {
         const text = await req.text();
         if (new TextEncoder().encode(text).length > maxBody) throw new HttpError(413, "too_large");
         let raw: unknown;

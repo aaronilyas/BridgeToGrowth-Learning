@@ -38,3 +38,5 @@ MODULE MAP (append one line per module: path · purpose · key exports):
 - src/shared/settings.ts · Settings schema with defaults, deep-partial patch, merge · Settings, SettingsPatch, mergeSettings
 - src/server/learn/{core,sql,routes}.ts · SM-2, attempt pipeline, practice queue, settings routes · qualityOf, scheduleSm2, nextMastery, loadSettings, resolveModel, toQuestionPublic, insertCards, recordAttempt, learnRoutes
 - src/server/topics/{core,sql}.ts · topic slugs, batched topic and edge upsert · slugOf, upsertTopics
+- src/server/gen/{core,sql,routes}.ts · standard and style-mimic question generation, strict-mode GenOut, count normalizer · genRoutes, GenOut, splitCounts, buildGenPrompt, normalizeQuestions, insertQuestions
+- src/server/styles/{core,sql,routes}.ts · PDF/PNG style-profile uploads (magic bytes, profile only stored) · styleRoutes, sniffMime, acceptUpload, toFilePart
