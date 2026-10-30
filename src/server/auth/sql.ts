@@ -35,7 +35,7 @@ export async function insertSession(uid: string, idHash: Uint8Array): Promise<vo
 // SEC: the session token is the credential; uid comes from this lookup, never from the client
 export async function findSession(idHash: Uint8Array): Promise<AuthUser | null> {
   const rows: AuthUser[] = await sql`
-    SELECT u.id, u.email, u.settings, u.trial_ends_at, u.sub_status, u.sub_period_end, u.sub_cancel_at_period_end
+    SELECT u.id, u.email, u.settings, u.trial_ends_at, u.stripe_customer_id, u.sub_id, u.sub_status, u.sub_period_end, u.sub_cancel_at_period_end
     FROM sessions s JOIN users u ON u.id = s.user_id
     WHERE s.id_hash = ${idHash} AND s.expires_at > now()`;
   return rows[0] ?? null;

@@ -3,6 +3,8 @@ export type AuthUser = {
   email: string;
   settings: Record<string, unknown>;
   trial_ends_at: Date;
+  stripe_customer_id: string | null;
+  sub_id: string | null;
   sub_status: string;
   sub_period_end: Date | null;
   sub_cancel_at_period_end: boolean;

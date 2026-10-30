@@ -1,8 +1,9 @@
 import type { z } from "zod";
-import type { ErrorCode } from "../shared/api.ts";
+import type { ErrorCode, Plan } from "../shared/api.ts";
 import { env } from "./env.ts";
 import { hashToken, readSessionToken, type AuthUser } from "./auth/core.ts";
 import { findSession } from "./auth/sql.ts";
+import { entitlementOf } from "./billing/core.ts";
 import { takeToken } from "./rate.ts";
 
 export class HttpError extends Error {
@@ -11,8 +12,16 @@ export class HttpError extends Error {
   }
 }
 
-export type Ctx<B, A extends boolean = false> = { req: Request; ip: string; params: Record<string, string>; body: B; user: A extends true ? AuthUser : undefined };
-export type RouteOpts<B, A extends boolean = false> = { auth?: A; body?: z.ZodType<B>; rate?: { key: string; cap: number; perMin: number }; csrf?: boolean; maxBody?: number };
+export type Ctx<B, A extends boolean = false, E extends boolean = false> = {
+  req: Request;
+  ip: string;
+  params: Record<string, string>;
+  body: B;
+  user: true extends A | E ? AuthUser : undefined;
+  plan: true extends E ? Plan : undefined;
+  capMicros: true extends E ? bigint : undefined;
+};
+export type RouteOpts<B, A extends boolean = false, E extends boolean = false> = { auth?: A; entitled?: E; body?: z.ZodType<B>; rate?: { key: string; cap: number; perMin: number }; csrf?: boolean; maxBody?: number };
 
 const JSON_HEADERS = { "content-type": "application/json", "cache-control": "no-store", "x-content-type-options": "nosniff" };
 
@@ -29,7 +38,8 @@ function readIp(req: Request): string {
 
 // O(n) in body size
 // INV: check order is size, csrf, rate limit, auth, body parse, handler
-export function route<B = undefined, A extends boolean = false>(opts: RouteOpts<B, A>, fn: (c: Ctx<B, A>) => Promise<Response>): (req: Request & { params?: Record<string, string> }) => Promise<Response> {
+// INV: entitled implies auth; plan none is 402, decided from the session row with no extra query
+export function route<B = undefined, A extends boolean = false, E extends boolean = false>(opts: RouteOpts<B, A, E>, fn: (c: Ctx<B, A, E>) => Promise<Response>): (req: Request & { params?: Record<string, string> }) => Promise<Response> {
   const maxBody = opts.maxBody ?? 64 * 1024;
   return async (req) => {
     try {
@@ -40,11 +50,16 @@ export function route<B = undefined, A extends boolean = false>(opts: RouteOpts<
       const ip = readIp(req);
       if (opts.rate && !takeToken(`${opts.rate.key}:${ip}`, opts.rate.cap, opts.rate.perMin)) throw new HttpError(429, "rate_limited");
       let user: AuthUser | undefined;
-      if (opts.auth) {
+      if (opts.auth || opts.entitled) {
         const token = readSessionToken(req.headers.get("cookie"));
         const found = token ? await findSession(hashToken(token)) : null;
         if (!found) throw new HttpError(401, "unauthenticated");
         user = found;
+      }
+      let ent: { plan: Plan; capMicros: bigint } | undefined;
+      if (opts.entitled && user) {
+        ent = entitlementOf(user, new Date());
+        if (ent.plan === "none") throw new HttpError(402, "payment_required");
       }
       let body = undefined as B;
       if (opts.body) {
@@ -60,7 +75,7 @@ export function route<B = undefined, A extends boolean = false>(opts: RouteOpts<
         if (!r.success) throw new HttpError(400, "bad_request");
         body = r.data;
       }
-      return await fn({ req, ip, params: req.params ?? {}, body, user: user as Ctx<B, A>["user"] });
+      return await fn({ req, ip, params: req.params ?? {}, body, user: user as Ctx<B, A, E>["user"], plan: ent?.plan as Ctx<B, A, E>["plan"], capMicros: ent?.capMicros as Ctx<B, A, E>["capMicros"] });
     } catch (e) {
       if (e instanceof HttpError) return json({ error: e.code }, e.status);
       console.error(e instanceof Error ? `${e.message}\n${e.stack ?? ""}` : "non-error thrown");

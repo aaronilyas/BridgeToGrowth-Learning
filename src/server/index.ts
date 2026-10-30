@@ -1,11 +1,13 @@
 import index from "../web/index.html";
 import { authRoutes } from "./auth/routes.ts";
 import { deleteExpiredSessions } from "./auth/sql.ts";
+import { billingRoutes } from "./billing/routes.ts";
 import { env } from "./env.ts";
 import { json, route } from "./http.ts";
 
 const routes = {
   ...authRoutes,
+  ...billingRoutes,
   "/api/health": { GET: route({}, async () => json({ ok: true })) },
   "/api/*": route({ csrf: false }, async () => json({ error: "not_found" }, 404)),
   "/*": index,

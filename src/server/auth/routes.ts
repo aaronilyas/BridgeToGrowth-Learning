@@ -1,4 +1,5 @@
 import { ConfigResponse, LoginRequest, SignupRequest, type AuthUserResponse, type MeResponse } from "../../shared/api.ts";
+import { entitlementOf } from "../billing/core.ts";
 import { env } from "../env.ts";
 import { HttpError, json, route } from "../http.ts";
 import { takeToken } from "../rate.ts";
@@ -41,7 +42,10 @@ const logout = route({ auth: true }, async (c) => {
   return new Response(null, { status: 204, headers: { "set-cookie": formatClearCookie(), "cache-control": "no-store" } });
 });
 
-const me = route({ auth: true }, async (c) => json({ id: c.user.id, email: c.user.email, settings: c.user.settings } satisfies MeResponse));
+const me = route({ auth: true }, async (c) => {
+  const e = entitlementOf(c.user, new Date());
+  return json({ id: c.user.id, email: c.user.email, settings: c.user.settings, entitlement: { plan: e.plan, capMicros: Number(e.capMicros) } } satisfies MeResponse);
+});
 
 const config = route({}, async () => json(ConfigResponse.parse({ turnstileSiteKey: env.TURNSTILE_SITE_KEY })));
 

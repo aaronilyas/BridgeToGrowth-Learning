@@ -19,8 +19,21 @@ export type LoginRequest = z.infer<typeof LoginRequest>;
 export const AuthUserResponse = z.strictObject({ id: z.uuid(), email: z.string() });
 export type AuthUserResponse = z.infer<typeof AuthUserResponse>;
 
-export const MeResponse = z.strictObject({ id: z.uuid(), email: z.string(), settings: z.record(z.string(), z.unknown()) });
-export type MeResponse = z.infer<typeof MeResponse>;
 
 export const ConfigResponse = z.strictObject({ turnstileSiteKey: z.string() });
 export type ConfigResponse = z.infer<typeof ConfigResponse>;
+
+export const Plan = z.enum(["pro", "trial", "none"]);
+export type Plan = z.infer<typeof Plan>;
+
+export const BillingResponse = z.strictObject({ plan: Plan, subStatus: z.string(), periodEnd: z.iso.datetime().nullable(), cancelAtPeriodEnd: z.boolean(), trialEndsAt: z.iso.datetime() });
+export type BillingResponse = z.infer<typeof BillingResponse>;
+
+export const UrlResponse = z.strictObject({ url: z.url() });
+export type UrlResponse = z.infer<typeof UrlResponse>;
+
+export const EntitlementResponse = z.strictObject({ plan: Plan, capMicros: z.number().int().nonnegative() });
+export type EntitlementResponse = z.infer<typeof EntitlementResponse>;
+
+export const MeResponse = z.strictObject({ id: z.uuid(), email: z.string(), settings: z.record(z.string(), z.unknown()), entitlement: EntitlementResponse });
+export type MeResponse = z.infer<typeof MeResponse>;
