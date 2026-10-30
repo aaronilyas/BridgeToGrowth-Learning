@@ -4,6 +4,7 @@ import { json, route } from "./http.ts";
 import { genRoutes } from "./gen/routes.ts";
 import { learnRoutes } from "./learn/routes.ts";
 import { startPricingRefresh } from "./llm/gateway.ts";
+import { SERVER_IDLE_TIMEOUT_S } from "./llm/timeouts.ts";
 import { llmRoutes } from "./llm/routes.ts";
 import { resetReservations } from "./llm/sql.ts";
 import { localRoutes } from "./local/routes.ts";
@@ -32,4 +33,5 @@ await ensureLocalUser();
 await resetReservations();
 startPricingRefresh();
 
-Bun.serve({ hostname: "127.0.0.1", port: env.PORT, maxRequestBodySize: 12 * 2 ** 20, routes });
+// INV: idleTimeout stays above the model budgets in llm/timeouts.ts. Bun's default of 10s resets the socket before a lesson step or chat reply is written.
+Bun.serve({ hostname: "127.0.0.1", port: env.PORT, maxRequestBodySize: 12 * 2 ** 20, idleTimeout: SERVER_IDLE_TIMEOUT_S, routes });
