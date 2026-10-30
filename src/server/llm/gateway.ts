@@ -44,7 +44,7 @@ export function startPricingRefresh(): void {
 
 // O(1)
 // SEC: a string model is client-chosen and checked against the plan allowlist; system models are server-chosen
-function resolveModel(who: Who, choice: ModelChoice): string {
+function chooseModel(who: Who, choice: ModelChoice): string {
   if (who.plan === "none") throw new HttpError(402, "payment_required");
   if (typeof choice !== "string") return SYSTEM_MODELS[choice.system];
   assertModelAllowed(choice, who.plan);
@@ -54,7 +54,7 @@ function resolveModel(who: Who, choice: ModelChoice): string {
 
 // O(n) in message size
 function prepareCall(who: Who, choice: ModelChoice, kind: string, messages: ChatMessage[], maxTokens: number): Prepared {
-  const model = resolveModel(who, choice);
+  const model = chooseModel(who, choice);
   const { loaded, price } = priceOf(model);
   if (!price) throw loaded ? new HttpError(400, "model_not_allowed") : new HttpError(502, "upstream");
   const est = estimateMicros(price, countPromptChars(messages), maxTokens);

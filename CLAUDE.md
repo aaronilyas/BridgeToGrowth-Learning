@@ -35,3 +35,6 @@ MODULE MAP (append one line per module: path · purpose · key exports):
 - src/server/billing/{core,sql,routes,stripe}.ts · Stripe checkout/portal/cancel/resume, order-independent webhook, entitlement · billingRoutes, entitlementOf, snapshotSubscription, applyStripeEvent, fetchSubscription
 - src/server/llm/{models,core,sql,gateway,routes}.ts + src/shared/sse.ts · OpenRouter gateway, plan allowlist, reserve/settle quota, usage · MODELS, SYSTEM_MODELS, chatJson, chatStream, refreshPricing, assertModelAllowed, reserveQuota, llmRoutes, parseSseChunk
 - src/server/lit/{core,sql,openalex}.ts · OpenAlex grounding, 7-day cache, citation filtering · retrievePapers, buildSourcesBlock, filterCitations, toCitations, GROUNDING_RULES, normalizeQuery, abstractFromInverted
+- src/shared/settings.ts · Settings schema with defaults, deep-partial patch, merge · Settings, SettingsPatch, mergeSettings
+- src/server/learn/{core,sql,routes}.ts · SM-2, attempt pipeline, practice queue, settings routes · qualityOf, scheduleSm2, nextMastery, loadSettings, resolveModel, toQuestionPublic, insertCards, recordAttempt, learnRoutes
+- src/server/topics/{core,sql}.ts · topic slugs, batched topic and edge upsert · slugOf, upsertTopics

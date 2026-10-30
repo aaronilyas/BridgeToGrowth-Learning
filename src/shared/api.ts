@@ -62,3 +62,42 @@ export type StreamEvent = z.infer<typeof StreamEvent>;
 
 export const Citation = z.strictObject({ n: z.int().min(1), paperId: z.string(), doi: z.string().nullable(), title: z.string(), year: z.int().nullable() });
 export type Citation = z.infer<typeof Citation>;
+
+export const Domain = z.enum(["math", "physics", "chemistry", "biology", "cs", "engineering", "statistics", "earth", "other"]);
+export type Domain = z.infer<typeof Domain>;
+
+export const EdgeKind = z.enum(["prereq", "related"]);
+export type EdgeKind = z.infer<typeof EdgeKind>;
+
+export const QuestionKind = z.enum(["mcq", "free"]);
+export type QuestionKind = z.infer<typeof QuestionKind>;
+
+// INV: the only shape in which a question leaves the server before it is answered; no answer, explanation or rubric
+export const QuestionPublic = z.strictObject({ id: z.uuid(), topicId: z.uuid(), kind: QuestionKind, stem: z.string(), choices: z.array(z.string()).nullable(), lessonId: z.uuid().nullable() });
+export type QuestionPublic = z.infer<typeof QuestionPublic>;
+
+export const AttemptRequest = z.strictObject({
+  questionId: z.uuid(),
+  choice: z.int().min(0).max(3).optional(),
+  response: z.string().max(5000).optional(),
+  confidence: z.int().min(0).max(100),
+  latencyMs: z.int().min(0).max(3_600_000),
+});
+export type AttemptRequest = z.infer<typeof AttemptRequest>;
+
+export const AttemptAnswer = z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("mcq"), index: z.int() }), z.strictObject({ kind: z.literal("free"), model: z.string() })]);
+export type AttemptAnswer = z.infer<typeof AttemptAnswer>;
+
+export const AttemptResponse = z.strictObject({
+  score: z.number().min(0).max(1),
+  correct: z.boolean(),
+  feedback: z.string().nullable(),
+  answer: AttemptAnswer,
+  explanation: z.string(),
+  citations: z.array(Citation),
+  nextDueAt: z.iso.datetime().nullable(),
+});
+export type AttemptResponse = z.infer<typeof AttemptResponse>;
+
+export const QueueQuery = z.strictObject({ limit: z.coerce.number().int().min(1).max(50).default(20) });
+export type QueueQuery = z.infer<typeof QueueQuery>;
