@@ -40,3 +40,4 @@ MODULE MAP (append one line per module: path · purpose · key exports):
 - src/server/topics/{core,sql}.ts · topic slugs, batched topic and edge upsert · slugOf, upsertTopics
 - src/server/gen/{core,sql,routes}.ts · standard and style-mimic question generation, strict-mode GenOut, count normalizer · genRoutes, GenOut, splitCounts, buildGenPrompt, normalizeQuestions, insertQuestions
 - src/server/styles/{core,sql,routes}.ts · PDF/PNG style-profile uploads (magic bytes, profile only stored) · styleRoutes, sniffMime, acceptUpload, toFilePart
+- src/server/teach/{core,sql,routes,prompts}.ts · grounded lessons, lazy steps with MCQ check, streamed Socratic chat · teachRoutes, StepOut, normalizePlan, normalizeStep, buildChatContext, TUTOR_RULES

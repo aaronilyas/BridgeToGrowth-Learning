@@ -57,11 +57,11 @@ export const UsageResponse = z.strictObject({
 });
 export type UsageResponse = z.infer<typeof UsageResponse>;
 
-export const StreamEvent = z.discriminatedUnion("t", [z.strictObject({ t: z.literal("d"), v: z.string() }), z.strictObject({ t: z.literal("end") }), z.strictObject({ t: z.literal("err"), code: z.string() })]);
-export type StreamEvent = z.infer<typeof StreamEvent>;
-
 export const Citation = z.strictObject({ n: z.int().min(1), paperId: z.string(), doi: z.string().nullable(), title: z.string(), year: z.int().nullable() });
 export type Citation = z.infer<typeof Citation>;
+
+export const StreamEvent = z.discriminatedUnion("t", [z.strictObject({ t: z.literal("d"), v: z.string() }), z.strictObject({ t: z.literal("end"), citations: z.array(Citation).optional() }), z.strictObject({ t: z.literal("err"), code: z.string() })]);
+export type StreamEvent = z.infer<typeof StreamEvent>;
 
 export const Domain = z.enum(["math", "physics", "chemistry", "biology", "cs", "engineering", "statistics", "earth", "other"]);
 export type Domain = z.infer<typeof Domain>;
@@ -124,3 +124,20 @@ export const StyleProfile = z.strictObject({
   exemplars: z.array(z.string().max(300)).max(3),
 });
 export type StyleProfile = z.infer<typeof StyleProfile>;
+
+export const LessonPlan = z.strictObject({
+  title: z.string().max(120),
+  topic: z.strictObject({ name: z.string().max(120), domain: Domain }),
+  related: z.array(z.strictObject({ name: z.string().max(120), domain: Domain, kind: EdgeKind })),
+  steps: z.array(z.strictObject({ title: z.string().max(80), summary: z.string().max(200) })),
+});
+export type LessonPlan = z.infer<typeof LessonPlan>;
+
+export const CreateLessonRequest = z.strictObject({ prompt: z.string().trim().min(2).max(2000), model: z.string().min(1).max(100).optional() });
+export type CreateLessonRequest = z.infer<typeof CreateLessonRequest>;
+
+export const ChatRequest = z.strictObject({ message: z.string().trim().min(1).max(4000) });
+export type ChatRequest = z.infer<typeof ChatRequest>;
+
+export const StepPublic = z.strictObject({ idx: z.int().min(0), title: z.string(), explanationMd: z.string(), keyIdea: z.string(), example: z.string().nullable(), check: QuestionPublic, citations: z.array(Citation) });
+export type StepPublic = z.infer<typeof StepPublic>;

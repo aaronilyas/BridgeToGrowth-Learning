@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ErrorCode, Plan } from "../../shared/api.ts";
+import type { Citation, ErrorCode, Plan } from "../../shared/api.ts";
 import { parseSseChunk } from "../../shared/sse.ts";
 import { env } from "../env.ts";
 import { HttpError } from "../http.ts";
@@ -10,7 +10,7 @@ import { reserveQuota, settleQuota } from "./sql.ts";
 export type Who = { uid: string; plan: Plan; capMicros: bigint };
 export type ModelChoice = string | { system: SystemModelKey };
 export type JsonCall<T> = { who: Who; model: ModelChoice; kind: string; system: string; user: string; schema: z.ZodType<T>; maxTokens: number; files?: FilePart[]; signal?: AbortSignal };
-export type StreamCall = { who: Who; model: ModelChoice; kind: string; system: string; messages: Turn[]; maxTokens: number; signal: AbortSignal; onDone: (text: string) => Promise<void> };
+export type StreamCall = { who: Who; model: ModelChoice; kind: string; system: string; messages: Turn[]; maxTokens: number; signal: AbortSignal; onDone: (text: string) => Promise<{ citations?: Citation[] } | void> };
 
 type Prepared = { uid: string; model: string; kind: string; period: string; est: bigint; cap: bigint; messages: ChatMessage[] };
 
@@ -121,7 +121,7 @@ export async function chatJson<T>(o: JsonCall<T>): Promise<{ data: T; costMicros
 }
 
 // O(1)
-function frameEvent(e: { t: "d"; v: string } | { t: "end" } | { t: "err"; code: ErrorCode }): Uint8Array {
+function frameEvent(e: { t: "d"; v: string } | { t: "end"; citations?: Citation[] } | { t: "err"; code: ErrorCode }): Uint8Array {
   return enc.encode(`data:${JSON.stringify(e)}\n\n`);
 }
 
@@ -170,8 +170,8 @@ export function chatStream(o: StreamCall): ReadableStream<Uint8Array> {
           }
         }
       }
-      await o.onDone(text);
-      send(ctrl, frameEvent({ t: "end" }));
+      const extra = await o.onDone(text);
+      send(ctrl, frameEvent(extra?.citations ? { t: "end", citations: extra.citations } : { t: "end" }));
     } catch (e) {
       const code: ErrorCode = e instanceof HttpError ? e.code : "internal";
       if (!(e instanceof HttpError)) console.error(e instanceof Error ? e.message : "stream failed");

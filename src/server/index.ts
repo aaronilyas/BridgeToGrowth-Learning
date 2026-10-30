@@ -10,6 +10,7 @@ import { startPricingRefresh } from "./llm/gateway.ts";
 import { llmRoutes } from "./llm/routes.ts";
 import { resetReservations } from "./llm/sql.ts";
 import { styleRoutes } from "./styles/routes.ts";
+import { teachRoutes } from "./teach/routes.ts";
 
 const routes = {
   ...authRoutes,
@@ -18,6 +19,7 @@ const routes = {
   ...learnRoutes,
   ...genRoutes,
   ...styleRoutes,
+  ...teachRoutes,
   "/api/health": { GET: route({}, async () => json({ ok: true })) },
   "/api/*": route({ csrf: false }, async () => json({ error: "not_found" }, 404)),
   "/*": index,
