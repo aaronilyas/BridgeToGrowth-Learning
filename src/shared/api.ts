@@ -166,3 +166,24 @@ export type StatsResponse = z.infer<typeof StatsResponse>;
 
 export const InsightsResponse = z.strictObject({ day: z.iso.date(), trends: z.array(z.strictObject({ text: z.string().max(200), metric: MetricKey, direction: z.enum(["up", "down", "flat"]) })).max(5) });
 export type InsightsResponse = z.infer<typeof InsightsResponse>;
+
+export const LessonCreated = z.strictObject({ lessonId: z.uuid(), plan: LessonPlan, grounded: z.boolean() });
+export type LessonCreated = z.infer<typeof LessonCreated>;
+
+export const LessonSummary = z.strictObject({ id: z.uuid(), title: z.string(), createdAt: z.iso.datetime() });
+export type LessonSummary = z.infer<typeof LessonSummary>;
+
+export const LessonDetail = z.strictObject({ id: z.uuid(), title: z.string(), plan: LessonPlan, steps: z.array(StepPublic), citations: z.array(Citation) });
+export type LessonDetail = z.infer<typeof LessonDetail>;
+
+export const MessageResponse = z.strictObject({ id: z.string(), role: z.enum(["user", "assistant"]), content: z.string(), citations: z.array(Citation), createdAt: z.iso.datetime() });
+export type MessageResponse = z.infer<typeof MessageResponse>;
+
+export const GenerateResponse = z.strictObject({ topicId: z.uuid(), grounded: z.boolean(), questions: z.array(QuestionPublic) });
+export type GenerateResponse = z.infer<typeof GenerateResponse>;
+
+export const StyleSummary = z.strictObject({ id: z.uuid(), subject: z.string(), mime: z.string(), createdAt: z.iso.datetime() });
+export type StyleSummary = z.infer<typeof StyleSummary>;
+
+export const StyleUploaded = z.strictObject({ styleId: z.uuid(), profile: StyleProfile });
+export type StyleUploaded = z.infer<typeof StyleUploaded>;
