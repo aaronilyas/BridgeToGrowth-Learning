@@ -50,3 +50,40 @@ export function resolveEdges(edges: EdgeIn[], rowOf: number[], ids: string[]): E
   }
   return [...out.values()];
 }
+
+export type TopicUse = { lessons: number; questions: number; attempts: number };
+
+// O(n + e)
+// INV: counts are what remains after the lesson and its questions are gone
+// INV: the lesson topic is released when nothing else uses it; a neighbor is released only when it is unused and does not still support a topic we keep
+export function topicsReleasedByLesson(lessonTopicId: string, neighborIds: readonly string[], useOf: ReadonlyMap<string, TopicUse>, edges: readonly { src: string; dst: string }[]): string[] {
+  const pool = new Set<string>([lessonTopicId, ...neighborIds]);
+  const adj = new Map<string, string[]>();
+  for (const e of edges) {
+    const fromSrc = adj.get(e.src);
+    if (fromSrc) fromSrc.push(e.dst);
+    else adj.set(e.src, [e.dst]);
+    const fromDst = adj.get(e.dst);
+    if (fromDst) fromDst.push(e.src);
+    else adj.set(e.dst, [e.src]);
+  }
+  const used = (id: string): boolean => {
+    const u = useOf.get(id);
+    return u !== undefined && (u.lessons > 0 || u.questions > 0 || u.attempts > 0);
+  };
+  const drop = new Set<string>();
+  if (!used(lessonTopicId)) drop.add(lessonTopicId);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const id of pool) {
+      if (drop.has(id) || used(id)) continue;
+      const sticks = (adj.get(id) ?? []).some((other) => !drop.has(other) && (used(other) || !pool.has(other)));
+      if (!sticks) {
+        drop.add(id);
+        changed = true;
+      }
+    }
+  }
+  return [...drop];
+}

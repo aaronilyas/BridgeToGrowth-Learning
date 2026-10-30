@@ -61,6 +61,25 @@ export function nextMastery(m: number, score: number): number {
   return (1 - MASTERY_ALPHA) * m + MASTERY_ALPHA * score;
 }
 
+export type AttemptScore = { score: number; confidence: number; createdAt: Date };
+export type TopicStats = { attempts: number; correct: number; confErrSum: number; mastery: number; lastSeenAt: Date | null };
+
+// O(n)
+// INV: attempts are oldest first; mastery matches repeated nextMastery starting at 0
+export function foldTopicStats(attempts: readonly AttemptScore[]): TopicStats {
+  let mastery = 0;
+  let correct = 0;
+  let confErrSum = 0;
+  let lastSeenAt: Date | null = null;
+  for (const a of attempts) {
+    mastery = nextMastery(mastery, a.score);
+    if (a.score >= CORRECT_AT) correct += 1;
+    confErrSum += Math.abs(a.confidence / 100 - a.score);
+    if (lastSeenAt === null || a.createdAt > lastSeenAt) lastSeenAt = a.createdAt;
+  }
+  return { attempts: attempts.length, correct, confErrSum, mastery, lastSeenAt };
+}
+
 // O(1)
 // INV: stored settings that fail validation fall back to full defaults
 export function loadSettings(user: { settings: Record<string, unknown> }): Settings {

@@ -2,9 +2,10 @@ import type { SQL } from "bun";
 import type { Citation, LessonPlan } from "../../shared/api.ts";
 import { sql } from "../db.ts";
 import { insertQuestions } from "../gen/sql.ts";
-import type { QuestionRow } from "../learn/core.ts";
+import { CORRECT_AT, foldTopicStats, type AttemptScore, type QuestionRow } from "../learn/core.ts";
 import { insertCards } from "../learn/sql.ts";
 import type { Paper } from "../lit/core.ts";
+import { topicsReleasedByLesson, type TopicUse } from "../topics/core.ts";
 import type { NewStep, StepContent } from "./core.ts";
 
 export type LessonRow = { id: string; topic_id: string; title: string; plan: unknown; paper_ids: string[]; model: string; created_at: Date };
@@ -63,9 +64,11 @@ export async function listSteps(uid: string, lessonId: string, only: number | nu
 }
 
 // O(1), three statements in one transaction
-// INV: concurrent calls yield one step; the loser's question is deleted (its card cascades) so no orphan remains
-export async function insertStep(uid: string, lesson: LessonRow, idx: number, s: NewStep): Promise<void> {
-  await sql.begin(async (tx) => {
+// INV: locks the lesson row so a delete cannot detach the new question; concurrent calls yield one step; the loser's question is deleted (its card cascades)
+export async function insertStep(uid: string, lesson: LessonRow, idx: number, s: NewStep): Promise<boolean> {
+  return sql.begin(async (tx) => {
+    const held: { id: string }[] = await tx`SELECT id FROM lessons WHERE id = ${lesson.id} AND user_id = ${uid} FOR UPDATE`;
+    if (held.length === 0) return false;
     const [q] = await insertQuestions(tx, uid, lesson.topic_id, null, [s.check], lesson.id);
     if (!q) throw new Error("question insert returned no row");
     await insertCards(tx, uid, [q.id]);
@@ -74,6 +77,7 @@ export async function insertStep(uid: string, lesson: LessonRow, idx: number, s:
       INSERT INTO lesson_steps (lesson_id, idx, content) VALUES (${lesson.id}, ${idx}, ${JSON.stringify(content)}::text::jsonb)
       ON CONFLICT (lesson_id, idx) DO NOTHING RETURNING idx`;
     if (won.length === 0) await tx`DELETE FROM questions WHERE id = ${q.id} AND user_id = ${uid}`;
+    return true;
   });
 }
 
@@ -109,4 +113,110 @@ export async function listMessages(uid: string, lessonId: string, before: string
     FROM messages m JOIN conversations c ON c.id = m.conv_id
     WHERE c.lesson_id = ${lessonId} AND c.user_id = ${uid} AND (${before}::bigint IS NULL OR m.id < ${before}::bigint)
     ORDER BY m.id DESC LIMIT ${limit}`;
+}
+
+const REPLAY_LIMIT = 100_000;
+
+// O(n) in the lesson's attempts
+// INV: questions are deleted before the lesson row, so ON DELETE SET NULL cannot leave them behind
+// INV: topic mastery is replayed from the attempts that remain, oldest first
+// SEC: uid is the local user; a missing lesson deletes nothing and returns false
+export async function deleteLessonData(uid: string, lessonId: string): Promise<boolean> {
+  return sql.begin(async (tx) => {
+    const locked: { id: string; topic_id: string }[] = await tx`SELECT id, topic_id FROM lessons WHERE id = ${lessonId} AND user_id = ${uid} FOR UPDATE`;
+    const lesson = locked[0];
+    if (!lesson) return false;
+    const questions: { id: string; topic_id: string }[] = await tx`
+      SELECT id, topic_id FROM questions WHERE user_id = ${uid} AND lesson_id = ${lessonId} LIMIT 100`;
+    if (questions.length === 100) throw new Error("lesson question scan truncated");
+    const qids = questions.map((q) => q.id);
+    const dayRows: { day: string }[] = qids.length === 0 ? [] : await tx`
+      SELECT DISTINCT (created_at AT TIME ZONE 'UTC')::date::text AS day FROM attempts
+      WHERE user_id = ${uid} AND question_id = ANY(${qids}::uuid[]) LIMIT 4000`;
+    if (dayRows.length === 4000) throw new Error("attempt day scan truncated");
+    const days = dayRows.map((d) => d.day);
+    const topicIds = [...new Set([lesson.topic_id, ...questions.map((q) => q.topic_id)])];
+    await tx`SELECT id FROM topics WHERE user_id = ${uid} AND id = ANY(${topicIds}::uuid[]) FOR UPDATE`;
+    await tx`DELETE FROM questions WHERE user_id = ${uid} AND lesson_id = ${lessonId}`;
+    await tx`DELETE FROM lessons WHERE id = ${lessonId} AND user_id = ${uid}`;
+    await rewriteTopicStats(tx, uid, topicIds);
+    if (days.length > 0) {
+      await rewriteDays(tx, uid, days);
+      await tx`DELETE FROM insights WHERE user_id = ${uid} AND (day = (now() AT TIME ZONE 'UTC')::date OR day = ANY(${days}::date[]))`;
+    } else {
+      await tx`DELETE FROM insights WHERE user_id = ${uid} AND day = (now() AT TIME ZONE 'UTC')::date`;
+    }
+    await releaseLessonTopics(tx, uid, lesson.topic_id);
+    return true;
+  });
+}
+
+// O(n) in remaining attempts
+async function rewriteTopicStats(tx: SQL, uid: string, topicIds: string[]): Promise<void> {
+  const scored: { topic_id: string; score: number; confidence: number; created_at: Date }[] = await tx`
+    SELECT topic_id, score, confidence, created_at FROM attempts
+    WHERE user_id = ${uid} AND topic_id = ANY(${topicIds}::uuid[]) AND score IS NOT NULL AND confidence IS NOT NULL
+    ORDER BY topic_id, created_at, id LIMIT ${REPLAY_LIMIT}`;
+  if (scored.length === REPLAY_LIMIT) throw new Error("attempt replay truncated");
+  const byTopic = new Map<string, AttemptScore[]>();
+  for (const row of scored) {
+    const item: AttemptScore = { score: row.score, confidence: row.confidence, createdAt: row.created_at };
+    const list = byTopic.get(row.topic_id);
+    if (list) list.push(item);
+    else byTopic.set(row.topic_id, [item]);
+  }
+  const zero = topicIds.filter((id) => !byTopic.has(id));
+  if (zero.length > 0) await tx`
+    UPDATE topics SET attempts = 0, correct = 0, conf_err_sum = 0, mastery = 0, last_seen_at = NULL
+    WHERE user_id = ${uid} AND id = ANY(${zero}::uuid[])`;
+  const live = topicIds.filter((id) => byTopic.has(id));
+  if (live.length === 0) return;
+  const stats = live.map((id) => foldTopicStats(byTopic.get(id) ?? []));
+  await tx`
+    UPDATE topics t SET attempts = v.attempts, correct = v.correct, conf_err_sum = v.conf_err_sum, mastery = v.mastery, last_seen_at = v.last_seen_at
+    FROM unnest(
+      ${live}::uuid[], ${stats.map((s) => s.attempts)}::int[], ${stats.map((s) => s.correct)}::int[],
+      ${stats.map((s) => s.confErrSum)}::float8[], ${stats.map((s) => s.mastery)}::float8[], ${stats.map((s) => s.lastSeenAt)}::timestamptz[]
+    ) AS v(id, attempts, correct, conf_err_sum, mastery, last_seen_at)
+    WHERE t.id = v.id AND t.user_id = ${uid}`;
+}
+
+// O(attempts on the touched days)
+async function rewriteDays(tx: SQL, uid: string, days: string[]): Promise<void> {
+  await tx`DELETE FROM daily_activity WHERE user_id = ${uid} AND day = ANY(${days}::date[])`;
+  await tx`
+    INSERT INTO daily_activity (user_id, day, attempts, correct, reviews, review_correct, conf_err_sum)
+    SELECT ${uid}, (a.created_at AT TIME ZONE 'UTC')::date, count(*)::int,
+      count(*) FILTER (WHERE a.score >= ${CORRECT_AT})::int, count(*) FILTER (WHERE a.is_review)::int,
+      count(*) FILTER (WHERE a.is_review AND a.score >= ${CORRECT_AT})::int, coalesce(sum(abs(a.confidence / 100.0 - a.score)), 0)
+    FROM attempts a WHERE a.user_id = ${uid} AND (a.created_at AT TIME ZONE 'UTC')::date = ANY(${days}::date[]) GROUP BY 2`;
+}
+
+// O(e) in edges touching the lesson topic
+async function releaseLessonTopics(tx: SQL, uid: string, lessonTopicId: string): Promise<void> {
+  const neighborRows: { id: string }[] = await tx`
+    SELECT dst AS id FROM topic_edges WHERE user_id = ${uid} AND src = ${lessonTopicId}
+    UNION SELECT src AS id FROM topic_edges WHERE user_id = ${uid} AND dst = ${lessonTopicId} LIMIT 200`;
+  if (neighborRows.length === 200) throw new Error("neighbor scan truncated");
+  const neighborIds = neighborRows.map((r) => r.id);
+  const pool = [...new Set([lessonTopicId, ...neighborIds])];
+  await tx`SELECT id FROM topics WHERE user_id = ${uid} AND id = ANY(${pool}::uuid[]) FOR UPDATE`;
+  const edgeRows: { src: string; dst: string }[] = await tx`
+    SELECT src, dst FROM topic_edges WHERE user_id = ${uid} AND (src = ANY(${pool}::uuid[]) OR dst = ANY(${pool}::uuid[])) LIMIT 2000`;
+  if (edgeRows.length === 2000) throw new Error("edge scan truncated");
+  const useRows: { id: string; lessons: number; questions: number; attempts: number }[] = await tx`
+    SELECT t.id, coalesce(l.n, 0)::int AS lessons, coalesce(q.n, 0)::int AS questions, coalesce(a.n, 0)::int AS attempts
+    FROM topics t
+    LEFT JOIN (SELECT topic_id, count(*)::int AS n FROM lessons WHERE user_id = ${uid} AND topic_id = ANY(${pool}::uuid[]) GROUP BY topic_id) l ON l.topic_id = t.id
+    LEFT JOIN (SELECT topic_id, count(*)::int AS n FROM questions WHERE user_id = ${uid} AND topic_id = ANY(${pool}::uuid[]) GROUP BY topic_id) q ON q.topic_id = t.id
+    LEFT JOIN (SELECT topic_id, count(*)::int AS n FROM attempts WHERE user_id = ${uid} AND topic_id = ANY(${pool}::uuid[]) GROUP BY topic_id) a ON a.topic_id = t.id
+    WHERE t.user_id = ${uid} AND t.id = ANY(${pool}::uuid[]) LIMIT 201`;
+  const useOf = new Map<string, TopicUse>(useRows.map((r) => [r.id, { lessons: r.lessons, questions: r.questions, attempts: r.attempts }]));
+  const drop = topicsReleasedByLesson(lessonTopicId, neighborIds, useOf, edgeRows);
+  if (drop.length === 0) return;
+  await tx`
+    DELETE FROM topics t WHERE t.user_id = ${uid} AND t.id = ANY(${drop}::uuid[])
+    AND NOT EXISTS (SELECT 1 FROM lessons l WHERE l.user_id = ${uid} AND l.topic_id = t.id)
+    AND NOT EXISTS (SELECT 1 FROM questions q WHERE q.user_id = ${uid} AND q.topic_id = t.id)
+    AND NOT EXISTS (SELECT 1 FROM attempts a WHERE a.user_id = ${uid} AND a.topic_id = t.id)`;
 }

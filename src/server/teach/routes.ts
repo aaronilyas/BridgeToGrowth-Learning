@@ -8,7 +8,7 @@ import { filterCitations, toCitations } from "../lit/core.ts";
 import { chatJson, chatStream } from "../llm/gateway.ts";
 import { upsertTopics } from "../topics/sql.ts";
 import { StepContent, StepOut, allCitations, buildChatContext, buildPlanPrompt, buildStepPrompt, buildTutorSystem, normalizePlan, normalizeStep, pickLessonModel, toStepPublic } from "./core.ts";
-import { ensureConversation, findLesson, insertLesson, insertStep, insertMessagePair, listLessons, listMessages, listPapers, listSteps, type LessonRow } from "./sql.ts";
+import { deleteLessonData, ensureConversation, findLesson, insertLesson, insertStep, insertMessagePair, listLessons, listMessages, listPapers, listSteps, type LessonRow } from "./sql.ts";
 
 const IdParams = z.strictObject({ id: z.uuid() });
 const StepParams = z.strictObject({ id: z.uuid(), idx: z.coerce.number().int().min(0).max(7) });
@@ -88,7 +88,7 @@ const makeStep = route({ entitled: true, rate: { key: "step", cap: 30, perMin: 3
     maxTokens: 1500,
   });
   const step = normalizeStep(r.data, planned.title, settings.bite.maxWordsPerStep, papers);
-  await insertStep(uid, lesson, idx, step);
+  if (!(await insertStep(uid, lesson, idx, step))) throw new HttpError(404, "not_found");
   const row = (await listSteps(uid, lesson.id, idx))[0];
   if (!row) throw new Error("step missing after insert");
   return json(stepOf(row));
@@ -121,6 +121,12 @@ const chat = route({ entitled: true, body: ChatRequest, rate: { key: "chat", cap
   return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-store" } });
 });
 
+const removeLesson = route({ auth: true }, async (c) => {
+  const p = IdParams.safeParse({ id: c.params.id });
+  if (!p.success || !(await deleteLessonData(c.user.id, p.data.id))) throw new HttpError(404, "not_found");
+  return new Response(null, { status: 204 });
+});
+
 const messages = route({ auth: true }, async (c) => {
   const lesson = await requireLesson(c.user.id, c.params);
   const q = MessagesQuery.safeParse(query(c.req));
@@ -131,7 +137,7 @@ const messages = route({ auth: true }, async (c) => {
 
 export const teachRoutes = {
   "/api/lessons": { GET: list, POST: create },
-  "/api/lessons/:id": { GET: get },
+  "/api/lessons/:id": { GET: get, DELETE: removeLesson },
   "/api/lessons/:id/steps/:idx": { POST: makeStep },
   "/api/lessons/:id/chat": { POST: chat },
   "/api/lessons/:id/messages": { GET: messages },

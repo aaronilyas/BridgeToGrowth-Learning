@@ -4,6 +4,7 @@ import { z } from "zod";
 import { LessonSummary } from "../../shared/api.ts";
 import { api } from "../api.ts";
 import { AskBar } from "../components/AskBar.tsx";
+import { DeleteLessonButton } from "../components/DeleteLessonButton.tsx";
 import { ErrorBanner } from "../components/ErrorBanner.tsx";
 import { Panel } from "../components/Panel.tsx";
 import { Spinner } from "../components/Spinner.tsx";
@@ -33,11 +34,12 @@ export function TeachPage(): JSX.Element {
         {lessons?.length === 0 && <p className="text-sm text-muted">No lessons yet. Your first one will show up here.</p>}
         <ul className="grid gap-2 sm:grid-cols-2">
           {lessons?.map((l) => (
-            <li key={l.id}>
-              <Link href={`/lesson/${l.id}`} className="flex flex-col rounded-xl border border-border bg-panel-2 px-4 py-3 transition hover:border-accent/50">
+            <li key={l.id} className="flex flex-col gap-3 rounded-xl border border-border bg-panel-2 px-4 py-3">
+              <Link href={`/lesson/${l.id}`} className="flex flex-col transition hover:text-accent">
                 <span className="font-medium">{l.title}</span>
                 <span className="text-xs text-muted">{new Date(l.createdAt).toLocaleDateString()}</span>
               </Link>
+              <DeleteLessonButton lessonId={l.id} lessonTitle={l.title} onDeleted={() => setLessons((rows) => rows?.filter((row) => row.id !== l.id) ?? rows)} />
             </li>
           ))}
         </ul>

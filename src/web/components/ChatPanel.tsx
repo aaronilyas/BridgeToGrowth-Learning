@@ -43,6 +43,15 @@ function historyChatRows(ms: MessageResponse[]): Row[] {
   return [...ms].reverse().map((m) => ({ id: m.id, role: m.role, content: m.content, citations: m.citations, pending: false }));
 }
 
+// O(1)
+// INV: the job is dropped before abort, so a late stream result cannot revive it
+export function stopLessonChat(lessonId: string): void {
+  const job = chatJobs.get(lessonId);
+  chatJobs.delete(lessonId);
+  chatWatchers.delete(lessonId);
+  job?.abort.abort();
+}
+
 // O(listeners)
 function emitLessonChat(lessonId: string): void {
   const job = chatJobs.get(lessonId);

@@ -75,6 +75,18 @@ test("queue never exposes answer fields; attempt does, after grading", async () 
   expect(miss.status).toBe(404);
 });
 
+test("foldTopicStats replays mastery from zero", () => {
+  const first = new Date("2026-01-01T00:00:00Z");
+  const second = new Date("2026-01-02T00:00:00Z");
+  const folded = core.foldTopicStats([{ score: 1, confidence: 0, createdAt: first }, { score: 0, confidence: 100, createdAt: second }]);
+  expect(folded.attempts).toBe(2);
+  expect(folded.correct).toBe(1);
+  expect(folded.lastSeenAt).toEqual(second);
+  expect(folded.mastery).toBe([1, 0].reduce((m, s) => core.nextMastery(m, s), 0));
+  expect(Math.abs(folded.confErrSum - 2)).toBeLessThan(1e-9);
+  expect(core.foldTopicStats([])).toEqual({ attempts: 0, correct: 0, confErrSum: 0, mastery: 0, lastSeenAt: null });
+});
+
 test("three attempts roll up into the topic", async () => {
   await t.reset();
   const u = await createTestUser();

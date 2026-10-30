@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
-import { useParams } from "wouter";
+import { useLocation, useParams } from "wouter";
 import { LessonDetail, StepPublic } from "../../shared/api.ts";
 import { api } from "../api.ts";
 import { ChatPanel } from "../components/ChatPanel.tsx";
@@ -7,6 +7,7 @@ import { ErrorBanner } from "../components/ErrorBanner.tsx";
 import { Panel } from "../components/Panel.tsx";
 import { Spinner } from "../components/Spinner.tsx";
 import { Button } from "../components/Button.tsx";
+import { DeleteLessonButton } from "../components/DeleteLessonButton.tsx";
 import { StepSkeleton, StepView } from "../components/StepView.tsx";
 
 type StepStatus = "done" | "current" | "todo";
@@ -15,6 +16,7 @@ type StepStatus = "done" | "current" | "todo";
 // INV: steps before the furthest opened one count as done; the open step is answered-or-current
 export function LessonPage(): JSX.Element {
   const { id = "" } = useParams<{ id: string }>();
+  const [, navigate] = useLocation();
   const [lesson, setLesson] = useState<LessonDetail | null>(null);
   const [steps, setSteps] = useState<Record<number, StepPublic>>({});
   const [current, setCurrent] = useState(0);
@@ -103,6 +105,9 @@ export function LessonPage(): JSX.Element {
       </Panel>
 
       <Panel className="min-w-0">
+        <div className="mb-4 flex justify-end">
+          <DeleteLessonButton lessonId={lesson.id} lessonTitle={lesson.title} onDeleted={() => navigate("/teach")} />
+        </div>
         {step && planned ? (
           <>
             <StepView key={step.idx} step={step} total={total} summary={planned.summary} onResult={() => setAnswered((a) => new Set(a).add(step.idx))} />
