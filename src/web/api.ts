@@ -12,7 +12,7 @@ const MESSAGES: Record<ErrorCode, string> = {
   not_found: "Not found.",
   rate_limited: "Too many attempts. Wait a minute and retry.",
   quota_exceeded: "You've reached this month's usage cap.",
-  model_not_allowed: "That model isn't the Free Models Router.",
+  model_not_allowed: "That model isn't available.",
   unsupported_media: "Only PDF or PNG files are accepted.",
   too_large: "That's too large.",
   upstream: "A provider is unavailable. Try again shortly.",

@@ -12,7 +12,7 @@ const getSettings = route({ auth: true }, async (c) => json(loadSettings(c.user)
 const putSettings = route({ auth: true, body: SettingsPatch }, async (c) => {
   const next = Settings.safeParse(mergeSettings(loadSettings(c.user), c.body));
   if (!next.success) throw new HttpError(400, "bad_request");
-  // SEC: a newly chosen model must be the configured free router
+  // SEC: a newly chosen model must be one of the selectable models
   const m = next.data.model;
   if (c.body.model !== undefined && m !== null && !listModels().some((x) => x.id === m)) throw new HttpError(400, "model_not_allowed");
   await updateSettings(c.user.id, next.data);

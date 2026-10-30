@@ -88,7 +88,7 @@ export function loadSettings(user: { settings: Record<string, unknown> }): Setti
 }
 
 // O(1)
-// INV: null or any id other than the free router resolves to OPENROUTER_MODEL; an explicit request is passed through for the gateway to check
+// INV: null or an id outside MODELS resolves to the first selectable model; an explicit request is passed through for the gateway to check
 export function resolveModel(settings: Settings, requested?: string): string {
   const allowed = listModels();
   const first = allowed[0];

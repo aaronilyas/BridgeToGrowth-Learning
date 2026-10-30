@@ -8,7 +8,9 @@ export type SystemModelKey = "grade" | "extract" | "insight";
 export const FREE_PRICE: Price = { promptPerTok: 0, completionPerTok: 0, ctx: 200_000 };
 
 export const MODELS: readonly ModelInfo[] = [
-  { id: env.OPENROUTER_MODEL, label: "Free Models Router", tier: "free", vision: true },
+  { id: "deepseek/deepseek-v4.1-flash", label: "DeepSeek V4.1 Flash", tier: "free", vision: true },
+  { id: "z-ai/glm-5.3-flash", label: "GLM-5.3-Flash", tier: "free", vision: true },
+  { id: "openai/gpt-6-luna", label: "GPT-6-Luna", tier: "free", vision: true },
 ];
 
 export const SYSTEM_MODELS: { grade: string; extract: string; insight: string } = {

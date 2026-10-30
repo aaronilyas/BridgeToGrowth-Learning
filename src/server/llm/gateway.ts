@@ -3,8 +3,8 @@ import type { Citation, ErrorCode, Plan } from "../../shared/api.ts";
 import { parseSseChunk } from "../../shared/sse.ts";
 import { env } from "../env.ts";
 import { HttpError } from "../http.ts";
-import { assertModelAllowed, buildMessages, countPromptChars, estimateMicros, parseJsonOutput, parsePricing, periodOf, readCompletion, readDelta, toSchemaName, type ChatMessage, type FilePart, type Turn, type Usage } from "./core.ts";
-import { FREE_PRICE, MODELS, SYSTEM_MODELS, isModelListed, priceOf, setPricing, type SystemModelKey } from "./models.ts";
+import { assertModelAllowed, buildMessages, countPromptChars, estimateMicros, parseJsonOutput, parsePricing, periodOf, readCompletion, readDelta, reasoningPayload, toSchemaName, type ChatMessage, type FilePart, type Turn, type Usage } from "./core.ts";
+import { FREE_PRICE, MODELS, SYSTEM_MODELS, isModelListed, priceOf, setPricing, type Price, type SystemModelKey } from "./models.ts";
 import { reserveQuota, settleQuota } from "./sql.ts";
 import { JSON_TIMEOUT_MS, STREAM_TIMEOUT_MS } from "./timeouts.ts";
 
@@ -20,7 +20,7 @@ const NO_DOLLAR_CAP = 9_223_372_036_854_775_807n;
 const enc = new TextEncoder();
 
 // O(n) in the /models payload
-// INV: failure keeps the previous pricing; the free router is seeded at $0 so a failed refresh still allows calls
+// INV: failure keeps the previous pricing; selectable models and the system model are seeded at $0 so a failed refresh still allows calls
 export async function refreshPricing(fetchFn: typeof fetch = fetch): Promise<void> {
   try {
     const res = await fetchFn(`${env.OPENROUTER_BASE_URL}/models`, { signal: AbortSignal.timeout(15_000) });
@@ -39,13 +39,15 @@ export async function refreshPricing(fetchFn: typeof fetch = fetch): Promise<voi
 
 // O(1)
 export function startPricingRefresh(): void {
-  setPricing(new Map([[env.OPENROUTER_MODEL, FREE_PRICE]]));
+  const seed = new Map<string, Price>(MODELS.map((m) => [m.id, FREE_PRICE]));
+  seed.set(env.OPENROUTER_MODEL, FREE_PRICE);
+  setPricing(seed);
   void refreshPricing();
   setInterval(() => void refreshPricing(), DAY_MS).unref();
 }
 
 // O(1)
-// SEC: a string model is client-chosen and must be OPENROUTER_MODEL; system models are server-chosen
+// SEC: a string model is client-chosen and must be in MODELS; system models are server-chosen
 function chooseModel(choice: ModelChoice): string {
   if (typeof choice !== "string") return SYSTEM_MODELS[choice.system];
   assertModelAllowed(choice);
@@ -75,7 +77,7 @@ function postCompletion(p: Prepared, maxTokens: number, extra: Record<string, un
     method: "POST",
     signal,
     headers: { authorization: `Bearer ${env.OPENROUTER_API_KEY}`, "content-type": "application/json", "HTTP-Referer": env.APP_ORIGIN, "X-Title": "BridgeToGrowth Learning" },
-    body: JSON.stringify({ model: p.model, messages: p.messages, max_tokens: maxTokens, usage: { include: true }, ...extra }),
+    body: JSON.stringify({ model: p.model, messages: p.messages, max_tokens: maxTokens, usage: { include: true }, ...extra, ...(MODELS.some((m) => m.id === p.model) ? reasoningPayload(env.OPENROUTER_REASONING_LEVEL) : {}) }),
   });
 }
 

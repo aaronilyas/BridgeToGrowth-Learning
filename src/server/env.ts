@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+export const REASONING_LEVELS = ["low", "high", "max"] as const;
+export type ReasoningLevel = (typeof REASONING_LEVELS)[number];
+
 const Schema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
@@ -9,6 +12,7 @@ const Schema = z.object({
   OPENROUTER_API_KEY: z.string().min(1),
   OPENROUTER_BASE_URL: z.url().default("https://openrouter.ai/api/v1"),
   OPENROUTER_MODEL: z.string().min(1).default("openrouter/free"),
+  OPENROUTER_REASONING_LEVEL: z.enum(REASONING_LEVELS).default("high"),
   OPENALEX_MAILTO: z.email(),
 });
 

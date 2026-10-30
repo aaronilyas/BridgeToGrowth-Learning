@@ -27,7 +27,7 @@ export function AskBar(): JSX.Element {
     };
   }, []);
 
-  const chosen = models.some((m) => m.id === model) ? model : "";
+  const chosen = models.some((m) => m.id === model) ? model : models.find((m) => m.id === settings.model)?.id ?? models[0]?.id ?? "";
   const topic = text.trim();
 
   const run = async (mode: "teach" | "practice"): Promise<void> => {
@@ -68,7 +68,6 @@ export function AskBar(): JSX.Element {
           onChange={(e) => setText(e.currentTarget.value)}
         />
         <select className="rounded-xl border border-border bg-panel-2 px-3 py-3 text-sm outline-none focus:border-accent" aria-label="Model" value={chosen} disabled={busy !== null} onChange={(e) => setModel(e.currentTarget.value)}>
-          <option value="">Default model</option>
           {models.map((m) => (
             <option key={m.id} value={m.id}>
               {m.label}

@@ -1,5 +1,5 @@
 # Agent contract (optimized for agents, not humans)
-STACK: Bun>=1.2 · TS strict · Bun.serve routes · Bun.sql (Postgres>=16, local) · zod v4 · React 19 + wouter + Tailwind v4 · OpenRouter Free Models Router · OpenAlex. No accounts, no Stripe, no Cloudflare Tunnel.
+STACK: Bun>=1.2 · TS strict · Bun.serve routes · Bun.sql (Postgres>=16, local) · zod v4 · React 19 + wouter + Tailwind v4 · OpenRouter (DeepSeek V4.1 Flash, GLM-5.3-Flash, GPT-6-Luna; system calls use OPENROUTER_MODEL) · OpenAlex. No accounts, no Stripe, no Cloudflare Tunnel.
 DEPS: only those in package.json. Adding one requires a justification line in the commit body. Exact versions only. CI uses --frozen-lockfile.
 LAYOUT: src/server/<module>/{routes.ts,core.ts,sql.ts} · src/shared/*.ts (isomorphic; zod schemas are the single source of API truth) · src/web/** · db/migrations/NNNN_*.sql · scripts/* · deploy/* · tests colocated as *.test.ts.
 CODE:
@@ -32,7 +32,7 @@ MODULE MAP (append one line per module: path · purpose · key exports):
 - scripts/db-setup.sh · create role btg + DBs btg, btg_test · none
 - src/server/local/{core,sql,routes}.ts · single local user, GET /api/me · localRoutes, LocalUser, ensureLocalUser, LOCAL_EMAIL
 - src/server/testkit.ts · test env + test DB helpers (import statically, server modules dynamically after boot) · bootTestServer, createTestUser, createOtherUser, callRoute, TEST_ORIGIN
-- src/server/llm/{models,core,sql,gateway,routes}.ts + src/shared/sse.ts · OpenRouter Free Models Router, reserve/settle usage, usage API · MODELS, SYSTEM_MODELS, chatJson, chatStream, refreshPricing, assertModelAllowed, reserveQuota, llmRoutes, parseSseChunk
+- src/server/llm/{models,core,sql,gateway,routes}.ts + src/shared/sse.ts · selectable OpenRouter models with one shared reasoning level, reserve/settle usage, usage API · MODELS, SYSTEM_MODELS, chatJson, chatStream, refreshPricing, assertModelAllowed, reasoningPayload, reserveQuota, llmRoutes, parseSseChunk
 - src/server/lit/{core,sql,openalex}.ts · OpenAlex grounding, 7-day cache, citation filtering · retrievePapers, buildSourcesBlock, filterCitations, toCitations, GROUNDING_RULES, normalizeQuery, abstractFromInverted
 - src/shared/settings.ts · Settings schema with defaults, deep-partial patch, merge · Settings, SettingsPatch, mergeSettings
 - src/shared/math.ts · wrap bare lesson LaTeX in $ delimiters before storage and render · wrapBareMath, MATH_DELIM_RULE

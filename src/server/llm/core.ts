@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ReasoningLevel } from "../env.ts";
 import { HttpError } from "../http.ts";
 import { MODELS, type ModelInfo, type Price } from "./models.ts";
 
@@ -30,9 +31,15 @@ export function estimateMicros(p: Price, promptChars: number, maxTokens: number)
 }
 
 // O(1)
-// SEC: the only gate between a client-supplied id and the upstream request; only OPENROUTER_MODEL is allowed
+// SEC: the only gate between a client-supplied id and the upstream request; only MODELS is allowed
 export function assertModelAllowed(id: string): void {
   if (!MODELS.some((m) => m.id === id)) throw new HttpError(400, "model_not_allowed");
+}
+
+// O(1)
+// INV: every selectable model receives this same effort
+export function reasoningPayload(level: ReasoningLevel): { reasoning: { effort: ReasoningLevel } } {
+  return { reasoning: { effort: level } };
 }
 
 // O(1)

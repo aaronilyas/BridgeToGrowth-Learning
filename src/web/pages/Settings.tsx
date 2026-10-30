@@ -31,10 +31,12 @@ export function SettingsPage(): JSX.Element {
     const [group, key] = path.split(".") as ["srs" | "bite" | "practice", string];
     setDraft((old) => ({ ...old, [group]: { ...old[group], [key]: NumberField.parse(value) } }));
   }
+  const modelId = models.some((m) => m.id === draft.model) ? (draft.model ?? "") : (models[0]?.id ?? "");
   async function saveSettings(): Promise<void> {
     setSaving(true); setMessage("");
     const patch: Record<string, unknown> = {};
-    for (const key of ["level", "model", "season"] as const) if (draft[key] !== settings[key]) patch[key] = draft[key];
+    for (const key of ["level", "season"] as const) if (draft[key] !== settings[key]) patch[key] = draft[key];
+    if (modelId && modelId !== settings.model) patch.model = modelId;
     for (const group of ["srs", "recall", "bite", "practice"] as const) {
       const changed = Object.fromEntries(Object.entries(draft[group]).filter(([key, value]) => value !== settings[group][key as keyof typeof settings[typeof group]]));
       if (Object.keys(changed).length) patch[group] = changed;
@@ -50,7 +52,7 @@ export function SettingsPage(): JSX.Element {
     <Section title="Active recall"><Slider label="Free response" min={SETTINGS_LIMITS.recall.freeResponseRatio.min} max={SETTINGS_LIMITS.recall.freeResponseRatio.max} step={0.05} value={draft.recall.freeResponseRatio} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => setDraft((d) => ({ ...d, recall: { ...d.recall, freeResponseRatio: v } }))} /><Toggle label="Ask for confidence after each answer" checked={draft.recall.confidencePrompt} onChange={(v) => setDraft((d) => ({ ...d, recall: { ...d.recall, confidencePrompt: v } }))} /></Section>
     <Section title="Bite-sized learning"><NumberInput label="Steps per lesson" value={draft.bite.stepsPerLesson} min={SETTINGS_LIMITS.bite.stepsPerLesson.min} max={SETTINGS_LIMITS.bite.stepsPerLesson.max} onChange={(v) => setNumber("bite.stepsPerLesson", v)} /><NumberInput label="Maximum words per step" value={draft.bite.maxWordsPerStep} min={SETTINGS_LIMITS.bite.maxWordsPerStep.min} max={SETTINGS_LIMITS.bite.maxWordsPerStep.max} onChange={(v) => setNumber("bite.maxWordsPerStep", v)} /><NumberInput label="Questions per session" value={draft.bite.questionsPerSession} min={SETTINGS_LIMITS.bite.questionsPerSession.min} max={SETTINGS_LIMITS.bite.questionsPerSession.max} onChange={(v) => setNumber("bite.questionsPerSession", v)} /></Section>
     <Section title="Daily practice"><NumberInput label="Daily goal" value={draft.practice.dailyGoal} min={SETTINGS_LIMITS.practice.dailyGoal.min} max={SETTINGS_LIMITS.practice.dailyGoal.max} onChange={(v) => setNumber("practice.dailyGoal", v)} /></Section>
-    <Section title="Model"><label className="grid gap-1 text-sm">Preferred model<select className={input} value={draft.model ?? ""} onChange={(e) => setDraft((d) => ({ ...d, model: e.currentTarget.value || null }))}><option value="">Free Models Router</option>{models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label><label className="grid gap-1 text-sm">Learning level<select className={input} value={draft.level} onChange={(e) => setDraft((d) => ({ ...d, level: e.currentTarget.value as typeof d.level }))}><option value="undergrad">Undergraduate</option><option value="grad">Graduate</option></select></label></Section>
+    <Section title="Model"><label className="grid gap-1 text-sm">Preferred model<select className={input} value={modelId} onChange={(e) => setDraft((d) => ({ ...d, model: e.currentTarget.value }))}>{models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label><label className="grid gap-1 text-sm">Learning level<select className={input} value={draft.level} onChange={(e) => setDraft((d) => ({ ...d, level: e.currentTarget.value as typeof d.level }))}><option value="undergrad">Undergraduate</option><option value="grad">Graduate</option></select></label></Section>
     <Section title="Appearance"><label className="grid gap-1 text-sm">Season<select className={input} value={draft.season} onChange={(e) => setSeason(e.currentTarget.value as Settings["season"])}>{["auto", "spring", "summer", "fall", "winter"].map((s) => <option key={s} value={s}>{s[0]?.toUpperCase()}{s.slice(1)}</option>)}</select></label></Section>
     <div className="flex items-center justify-end gap-4">{message && <span role="status" className="text-sm text-muted">{message}</span>}<Button onClick={() => void saveSettings()} busy={saving}>Save settings</Button></div>
   </div>;

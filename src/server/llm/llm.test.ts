@@ -47,11 +47,13 @@ test("parseSseChunk handles split frames, comments and [DONE]", () => {
   expect(events[2]).toEqual({ choices: [{ delta: {} }], usage: { cost: 0.0012, prompt_tokens: 9, completion_tokens: 2 } });
 });
 
-test("assertModelAllowed accepts only the free router", async () => {
+test("assertModelAllowed accepts only the selectable models", async () => {
   const { MODELS } = await import("./models.ts");
-  const free = MODELS[0];
-  if (!free) throw new Error("allowlist needs the free router");
-  expect(free.id).toBe("openrouter/free");
-  expect(() => core.assertModelAllowed(free.id)).not.toThrow();
+  expect(MODELS.map((m) => m.id)).toEqual(["deepseek/deepseek-v4.1-flash", "z-ai/glm-5.3-flash", "openai/gpt-6-luna"]);
+  for (const m of MODELS) expect(() => core.assertModelAllowed(m.id)).not.toThrow();
+  expect(() => core.assertModelAllowed("openrouter/free")).toThrow("model_not_allowed");
   expect(() => core.assertModelAllowed("evil/unknown-model")).toThrow("model_not_allowed");
+  expect(core.reasoningPayload("low")).toEqual({ reasoning: { effort: "low" } });
+  expect(core.reasoningPayload("high")).toEqual({ reasoning: { effort: "high" } });
+  expect(core.reasoningPayload("max")).toEqual({ reasoning: { effort: "max" } });
 });
