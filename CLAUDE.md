@@ -27,3 +27,6 @@ MODULE MAP (append one line per module: path · purpose · key exports):
 - src/server/http.ts · route wrapper, errors · route, HttpError, json
 - src/server/rate.ts · token bucket · takeToken
 - src/server/env.ts · validated env · env
+- src/server/db.ts · shared Bun.sql pool · sql
+- scripts/migrate.ts · checksummed migration runner (`bun run migrate [url]`) · none
+- scripts/db-setup.sh · create role btg + DBs btg, btg_test · none
