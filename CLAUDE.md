@@ -30,3 +30,5 @@ MODULE MAP (append one line per module: path · purpose · key exports):
 - src/server/db.ts · shared Bun.sql pool · sql
 - scripts/migrate.ts · checksummed migration runner (`bun run migrate [url]`) · none
 - scripts/db-setup.sh · create role btg + DBs btg, btg_test · none
+- src/server/auth/{core,sql,routes,turnstile}.ts · email+password auth, opaque sessions, Turnstile · authRoutes, AuthUser, hashToken, readSessionToken, findSession, verifyTurnstile
+- src/server/testkit.ts · test env + test DB helpers (import statically, server modules dynamically after boot) · bootTestServer, createTestUser, callRoute, TEST_ORIGIN
