@@ -16,7 +16,7 @@ const generate = route({ entitled: true, body: GenerateRequest, rate: { key: "ge
   if (c.body.count > settings.bite.questionsPerSession) throw new HttpError(400, "bad_request");
   const style = c.body.styleId ? await findStyleProfile(uid, c.body.styleId) : null;
   if (c.body.styleId && !style) throw new HttpError(404, "not_found");
-  const model = resolveModel(settings, c.plan, c.body.model);
+  const model = resolveModel(settings, c.body.model);
   const want = splitCounts(c.body.count, c.body.kind, settings.recall.freeResponseRatio);
   const papers = await retrievePapers(c.body.topic, 3);
   const r = await chatJson({

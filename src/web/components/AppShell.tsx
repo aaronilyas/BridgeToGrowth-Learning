@@ -2,7 +2,6 @@ import { useEffect, useState, type JSX, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { StatsResponse } from "../../shared/api.ts";
 import { api } from "../api.ts";
-import { useMe, useSession } from "../session.tsx";
 import { Logo } from "./Logo.tsx";
 
 const NAV: { href: string; label: string; icon: string }[] = [
@@ -11,7 +10,7 @@ const NAV: { href: string; label: string; icon: string }[] = [
   { href: "/graph", label: "Graph", icon: "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM5 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM19 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM5 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM19 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM6.5 7.5l3.3 3M17.5 7.5l-3.3 3M6.5 16.5l3.3-3M17.5 16.5l-3.3-3" },
   { href: "/stats", label: "Stats", icon: "M4 20V10M10 20V4M16 20v-7M22 20H2" },
   { href: "/settings", label: "Settings", icon: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" },
-  { href: "/billing", label: "Billing", icon: "M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zM2 10h20M6 15h4" },
+  { href: "/usage", label: "Usage", icon: "M4 19V5M4 19h16M8 15l3-4 3 2 4-6" },
 ];
 
 function NavIcon({ d }: { d: string }): JSX.Element {
@@ -51,9 +50,7 @@ function ProgressCard(): JSX.Element | null {
 
 // O(1)
 export function AppShell({ children }: { children: ReactNode }): JSX.Element {
-  const [location, navigate] = useLocation();
-  const me = useMe();
-  const { signOut } = useSession();
+  const [location] = useLocation();
   return (
     <div className="relative z-10 flex min-h-screen gap-3 p-3">
       <aside className="sticky top-3 flex h-[calc(100vh-1.5rem)] w-60 shrink-0 flex-col gap-6 rounded-2xl border border-border bg-panel p-4">
@@ -76,14 +73,8 @@ export function AppShell({ children }: { children: ReactNode }): JSX.Element {
             );
           })}
         </nav>
-        <div className="mt-auto flex flex-col gap-3">
+        <div className="mt-auto">
           <ProgressCard />
-          <div className="flex items-center justify-between gap-2 px-1 text-xs text-muted">
-            <span className="truncate" title={me.email}>{me.email}</span>
-            <button type="button" className="shrink-0 rounded-md px-2 py-1 hover:bg-panel-2 hover:text-text" onClick={() => void signOut().then(() => navigate("/login"))}>
-              Sign out
-            </button>
-          </div>
         </div>
       </aside>
       <main className="min-w-0 flex-1">{children}</main>

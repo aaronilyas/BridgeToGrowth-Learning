@@ -47,12 +47,11 @@ test("parseSseChunk handles split frames, comments and [DONE]", () => {
   expect(events[2]).toEqual({ choices: [{ delta: {} }], usage: { cost: 0.0012, prompt_tokens: 9, completion_tokens: 2 } });
 });
 
-test("assertModelAllowed gates tiers and unknown ids", async () => {
+test("assertModelAllowed accepts only the free router", async () => {
   const { MODELS } = await import("./models.ts");
-  const pro = MODELS.find((m) => m.tier === "pro");
-  const trial = MODELS.find((m) => m.tier === "trial");
-  if (!pro || !trial) throw new Error("allowlist needs both tiers");
-  expect(() => core.assertModelAllowed(pro.id, "trial")).toThrow("model_not_allowed");
-  expect(() => core.assertModelAllowed(trial.id, "pro")).not.toThrow();
-  for (const plan of ["pro", "trial", "none"] as const) expect(() => core.assertModelAllowed("evil/unknown-model", plan)).toThrow("model_not_allowed");
+  const free = MODELS[0];
+  if (!free) throw new Error("allowlist needs the free router");
+  expect(free.id).toBe("openrouter/free");
+  expect(() => core.assertModelAllowed(free.id)).not.toThrow();
+  expect(() => core.assertModelAllowed("evil/unknown-model")).toThrow("model_not_allowed");
 });

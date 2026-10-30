@@ -1,21 +1,20 @@
 import type { ModelsResponse, UsageResponse } from "../../shared/api.ts";
-import { entitlementOf } from "../billing/core.ts";
-import { json, route } from "../http.ts";
-import { listModelsForPlan, periodOf } from "./core.ts";
+import { freeEntitlement, json, route } from "../http.ts";
+import { listModels, periodOf } from "./core.ts";
 import { isModelListed } from "./models.ts";
 import { findUsage, listCostByModel, listRecentCalls } from "./sql.ts";
 
-const models = route({ auth: true }, async (c) => {
-  const body: ModelsResponse = listModelsForPlan(entitlementOf(c.user, new Date()).plan)
+const models = route({ auth: true }, async () => {
+  const body: ModelsResponse = listModels()
     .filter((m) => isModelListed(m.id))
     .map((m) => ({ id: m.id, label: m.label, tier: m.tier }));
   return json(body);
 });
 
-// INV: plan none still sees its usage
+// INV: the local user always sees usage; capMicros 0 means the free router is not billed
 const usage = route({ auth: true }, async (c) => {
   const now = new Date();
-  const ent = entitlementOf(c.user, now);
+  const ent = freeEntitlement();
   const period = periodOf(now);
   const [row, byModel, recent] = await Promise.all([findUsage(c.user.id, period), listCostByModel(c.user.id, period), listRecentCalls(c.user.id)]);
   const body: UsageResponse = {

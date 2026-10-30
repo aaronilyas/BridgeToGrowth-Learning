@@ -1,9 +1,9 @@
 import { z } from "zod";
-import type { Citation, LessonPlan, Plan, StepPublic } from "../../shared/api.ts";
+import type { Citation, LessonPlan, StepPublic } from "../../shared/api.ts";
 import type { Settings } from "../../shared/settings.ts";
 import { HttpError } from "../http.ts";
 import { toQuestionPublic, resolveModel, type QuestionRow, type StoredAnswer } from "../learn/core.ts";
-import { listModelsForPlan, type Turn } from "../llm/core.ts";
+import { listModels, type Turn } from "../llm/core.ts";
 import { GROUNDING_RULES, buildSourcesBlock, filterCitations, toCitations, type Paper } from "../lit/core.ts";
 import type { NewQuestion } from "../gen/core.ts";
 import { TUTOR_RULES } from "./prompts.ts";
@@ -99,8 +99,8 @@ export function toStepPublic(idx: number, c: StepContent, q: QuestionRow): StepP
 }
 
 // O(1)
-export function pickLessonModel(stored: string, settings: Settings, plan: Plan): string {
-  return listModelsForPlan(plan).some((m) => m.id === stored) ? stored : resolveModel(settings, plan);
+export function pickLessonModel(stored: string, settings: Settings): string {
+  return listModels().some((m) => m.id === stored) ? stored : resolveModel(settings);
 }
 
 // O(k)

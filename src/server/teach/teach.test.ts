@@ -1,5 +1,5 @@
 import { beforeAll, expect, mock, test } from "bun:test";
-import { bootTestServer, callRoute, createTestUser, type Handler, type TestServer } from "../testkit.ts";
+import { bootTestServer, callRoute, createOtherUser, createTestUser, type Handler, type TestServer } from "../testkit.ts";
 
 let t: TestServer;
 let h: { get: Handler; step: Handler; chat: Handler };
@@ -22,18 +22,20 @@ beforeAll(async () => {
   };
 });
 
-test("another user gets 404 on get, step and chat of a lesson", async () => {
+test("another user's lesson is 404 for the local user", async () => {
   await t.reset();
-  const a = await createTestUser();
-  const b = await createTestUser();
-  const [topic] = await t.sql`INSERT INTO topics (user_id, slug, name, domain) VALUES (${a.id}, 'x', 'X', 'math') RETURNING id`;
+  const local = await createTestUser();
+  const other = await createOtherUser();
   const plan = { title: "T", topic: { name: "X", domain: "math" }, related: [], steps: [{ title: "s", summary: "s" }] };
-  const [lesson] = await t.sql`INSERT INTO lessons (user_id, topic_id, title, plan, model) VALUES (${a.id}, ${topic.id}, 'T', ${JSON.stringify(plan)}::text::jsonb, 'm') RETURNING id`;
-  const q = `?id=${lesson.id}`;
-  expect((await callRoute(h.get, "GET", `/x${q}`, { cookie: b.cookie })).status).toBe(404);
-  expect((await callRoute(h.step, "POST", `/x${q}`, { cookie: b.cookie, body: {} })).status).toBe(404);
-  expect((await callRoute(h.chat, "POST", `/x${q}`, { cookie: b.cookie, body: { message: "hi" } })).status).toBe(404);
-  expect((await callRoute(h.get, "GET", `/x${q}`, { cookie: a.cookie })).status).toBe(200);
+  const [foreignTopic] = await t.sql`INSERT INTO topics (user_id, slug, name, domain) VALUES (${other.id}, 'x', 'X', 'math') RETURNING id`;
+  const [foreign] = await t.sql`INSERT INTO lessons (user_id, topic_id, title, plan, model) VALUES (${other.id}, ${foreignTopic.id}, 'T', ${JSON.stringify(plan)}::text::jsonb, 'm') RETURNING id`;
+  const hidden = `?id=${foreign.id}`;
+  expect((await callRoute(h.get, "GET", `/x${hidden}`)).status).toBe(404);
+  expect((await callRoute(h.step, "POST", `/x${hidden}`, { body: {} })).status).toBe(404);
+  expect((await callRoute(h.chat, "POST", `/x${hidden}`, { body: { message: "hi" } })).status).toBe(404);
+  const [ownTopic] = await t.sql`INSERT INTO topics (user_id, slug, name, domain) VALUES (${local.id}, 'y', 'Y', 'math') RETURNING id`;
+  const [own] = await t.sql`INSERT INTO lessons (user_id, topic_id, title, plan, model) VALUES (${local.id}, ${ownTopic.id}, 'T', ${JSON.stringify(plan)}::text::jsonb, 'm') RETURNING id`;
+  expect((await callRoute(h.get, "GET", `/x?id=${own.id}`)).status).toBe(200);
 });
 
 test("upsertTopics is idempotent and dedupes by slug", async () => {

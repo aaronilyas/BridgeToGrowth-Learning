@@ -5,11 +5,8 @@ process.env.NODE_ENV = "test";
 process.env.APP_ORIGIN = "https://app.test";
 process.env.DATABASE_URL = process.env.TEST_DATABASE_URL ?? "postgres://x";
 process.env.OPENROUTER_API_KEY = "k";
-process.env.STRIPE_SECRET_KEY = "sk_test_x";
-process.env.STRIPE_WEBHOOK_SECRET = "whsec_x";
-process.env.STRIPE_PRICE_ID = "price_x";
-process.env.TURNSTILE_SITE_KEY = "s";
-process.env.TURNSTILE_SECRET = "s";
+process.env.OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+process.env.OPENROUTER_MODEL = "openrouter/free";
 process.env.OPENALEX_MAILTO = "a@example.com";
 
 test("route rejects foreign origin and unknown body keys", async () => {

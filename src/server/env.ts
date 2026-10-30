@@ -8,15 +8,8 @@ const Schema = z.object({
   TEST_DATABASE_URL: z.string().min(1).optional(),
   OPENROUTER_API_KEY: z.string().min(1),
   OPENROUTER_BASE_URL: z.url().default("https://openrouter.ai/api/v1"),
-  STRIPE_SECRET_KEY: z.string().startsWith("sk_"),
-  STRIPE_WEBHOOK_SECRET: z.string().startsWith("whsec_"),
-  STRIPE_PRICE_ID: z.string().startsWith("price_"),
-  TURNSTILE_SITE_KEY: z.string().min(1),
-  TURNSTILE_SECRET: z.string().min(1),
+  OPENROUTER_MODEL: z.string().min(1).default("openrouter/free"),
   OPENALEX_MAILTO: z.email(),
-  TRIAL_DAYS: z.coerce.number().int().positive().default(7),
-  TRIAL_CAP_USD: z.coerce.number().positive().default(1),
-  PRO_CAP_USD: z.coerce.number().positive().default(15),
 });
 
 export type Env = z.infer<typeof Schema>;

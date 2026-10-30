@@ -1,8 +1,7 @@
 import { AttemptRequest, QueueQuery, type AttemptResponse } from "../../shared/api.ts";
 
 import { Settings, SettingsPatch, mergeSettings } from "../../shared/settings.ts";
-import { listModelsForPlan } from "../llm/core.ts";
-import { entitlementOf } from "../billing/core.ts";
+import { listModels } from "../llm/core.ts";
 import { HttpError, json, route } from "../http.ts";
 import { chatJson } from "../llm/gateway.ts";
 import { GradeOutput, CORRECT_AT, StoredAnswer, StoredCitations, buildGradePrompt, loadSettings, queueLimit, toAttemptAnswer, toQuestionPublic } from "./core.ts";
@@ -13,9 +12,9 @@ const getSettings = route({ auth: true }, async (c) => json(loadSettings(c.user)
 const putSettings = route({ auth: true, body: SettingsPatch }, async (c) => {
   const next = Settings.safeParse(mergeSettings(loadSettings(c.user), c.body));
   if (!next.success) throw new HttpError(400, "bad_request");
-  // SEC: a newly chosen model must be on the caller's plan allowlist
+  // SEC: a newly chosen model must be the configured free router
   const m = next.data.model;
-  if (c.body.model !== undefined && m !== null && !listModelsForPlan(entitlementOf(c.user, new Date()).plan).some((x) => x.id === m)) throw new HttpError(400, "model_not_allowed");
+  if (c.body.model !== undefined && m !== null && !listModels().some((x) => x.id === m)) throw new HttpError(400, "model_not_allowed");
   await updateSettings(c.user.id, next.data);
   return json(next.data);
 });

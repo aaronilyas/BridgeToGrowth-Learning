@@ -4,23 +4,17 @@ import type { ErrorCode } from "../shared/api.ts";
 export type ApiError = Error & { status: number; code: ErrorCode };
 export type ApiInit = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown };
 
-const CODES: ReadonlySet<string> = new Set<ErrorCode>(["bad_request", "unauthenticated", "forbidden_origin", "not_found", "rate_limited", "payment_required", "quota_exceeded", "model_not_allowed", "email_taken", "bad_credentials", "turnstile_failed", "unsupported_media", "too_large", "already_subscribed", "upstream", "llm_bad_output", "internal"]);
+const CODES: ReadonlySet<string> = new Set<ErrorCode>(["bad_request", "forbidden_origin", "not_found", "rate_limited", "quota_exceeded", "model_not_allowed", "unsupported_media", "too_large", "upstream", "llm_bad_output", "internal"]);
 
 const MESSAGES: Record<ErrorCode, string> = {
   bad_request: "That request wasn't valid. Check the fields and try again.",
-  unauthenticated: "Please sign in again.",
   forbidden_origin: "Request blocked. Reload the page.",
   not_found: "Not found.",
   rate_limited: "Too many attempts. Wait a minute and retry.",
-  payment_required: "This needs an active plan.",
   quota_exceeded: "You've reached this month's usage cap.",
-  model_not_allowed: "That model isn't available on your plan.",
-  email_taken: "That email already has an account.",
-  bad_credentials: "Wrong email or password.",
-  turnstile_failed: "Human check failed. Try again.",
+  model_not_allowed: "That model isn't the Free Models Router.",
   unsupported_media: "Only PDF or PNG files are accepted.",
   too_large: "That's too large.",
-  already_subscribed: "You're already subscribed.",
   upstream: "A provider is unavailable. Try again shortly.",
   llm_bad_output: "The model returned something unusable. Try again.",
   internal: "Something went wrong.",

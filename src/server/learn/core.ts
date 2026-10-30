@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { Citation, type AttemptAnswer, type Plan, type QuestionPublic } from "../../shared/api.ts";
+import { Citation, type AttemptAnswer, type QuestionPublic } from "../../shared/api.ts";
 import { Settings } from "../../shared/settings.ts";
 import { HttpError } from "../http.ts";
-import { listModelsForPlan } from "../llm/core.ts";
+import { listModels } from "../llm/core.ts";
 
 export type Card = { ef: number; intervalD: number; reps: number; lapses: number; dueAt: Date };
 export type Quality = 0 | 1 | 2 | 3 | 4 | 5;
@@ -68,12 +68,12 @@ export function loadSettings(user: { settings: Record<string, unknown> }): Setti
   return r.success ? r.data : Settings.parse({});
 }
 
-// O(m) in models
-// INV: null or a model the plan no longer allows resolves to the first MODELS entry for the plan; an explicit request is passed through for the gateway to check
-export function resolveModel(settings: Settings, plan: Plan, requested?: string): string {
-  const allowed = listModelsForPlan(plan);
+// O(1)
+// INV: null or any id other than the free router resolves to OPENROUTER_MODEL; an explicit request is passed through for the gateway to check
+export function resolveModel(settings: Settings, requested?: string): string {
+  const allowed = listModels();
   const first = allowed[0];
-  if (!first) throw new HttpError(402, "payment_required");
+  if (!first) throw new HttpError(400, "model_not_allowed");
   if (requested) return requested;
   const own = settings.model;
   return own !== null && allowed.some((m) => m.id === own) ? own : first.id;

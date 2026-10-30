@@ -4,7 +4,7 @@ import { parseSseChunk } from "../../shared/sse.ts";
 import { env } from "../env.ts";
 import { HttpError } from "../http.ts";
 import { assertModelAllowed, buildMessages, countPromptChars, estimateMicros, parseJsonOutput, parsePricing, periodOf, readCompletion, readDelta, toSchemaName, type ChatMessage, type FilePart, type Turn, type Usage } from "./core.ts";
-import { MODELS, SYSTEM_MODELS, isModelListed, priceOf, setPricing, type SystemModelKey } from "./models.ts";
+import { FREE_PRICE, MODELS, SYSTEM_MODELS, isModelListed, priceOf, setPricing, type SystemModelKey } from "./models.ts";
 import { reserveQuota, settleQuota } from "./sql.ts";
 
 export type Who = { uid: string; plan: Plan; capMicros: bigint };
@@ -17,49 +17,51 @@ type Prepared = { uid: string; model: string; kind: string; period: string; est:
 const JSON_TIMEOUT_MS = 60_000;
 const STREAM_TIMEOUT_MS = 120_000;
 const DAY_MS = 86_400_000;
+const NO_DOLLAR_CAP = 9_223_372_036_854_775_807n;
 const enc = new TextEncoder();
 
 // O(n) in the /models payload
-// INV: failure keeps the previous pricing (null on first boot ⇒ calls fail with 502 upstream, the allowlist stays intact)
+// INV: failure keeps the previous pricing; the free router is seeded at $0 so a failed refresh still allows calls
 export async function refreshPricing(fetchFn: typeof fetch = fetch): Promise<void> {
   try {
     const res = await fetchFn(`${env.OPENROUTER_BASE_URL}/models`, { signal: AbortSignal.timeout(15_000) });
     if (!res.ok) throw new Error(`status ${res.status}`);
     const wanted = new Set([...MODELS.map((m) => m.id), ...Object.values(SYSTEM_MODELS)]);
     const map = parsePricing(await res.json(), wanted);
+    if (!map.has(env.OPENROUTER_MODEL)) map.set(env.OPENROUTER_MODEL, FREE_PRICE);
     if (map.size === 0) throw new Error("no allowlisted models listed");
     const dropped = [...wanted].filter((id) => !map.has(id));
     if (dropped.length > 0) console.error(`llm: dropping unlisted models: ${dropped.join(", ")}`);
     setPricing(map);
-  } catch (e) {
+  } catch {
     console.error("llm: /models refresh failed");
   }
 }
 
 // O(1)
 export function startPricingRefresh(): void {
+  setPricing(new Map([[env.OPENROUTER_MODEL, FREE_PRICE]]));
   void refreshPricing();
   setInterval(() => void refreshPricing(), DAY_MS).unref();
 }
 
 // O(1)
-// SEC: a string model is client-chosen and checked against the plan allowlist; system models are server-chosen
-function chooseModel(who: Who, choice: ModelChoice): string {
-  if (who.plan === "none") throw new HttpError(402, "payment_required");
+// SEC: a string model is client-chosen and must be OPENROUTER_MODEL; system models are server-chosen
+function chooseModel(choice: ModelChoice): string {
   if (typeof choice !== "string") return SYSTEM_MODELS[choice.system];
-  assertModelAllowed(choice, who.plan);
+  assertModelAllowed(choice);
   if (!isModelListed(choice)) throw new HttpError(400, "model_not_allowed");
   return choice;
 }
 
 // O(n) in message size
 function prepareCall(who: Who, choice: ModelChoice, kind: string, messages: ChatMessage[], maxTokens: number): Prepared {
-  const model = chooseModel(who, choice);
+  const model = chooseModel(choice);
   const { loaded, price } = priceOf(model);
   if (!price) throw loaded ? new HttpError(400, "model_not_allowed") : new HttpError(502, "upstream");
   const est = estimateMicros(price, countPromptChars(messages), maxTokens);
-  if (est > who.capMicros) throw new HttpError(429, "quota_exceeded");
-  return { uid: who.uid, model, kind, period: periodOf(new Date()), est, cap: who.capMicros, messages };
+  if (who.capMicros > 0n && est > who.capMicros) throw new HttpError(429, "quota_exceeded");
+  return { uid: who.uid, model, kind, period: periodOf(new Date()), est, cap: who.capMicros > 0n ? who.capMicros : NO_DOLLAR_CAP, messages };
 }
 
 // O(1)

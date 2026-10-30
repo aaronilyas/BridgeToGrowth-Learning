@@ -1,17 +1,13 @@
-import { useEffect, useState, type JSX } from "react";
-import { Link, useLocation } from "wouter";
+import { useState, type JSX } from "react";
+import { Link } from "wouter";
 import { describeError, isApiError } from "../api.ts";
 import { Button } from "./Button.tsx";
 
 // O(1)
-// INV: quota_exceeded links /usage, payment_required navigates to /billing, upstream and llm_bad_output offer a retry
+// INV: quota_exceeded links /usage, upstream and llm_bad_output offer a retry
 export function ErrorBanner({ error, onRetry }: { error: unknown; onRetry?: () => void }): JSX.Element | null {
-  const [, navigate] = useLocation();
   const code = isApiError(error) ? error.code : null;
   const [dismissed, setDismissed] = useState(false);
-  useEffect(() => {
-    if (code === "payment_required") navigate("/billing");
-  }, [code, navigate]);
   if (error === null || error === undefined) return null;
   if (code === "quota_exceeded" && dismissed) return null;
   const retry = (code === "upstream" || code === "llm_bad_output") && onRetry;
