@@ -6,6 +6,7 @@ import { HttpError } from "../http.ts";
 import { assertModelAllowed, buildMessages, countPromptChars, estimateMicros, parseJsonOutput, parsePricing, periodOf, readCompletion, readDelta, toSchemaName, type ChatMessage, type FilePart, type Turn, type Usage } from "./core.ts";
 import { FREE_PRICE, MODELS, SYSTEM_MODELS, isModelListed, priceOf, setPricing, type SystemModelKey } from "./models.ts";
 import { reserveQuota, settleQuota } from "./sql.ts";
+import { JSON_TIMEOUT_MS, STREAM_TIMEOUT_MS } from "./timeouts.ts";
 
 export type Who = { uid: string; plan: Plan; capMicros: bigint };
 export type ModelChoice = string | { system: SystemModelKey };
@@ -14,8 +15,6 @@ export type StreamCall = { who: Who; model: ModelChoice; kind: string; system: s
 
 type Prepared = { uid: string; model: string; kind: string; period: string; est: bigint; cap: bigint; messages: ChatMessage[] };
 
-const JSON_TIMEOUT_MS = 60_000;
-const STREAM_TIMEOUT_MS = 120_000;
 const DAY_MS = 86_400_000;
 const NO_DOLLAR_CAP = 9_223_372_036_854_775_807n;
 const enc = new TextEncoder();
