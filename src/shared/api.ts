@@ -59,3 +59,6 @@ export type UsageResponse = z.infer<typeof UsageResponse>;
 
 export const StreamEvent = z.discriminatedUnion("t", [z.strictObject({ t: z.literal("d"), v: z.string() }), z.strictObject({ t: z.literal("end") }), z.strictObject({ t: z.literal("err"), code: z.string() })]);
 export type StreamEvent = z.infer<typeof StreamEvent>;
+
+export const Citation = z.strictObject({ n: z.int().min(1), paperId: z.string(), doi: z.string().nullable(), title: z.string(), year: z.int().nullable() });
+export type Citation = z.infer<typeof Citation>;
