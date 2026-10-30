@@ -9,6 +9,7 @@ import { learnRoutes } from "./learn/routes.ts";
 import { startPricingRefresh } from "./llm/gateway.ts";
 import { llmRoutes } from "./llm/routes.ts";
 import { resetReservations } from "./llm/sql.ts";
+import { seasonRoutes } from "./season/routes.ts";
 import { statsRoutes } from "./stats/routes.ts";
 import { styleRoutes } from "./styles/routes.ts";
 import { teachRoutes } from "./teach/routes.ts";
@@ -22,6 +23,7 @@ const routes = {
   ...styleRoutes,
   ...teachRoutes,
   ...statsRoutes,
+  ...seasonRoutes,
   "/api/health": { GET: route({}, async () => json({ ok: true })) },
   "/api/*": route({ csrf: false }, async () => json({ error: "not_found" }, 404)),
   "/*": index,

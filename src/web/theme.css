@@ -1,0 +1,170 @@
+@import "tailwindcss";
+
+/* Every colour in the app lives here. Components use only these variables (via the utilities below). */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-2: var(--accent-2);
+  --color-on-accent: var(--on-accent);
+  --color-danger: var(--danger);
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+:root,
+[data-season="spring"] {
+  --bg: #0d1413;
+  --panel: #151e1d;
+  --panel-2: #1b2725;
+  --border: #283835;
+  --text: #e7efea;
+  --muted: #94a59f;
+  --accent: #7fd69b;
+  --accent-soft: #7fd69b24;
+  --accent-2: #bfe5c6;
+  --on-accent: #0f1f16;
+  --danger: #f08a8a;
+  --art-1: #f3a6cb;
+  --art-2: #f7d46a;
+  --art-3: #c3a4f0;
+  --art-leaf: #8fcf8f;
+}
+
+[data-season="summer"] {
+  --bg: #0a111e;
+  --panel: #0f192b;
+  --panel-2: #142139;
+  --border: #22314d;
+  --text: #e8eef8;
+  --muted: #8d9cb6;
+  --accent: #2f7ff5;
+  --accent-soft: #2f7ff52b;
+  --accent-2: #f6c21c;
+  --on-accent: #ffffff;
+  --danger: #ff8f8f;
+  --art-1: #f6c21c;
+  --art-2: #f6c21c;
+  --art-3: #2f7ff5;
+  --art-leaf: #f6c21c;
+}
+
+[data-season="fall"] {
+  --bg: #121110;
+  --panel: #1a1816;
+  --panel-2: #23201c;
+  --border: #36312b;
+  --text: #f2ebe3;
+  --muted: #a69c91;
+  --accent: #f08a2c;
+  --accent-soft: #f08a2c26;
+  --accent-2: #8c9b5c;
+  --on-accent: #ffffff;
+  --danger: #ff8f80;
+  --art-1: #e8792b;
+  --art-2: #c9562a;
+  --art-3: #8c9b5c;
+  --art-leaf: #6f8a4a;
+}
+
+[data-season="winter"] {
+  --bg: #0a1322;
+  --panel: #0f1b2f;
+  --panel-2: #14243f;
+  --border: #233759;
+  --text: #e6eef9;
+  --muted: #8ea3c1;
+  --accent: #4b93f2;
+  --accent-soft: #4b93f22b;
+  --accent-2: #ffffff;
+  --on-accent: #ffffff;
+  --danger: #ff9a9a;
+  --art-1: #a9cdf5;
+  --art-2: #dcebfb;
+  --art-3: #4b93f2;
+  --art-leaf: #a9cdf5;
+}
+
+html {
+  color-scheme: dark;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  background: radial-gradient(1200px 600px at 50% -10%, var(--accent-soft), transparent 70%), var(--bg);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+input[type="range"] {
+  accent-color: var(--accent);
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+.season-art {
+  display: none;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 30;
+}
+
+[data-season="spring"] .season-art[data-for="spring"],
+[data-season="summer"] .season-art[data-for="summer"],
+[data-season="fall"] .season-art[data-for="fall"],
+[data-season="winter"] .season-art[data-for="winter"] {
+  display: block;
+}
+
+.season-art svg {
+  position: absolute;
+  overflow: visible;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .art-sway {
+    animation: art-sway 7s ease-in-out infinite alternate;
+  }
+  .art-spin {
+    animation: art-spin 60s linear infinite;
+  }
+  .art-drift {
+    animation: art-drift 9s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes art-sway {
+  from { transform: rotate(-3deg); }
+  to { transform: rotate(3deg); }
+}
+
+@keyframes art-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes art-drift {
+  from { transform: translateY(-4px) rotate(-8deg); }
+  to { transform: translateY(4px) rotate(8deg); }
+}
+
+.md :where(p, ul, ol, pre, blockquote) { margin: 0.6em 0; }
+.md :where(ul) { list-style: disc; padding-left: 1.4em; }
+.md :where(ol) { list-style: decimal; padding-left: 1.4em; }
+.md :where(a) { color: var(--accent); text-decoration: underline; }
+.md :where(code) { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 0 0.3em; }
+.md :where(pre) { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 0.75em; overflow-x: auto; }
+.md :where(pre code) { border: 0; padding: 0; }
+.md :where(h1, h2, h3) { font-weight: 600; margin: 0.8em 0 0.4em; }
+.md :where(blockquote) { border-left: 3px solid var(--accent); padding-left: 0.8em; color: var(--muted); }
+.md .katex-display { overflow-x: auto; overflow-y: hidden; }

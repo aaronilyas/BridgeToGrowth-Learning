@@ -42,3 +42,6 @@ MODULE MAP (append one line per module: path · purpose · key exports):
 - src/server/styles/{core,sql,routes}.ts · PDF/PNG style-profile uploads (magic bytes, profile only stored) · styleRoutes, sniffMime, acceptUpload, toFilePart
 - src/server/teach/{core,sql,routes,prompts}.ts · grounded lessons, lazy steps with MCQ check, streamed Socratic chat · teachRoutes, StepOut, normalizePlan, normalizeStep, buildChatContext, TUTOR_RULES
 - src/server/stats/{core,sql,routes}.ts · topic-independent metrics, knowledge graph, daily cached insights · computeMetrics, streakOf, statsRoutes
+- src/shared/season.ts + src/server/season/routes.ts · hemisphere/season from cf-iplatitude/cf-ipcountry, GET /api/season · Season, SeasonResponse, hemisphereOf, seasonOf, seasonRoutes
+- src/web/{api,sse,session,router}.ts(x) · typed fetch (ApiError, describeError), SSE reader, session context (me/settings/season), guarded wouter routes · api, streamSse, useSession, useMe, useSettings, useSeason, AppRouter
+- src/web/theme.css + src/web/components/* · seasonal CSS variables keyed on <html data-season>, shell + UI primitives (AppShell, SeasonArt, Md, Panel, Button, Slider, Spinner, Logo, Turnstile, AuthForm, Placeholder) · Tailwind colours bg/panel/panel-2/border/text/muted/accent/accent-soft/accent-2/on-accent/danger
