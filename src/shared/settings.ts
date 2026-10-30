@@ -2,13 +2,20 @@ import { z } from "zod";
 
 const int = (min: number, max: number) => z.int().min(min).max(max);
 
+export const SETTINGS_LIMITS = {
+  srs: { newPerDay: { min: 0, max: 50 }, maxReviewsPerDay: { min: 0, max: 500 } },
+  recall: { freeResponseRatio: { min: 0, max: 1 } },
+  bite: { stepsPerLesson: { min: 2, max: 8 }, maxWordsPerStep: { min: 60, max: 400 }, questionsPerSession: { min: 3, max: 20 } },
+  practice: { dailyGoal: { min: 1, max: 100 } },
+} as const;
+
 const level = z.enum(["undergrad", "grad"]);
 const season = z.enum(["auto", "spring", "summer", "fall", "winter"]);
 const model = z.string().min(1).max(100).nullable();
-const srs = { enabled: z.boolean(), newPerDay: int(0, 50), maxReviewsPerDay: int(0, 500) };
-const recall = { freeResponseRatio: z.number().min(0).max(1), confidencePrompt: z.boolean() };
-const bite = { stepsPerLesson: int(2, 8), maxWordsPerStep: int(60, 400), questionsPerSession: int(3, 20) };
-const practice = { dailyGoal: int(1, 100) };
+const srs = { enabled: z.boolean(), newPerDay: int(SETTINGS_LIMITS.srs.newPerDay.min, SETTINGS_LIMITS.srs.newPerDay.max), maxReviewsPerDay: int(SETTINGS_LIMITS.srs.maxReviewsPerDay.min, SETTINGS_LIMITS.srs.maxReviewsPerDay.max) };
+const recall = { freeResponseRatio: z.number().min(SETTINGS_LIMITS.recall.freeResponseRatio.min).max(SETTINGS_LIMITS.recall.freeResponseRatio.max), confidencePrompt: z.boolean() };
+const bite = { stepsPerLesson: int(SETTINGS_LIMITS.bite.stepsPerLesson.min, SETTINGS_LIMITS.bite.stepsPerLesson.max), maxWordsPerStep: int(SETTINGS_LIMITS.bite.maxWordsPerStep.min, SETTINGS_LIMITS.bite.maxWordsPerStep.max), questionsPerSession: int(SETTINGS_LIMITS.bite.questionsPerSession.min, SETTINGS_LIMITS.bite.questionsPerSession.max) };
+const practice = { dailyGoal: int(SETTINGS_LIMITS.practice.dailyGoal.min, SETTINGS_LIMITS.practice.dailyGoal.max) };
 
 // INV: parse({}) yields full defaults; nested groups use prefault so inner defaults apply
 export const Settings = z.strictObject({

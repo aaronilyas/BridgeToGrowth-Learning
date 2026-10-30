@@ -18,7 +18,7 @@ import { useSession } from "./session.tsx";
 // O(1)
 // INV: plan "none" may only reach billing, usage and settings
 export function isOpenWithoutPlan(path: string): boolean {
-  return path === "/billing" || path.startsWith("/billing/") || path === "/usage" || path === "/settings";
+  return path === "/billing" || path.startsWith("/billing/") || path === "/cancel" || path === "/usage" || path === "/settings";
 }
 
 function Loading(): JSX.Element {
@@ -44,9 +44,10 @@ function Guarded(): JSX.Element {
         <Route path="/graph" component={GraphPage} />
         <Route path="/stats" component={StatsPage} />
         <Route path="/settings" component={SettingsPage} />
+        <Route path="/billing/cancel" component={CancelPage} />
         <Route path="/billing/*?" component={BillingPage} />
         <Route path="/usage" component={UsagePage} />
-        <Route path="/cancel" component={CancelPage} />
+        <Route path="/cancel"><Redirect to="/billing/cancel" replace /></Route>
         <Route>
           <Redirect to="/teach" replace />
         </Route>
