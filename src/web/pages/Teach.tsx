@@ -9,15 +9,8 @@ import { DeleteLessonButton } from "../components/DeleteLessonButton.tsx";
 import { ErrorBanner } from "../components/ErrorBanner.tsx";
 import { Panel } from "../components/Panel.tsx";
 import { Spinner } from "../components/Spinner.tsx";
+import { formatExpiry, useMinuteClock } from "../expiry.ts";
 import { useIsPro, usePlanTerms } from "../session.tsx";
-
-const DAY_MS = 86_400_000;
-
-// O(1)
-export function formatExpiry(expiresAt: string, now: number = Date.now()): string {
-  const days = Math.ceil((new Date(expiresAt).getTime() - now) / DAY_MS);
-  return days <= 1 ? "Deleted within a day" : `Deleted in ${days} days`;
-}
 
 // O(1)
 export function GeneratingLesson({ prompt }: { prompt: string }): JSX.Element {
@@ -37,6 +30,7 @@ export function TeachPage(): JSX.Element {
   const generating = generatingLessonPrompt(useAskJob());
   const pro = useIsPro();
   const terms = usePlanTerms();
+  const now = useMinuteClock();
   useEffect(() => {
     let live = true;
     api("/api/lessons?limit=20", z.array(LessonSummary)).then((l) => live && setLessons(l), (e: unknown) => live && setError(e));
@@ -69,12 +63,16 @@ export function TeachPage(): JSX.Element {
           {generating && <GeneratingLesson prompt={generating} />}
           {lessons?.map((l) => (
             <li key={l.id} className="flex flex-col gap-3 rounded-xl border border-border bg-panel-2 px-4 py-3">
-              <Link href={`/lesson/${l.id}`} className="flex flex-col transition hover:text-accent">
+              <Link href={`/lesson/${l.id}`} className="flex flex-col gap-1 transition hover:text-accent">
                 <span className="font-medium">{l.title}</span>
-                <span className="text-xs text-muted">
-                  {new Date(l.createdAt).toLocaleDateString()}
-                  {l.expiresAt && <span className="ml-2 text-accent-2">· {formatExpiry(l.expiresAt)}</span>}
-                </span>
+                <span className="text-xs text-muted">{new Date(l.createdAt).toLocaleDateString()}</span>
+                {l.expiresAt ? (
+                  <span className="text-xs text-accent-2">
+                    {formatExpiry(l.expiresAt, now)} · deletes {new Date(l.expiresAt).toLocaleString()}
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted">Kept</span>
+                )}
               </Link>
               <DeleteLessonButton lessonId={l.id} lessonTitle={l.title} onDeleted={() => setLessons((rows) => rows?.filter((row) => row.id !== l.id) ?? rows)} />
             </li>

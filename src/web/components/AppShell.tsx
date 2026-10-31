@@ -5,6 +5,7 @@ import { api } from "../api.ts";
 import { formatCents } from "../money.ts";
 import { useIsPro, useMe, usePlanTerms, useSession } from "../session.tsx";
 import { Logo } from "./Logo.tsx";
+import { UsageCard } from "./UsageMeter.tsx";
 
 const NAV: { href: string; label: string; icon: string; pro?: boolean }[] = [
   { href: "/teach", label: "Teach", icon: "M4 5.5A2.5 2.5 0 0 1 6.5 3H12v17H6.5A2.5 2.5 0 0 0 4 22.5zM20 5.5A2.5 2.5 0 0 0 17.5 3H12v17h5.5a2.5 2.5 0 0 1 2.5 2.5z" },
@@ -73,7 +74,7 @@ export function AppShell({ children }: { children: ReactNode }): JSX.Element {
   const { signOut } = useSession();
   return (
     <div className="relative z-10 flex min-h-screen gap-3 p-3">
-      <aside className="sticky top-3 flex h-[calc(100vh-1.5rem)] w-60 shrink-0 flex-col gap-6 rounded-2xl border border-border bg-panel p-4">
+      <aside className="sticky top-3 flex h-[calc(100vh-1.5rem)] w-60 shrink-0 flex-col gap-6 overflow-y-auto rounded-2xl border border-border bg-panel p-4">
         <Link href="/teach" className="px-2 pt-1">
           <Logo />
         </Link>
@@ -95,6 +96,7 @@ export function AppShell({ children }: { children: ReactNode }): JSX.Element {
           })}
         </nav>
         <div className="mt-auto flex flex-col gap-3">
+          <UsageCard />
           {pro ? <ProgressCard /> : <UpgradeCard />}
           <div className="flex items-center justify-between gap-2 px-1 text-xs text-muted">
             <span className="min-w-0 truncate" title={me.email}>
