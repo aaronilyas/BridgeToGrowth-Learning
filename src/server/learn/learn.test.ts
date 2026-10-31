@@ -1,5 +1,5 @@
 import { beforeAll, expect, mock, test } from "bun:test";
-import { bootTestServer, callRoute, createOtherUser, createTestUser, type Handler, type TestServer } from "../testkit.ts";
+import { bootTestServer, callRoute, createTestUser, type Handler, type TestServer } from "../testkit.ts";
 
 let t: TestServer;
 let core: typeof import("./core.ts");
@@ -58,20 +58,20 @@ test("queue never exposes answer fields; attempt does, after grading", async () 
   const u = await createTestUser();
   const mcq = await seed(u.id, "mcq");
   const free = await seed(u.id, "free");
-  const res = await callRoute(handlers.queue, "GET", "/api/practice/queue?limit=10");
+  const res = await callRoute(handlers.queue, "GET", "/api/practice/queue?limit=10", { cookie: u.cookie });
   expect(res.status).toBe(200);
   const list = await res.json();
   expect(list).toHaveLength(2);
   const keys = keysOf(list);
   for (const k of ["answer", "explanation", "rubric", "model"]) expect(keys).not.toContain(k);
   const body = { questionId: free.qid, response: "my answer", confidence: 60, latencyMs: 1000 };
-  const a = await (await callRoute(handlers.attempt, "POST", "/api/practice/attempt", { body })).json();
+  const a = await (await callRoute(handlers.attempt, "POST", "/api/practice/attempt", { cookie: u.cookie, body })).json();
   expect(a.answer).toEqual({ kind: "free", model: "model answer" });
   expect(a).toMatchObject({ score: 0.5, correct: false, feedback: "ok", explanation: "because" });
   expect(JSON.stringify(a)).not.toContain("secret rubric");
-  const other = await createOtherUser();
+  const other = await createTestUser();
   const foreign = await seed(other.id, "mcq");
-  const miss = await callRoute(handlers.attempt, "POST", "/api/practice/attempt", { body: { questionId: foreign.qid, choice: 1, confidence: 50, latencyMs: 5 } });
+  const miss = await callRoute(handlers.attempt, "POST", "/api/practice/attempt", { cookie: u.cookie, body: { questionId: foreign.qid, choice: 1, confidence: 50, latencyMs: 5 } });
   expect(miss.status).toBe(404);
 });
 
@@ -92,7 +92,7 @@ test("three attempts roll up into the topic", async () => {
   const u = await createTestUser();
   const { topicId, qid } = await seed(u.id, "mcq");
   for (const [choice, confidence] of [[1, 80], [0, 80], [1, 50]] as const) {
-    const r = await callRoute(handlers.attempt, "POST", "/api/practice/attempt", { body: { questionId: qid, choice, confidence, latencyMs: 10 } });
+    const r = await callRoute(handlers.attempt, "POST", "/api/practice/attempt", { cookie: u.cookie, body: { questionId: qid, choice, confidence, latencyMs: 10 } });
     expect(r.status).toBe(200);
   }
   const [row] = await t.sql`SELECT attempts, correct, mastery, conf_err_sum FROM topics WHERE id = ${topicId}`;

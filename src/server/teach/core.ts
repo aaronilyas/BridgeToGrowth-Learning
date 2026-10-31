@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { LessonPlan, QUESTION_CATEGORIES, type Citation, type QuestionCategory, type StepPublic } from "../../shared/api.ts";
+import { LessonPlan, QUESTION_CATEGORIES, type Citation, type Plan, type QuestionCategory, type StepPublic } from "../../shared/api.ts";
 import { MATH_DELIM_RULE, wrapBareMath } from "../../shared/math.ts";
 import { SETTINGS_LIMITS, type Settings } from "../../shared/settings.ts";
 import { HttpError } from "../http.ts";
 import { toQuestionPublic, resolveModel, type QuestionRow } from "../learn/core.ts";
-import { listModels, wrapUserData, type Turn } from "../llm/core.ts";
+import { listModelsForPlan, wrapUserData, type Turn } from "../llm/core.ts";
 import { ATTACHMENT_RULES, MAX_NOTE_CHARS } from "../sources/core.ts";
 import { slugOf } from "../topics/core.ts";
 import { GROUNDING_RULES, buildSourcesBlock, filterCitations, toCitations, type Paper } from "../lit/core.ts";
@@ -200,8 +200,8 @@ export function toStepPublic(idx: number, c: StepContent, q: QuestionRow): StepP
 }
 
 // O(1)
-export function pickLessonModel(stored: string, settings: Settings): string {
-  return listModels().some((m) => m.id === stored) ? stored : resolveModel(settings);
+export function pickLessonModel(stored: string, settings: Settings, plan: Plan): string {
+  return listModelsForPlan(plan).some((m) => m.id === stored) ? stored : resolveModel(settings, plan);
 }
 
 // O(k)

@@ -1,20 +1,22 @@
-# Runs the built app (bun run build) as an unprivileged user on 127.0.0.1.
+# Runs the built app (bun run build) as an unprivileged user on 127.0.0.1, behind the Cloudflare Tunnel.
 # /etc/btg/btg.env is root-owned, mode 0600; systemd reads it before dropping privileges.
+# The bundle resolves its web assets relative to the working directory, so it must run from dist/.
 # MemoryDenyWriteExecute must stay off: the JSC JIT needs writable and executable pages.
 # Code exercises run in bubblewrap and need unprivileged user namespaces; do not add RestrictNamespaces= or PrivateUsers=. If the startup probe logs "sandbox failed to start", code exercises stay disabled.
 [Unit]
 Description=BridgeToGrowth Learning
 Wants=network-online.target
-After=network-online.target
+After=network-online.target postgresql.service
 
 [Service]
 Type=simple
 User=btg
-WorkingDirectory=/opt/btg
+WorkingDirectory=/opt/btg/dist
 EnvironmentFile=/etc/btg/btg.env
 Environment=NODE_ENV=production
-ExecStart=/usr/local/bin/bun dist/index.js
+ExecStart=/usr/local/bin/bun index.js
 Restart=on-failure
+RestartSec=3
 
 NoNewPrivileges=yes
 ProtectSystem=strict

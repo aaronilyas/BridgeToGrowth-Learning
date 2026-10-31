@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Plan } from "../../shared/api.ts";
 import type { ReasoningLevel } from "../env.ts";
 import { HttpError } from "../http.ts";
 import { MODELS, type ModelInfo, type Price } from "./models.ts";
@@ -53,6 +54,12 @@ export function completionBudget(answerTokens: number, level: ReasoningLevel | n
 // O(1)
 export function listModels(): ModelInfo[] {
   return [...MODELS];
+}
+
+// O(1)
+// INV: model choice is a pro setting; the free plan always gets the first selectable model
+export function listModelsForPlan(plan: Plan): ModelInfo[] {
+  return plan === "pro" ? [...MODELS] : MODELS.slice(0, 1);
 }
 
 // O(n) in payload size

@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { GenerateResponse, LessonCreated, ModelsResponse } from "../../shared/api.ts";
 import { beginAskJob, failAskJob, finishAskJob, getAskJob, useAskJob } from "../askJob.ts";
 import { api } from "../api.ts";
-import { useSettings } from "../session.tsx";
+import { useIsPro, useSettings } from "../session.tsx";
 import { AttachSources, type Attachments } from "./AttachSources.tsx";
 import { Button } from "./Button.tsx";
 import { ErrorBanner } from "./ErrorBanner.tsx";
@@ -22,8 +22,10 @@ function lessonBody(prompt: string, model: string, a: Attachments): FormData | {
 
 // O(1)
 // INV: an in-flight teach request stays in askJob across unmount, so returning to /teach still shows that lesson
+// INV: the free plan has no model picker and sends no model; the server uses the plan default
 export function AskBar(): JSX.Element {
   const { settings } = useSettings();
+  const pro = useIsPro();
   const [, navigate] = useLocation();
   const job = useAskJob();
   const [text, setText] = useState(() => getAskJob()?.text ?? "");
@@ -41,7 +43,7 @@ export function AskBar(): JSX.Element {
     };
   }, []);
 
-  const chosen = models.some((m) => m.id === model) ? model : models.find((m) => m.id === settings.model)?.id ?? models[0]?.id ?? "";
+  const chosen = !pro ? "" : models.some((m) => m.id === model) ? model : models.find((m) => m.id === settings.model)?.id ?? models[0]?.id ?? "";
   const topic = text.trim();
 
   const run = async (mode: "teach" | "practice"): Promise<void> => {
@@ -82,13 +84,15 @@ export function AskBar(): JSX.Element {
           disabled={busy !== null}
           onChange={(e) => setText(e.currentTarget.value)}
         />
-        <select className="rounded-xl border border-border bg-panel-2 px-3 py-3 text-sm outline-none focus:border-accent" aria-label="Model" value={chosen} disabled={busy !== null} onChange={(e) => setModel(e.currentTarget.value)}>
-          {models.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label}
-            </option>
-          ))}
-        </select>
+        {pro && (
+          <select className="rounded-xl border border-border bg-panel-2 px-3 py-3 text-sm outline-none focus:border-accent" aria-label="Model" value={chosen} disabled={busy !== null} onChange={(e) => setModel(e.currentTarget.value)}>
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        )}
         <Button type="submit" busy={busy === "teach"} disabled={topic.length < 2 || busy !== null}>
           Teach
         </Button>

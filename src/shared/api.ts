@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { CodeSpec, CodeTestResult } from "./code.ts";
 
-export type ErrorCode = "bad_request"|"forbidden_origin"|"not_found"|"rate_limited"|"quota_exceeded"|"model_not_allowed"|"unsupported_media"|"too_large"|"upstream"|"llm_bad_output"|"source_blocked"|"source_unreadable"|"sandbox_unavailable"|"internal";
+export type ErrorCode = "bad_request"|"unauthenticated"|"forbidden_origin"|"not_found"|"rate_limited"|"pro_required"|"quota_exceeded"|"email_taken"|"bad_credentials"|"turnstile_failed"|"already_subscribed"|"model_not_allowed"|"unsupported_media"|"too_large"|"upstream"|"llm_bad_output"|"source_blocked"|"source_unreadable"|"sandbox_unavailable"|"internal";
 
 export const HealthResponse = z.strictObject({ ok: z.literal(true) });
 export type HealthResponse = z.infer<typeof HealthResponse>;
@@ -9,8 +9,34 @@ export type HealthResponse = z.infer<typeof HealthResponse>;
 export const ErrorResponse = z.strictObject({ error: z.string() });
 export type ErrorResponse = z.infer<typeof ErrorResponse>;
 
-export const Plan = z.enum(["free"]);
+const Email = z.string().trim().toLowerCase().max(254).pipe(z.email());
+
+export const SignupRequest = z.strictObject({ email: Email, password: z.string().min(12).max(256), turnstile: z.string().max(2048) });
+export type SignupRequest = z.infer<typeof SignupRequest>;
+
+export const LoginRequest = z.strictObject({ email: Email, password: z.string().min(1).max(256), turnstile: z.string().max(2048) });
+export type LoginRequest = z.infer<typeof LoginRequest>;
+
+export const AuthUserResponse = z.strictObject({ id: z.uuid(), email: z.string() });
+export type AuthUserResponse = z.infer<typeof AuthUserResponse>;
+
+export const Plan = z.enum(["free", "pro"]);
 export type Plan = z.infer<typeof Plan>;
+
+export const PlanTerms = z.strictObject({
+  free: z.strictObject({ capMicros: z.number().int().nonnegative(), lessonTtlDays: z.number().int().positive() }),
+  pro: z.strictObject({ capMicros: z.number().int().nonnegative(), priceCents: z.number().int().positive() }),
+});
+export type PlanTerms = z.infer<typeof PlanTerms>;
+
+export const ConfigResponse = z.strictObject({ turnstileSiteKey: z.string(), plans: PlanTerms });
+export type ConfigResponse = z.infer<typeof ConfigResponse>;
+
+export const BillingResponse = z.strictObject({ plan: Plan, subStatus: z.string(), periodEnd: z.iso.datetime().nullable(), cancelAtPeriodEnd: z.boolean(), hasCustomer: z.boolean() });
+export type BillingResponse = z.infer<typeof BillingResponse>;
+
+export const UrlResponse = z.strictObject({ url: z.url() });
+export type UrlResponse = z.infer<typeof UrlResponse>;
 
 export const EntitlementResponse = z.strictObject({ plan: Plan, capMicros: z.number().int().nonnegative() });
 export type EntitlementResponse = z.infer<typeof EntitlementResponse>;
@@ -154,10 +180,10 @@ export type InsightsResponse = z.infer<typeof InsightsResponse>;
 export const LessonCreated = z.strictObject({ lessonId: z.uuid(), plan: LessonPlan, grounded: z.boolean() });
 export type LessonCreated = z.infer<typeof LessonCreated>;
 
-export const LessonSummary = z.strictObject({ id: z.uuid(), title: z.string(), createdAt: z.iso.datetime() });
+export const LessonSummary = z.strictObject({ id: z.uuid(), title: z.string(), createdAt: z.iso.datetime(), expiresAt: z.iso.datetime().nullable() });
 export type LessonSummary = z.infer<typeof LessonSummary>;
 
-export const LessonDetail = z.strictObject({ id: z.uuid(), title: z.string(), plan: LessonPlan, prerequisites: z.array(z.string()), steps: z.array(StepPublic), citations: z.array(Citation) });
+export const LessonDetail = z.strictObject({ id: z.uuid(), title: z.string(), expiresAt: z.iso.datetime().nullable(), plan: LessonPlan, prerequisites: z.array(z.string()), steps: z.array(StepPublic), citations: z.array(Citation) });
 export type LessonDetail = z.infer<typeof LessonDetail>;
 
 export const MessageResponse = z.strictObject({ id: z.string(), role: z.enum(["user", "assistant"]), content: z.string(), citations: z.array(Citation), createdAt: z.iso.datetime() });

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ChatRequest, CreateLessonRequest, LessonPlan, type StepPublic } from "../../shared/api.ts";
 import { SETTINGS_LIMITS } from "../../shared/settings.ts";
 import { sql } from "../db.ts";
+import { computeLessonExpiry } from "../billing/core.ts";
 import { HttpError, json, route } from "../http.ts";
 import { loadSettings, resolveModel, StoredCitations } from "../learn/core.ts";
 import { retrievePapers } from "../lit/openalex.ts";
@@ -80,7 +81,7 @@ const create = route({ entitled: true, raw: true, maxBody: LESSON_FORM_BYTES, ra
   const uid = c.user.id;
   const input = await readLessonInput(c.req);
   const settings = loadSettings(c.user);
-  const model = resolveModel(settings, input.body.model);
+  const model = resolveModel(settings, c.plan, input.body.model);
   const [papers, known, sources] = await Promise.all([retrievePapers(input.body.prompt, 5), listMasteredNames(uid, KNOWN_TOPICS_IN_PROMPT), gatherSources(input.body.urls ?? [], input.files)]);
   const sourced = sources.count > 0;
   const call = { who: { uid, plan: c.plan, capMicros: c.capMicros }, model, kind: "lesson", system: buildPlanPrompt(settings, papers, known, sourced), user: input.body.prompt + sources.block, files: sources.files };
@@ -90,7 +91,7 @@ const create = route({ entitled: true, raw: true, maxBody: LESSON_FORM_BYTES, ra
     const ids = await upsertTopics(tx, uid, [plan.topic, ...plan.related], plan.related.map((rel, i) => ({ src: 0, dst: i + 1, kind: rel.kind })));
     const topicId = ids[0];
     if (!topicId) throw new HttpError(502, "llm_bad_output");
-    return insertLesson(tx, uid, topicId, plan, papers.map((p) => p.id), model);
+    return insertLesson(tx, uid, topicId, plan, papers.map((p) => p.id), model, computeLessonExpiry(c.plan, new Date()));
   });
   return json({ lessonId, plan: toPublicPlan(plan), grounded: papers.length > 0 });
 });
@@ -99,14 +100,14 @@ const list = route({ auth: true }, async (c) => {
   const q = ListQuery.safeParse(query(c.req));
   if (!q.success) throw new HttpError(400, "bad_request");
   const rows = await listLessons(c.user.id, q.data.limit);
-  return json(rows.map((l) => ({ id: l.id, title: l.title, createdAt: l.created_at.toISOString() })));
+  return json(rows.map((l) => ({ id: l.id, title: l.title, createdAt: l.created_at.toISOString(), expiresAt: l.expires_at ? l.expires_at.toISOString() : null })));
 });
 
 const get = route({ auth: true }, async (c) => {
   const lesson = await requireLesson(c.user.id, c.params);
   const plan = readPlan(lesson);
   const [papers, steps, mastered] = await Promise.all([listPapers(lesson.paper_ids), listSteps(c.user.id, lesson.id), findMasteredSlugs(c.user.id, listPrereqs(plan).map(slugOf))]);
-  return json({ id: lesson.id, title: lesson.title, plan: toPublicPlan(plan), prerequisites: unmetPrereqs(plan, mastered), steps: steps.map(stepOf), citations: allCitations(papers) });
+  return json({ id: lesson.id, title: lesson.title, expiresAt: lesson.expires_at ? lesson.expires_at.toISOString() : null, plan: toPublicPlan(plan), prerequisites: unmetPrereqs(plan, mastered), steps: steps.map(stepOf), citations: allCitations(papers) });
 });
 
 const makeStep = route({ entitled: true, rate: { key: "step", cap: 30, perMin: 30 } }, async (c) => {
@@ -124,7 +125,7 @@ const makeStep = route({ entitled: true, rate: { key: "step", cap: 30, perMin: 3
   const papers = await listPapers(lesson.paper_ids);
   const r = await chatJson({
     who: { uid, plan: c.plan, capMicros: c.capMicros },
-    model: pickLessonModel(lesson.model, settings),
+    model: pickLessonModel(lesson.model, settings, c.plan),
     kind: "step",
     system: buildStepPrompt(settings, plan, idx, papers),
     user: plan.title,
@@ -144,7 +145,7 @@ const chat = route({ entitled: true, body: ChatRequest, rate: { key: "chat", cap
   const settings = loadSettings(c.user);
   const papers = await listPapers(lesson.paper_ids);
   const system = buildTutorSystem(settings, readPlan(lesson), papers);
-  const model = pickLessonModel(lesson.model, settings);
+  const model = pickLessonModel(lesson.model, settings, c.plan);
   const convId = await ensureConversation(uid, lesson.id);
   const recent = await listMessages(uid, lesson.id, null, 12);
   const stream = chatStream({

@@ -4,7 +4,7 @@ import { parseSseChunk } from "../../shared/sse.ts";
 import { env } from "../env.ts";
 import { HttpError } from "../http.ts";
 import { assertModelAllowed, buildMessages, completionBudget, countPromptChars, estimateMicros, parseJsonOutput, parsePricing, periodOf, readCompletion, readDelta, reasoningPayload, toSchemaName, type ChatMessage, type FilePart, type Turn, type Usage } from "./core.ts";
-import { FREE_PRICE, MODELS, SYSTEM_MODELS, isModelListed, priceOf, setPricing, type Price, type SystemModelKey } from "./models.ts";
+import { FREE_PRICE, MODELS, SYSTEM_MODELS, isModelListed, priceOf, setPricing, type SystemModelKey } from "./models.ts";
 import { reserveQuota, settleQuota } from "./sql.ts";
 import { JSON_TIMEOUT_MS, STREAM_TIMEOUT_MS } from "./timeouts.ts";
 
@@ -16,12 +16,12 @@ export type StreamCall = { who: Who; model: ModelChoice; kind: string; system: s
 type Prepared = { uid: string; model: string; kind: string; period: string; est: bigint; cap: bigint; maxTokens: number; reasons: boolean; messages: ChatMessage[] };
 
 const DAY_MS = 86_400_000;
-const NO_DOLLAR_CAP = 9_223_372_036_854_775_807n;
+const RETRY_MS = 60_000;
 const enc = new TextEncoder();
 
 // O(n) in the /models payload
-// INV: failure keeps the previous pricing; selectable models and the system model are seeded at $0 so a failed refresh still allows calls
-export async function refreshPricing(fetchFn: typeof fetch = fetch): Promise<void> {
+// INV: failure keeps the previous pricing; OPENROUTER_MODEL falls back to $0 only when upstream does not list it (openrouter/free is unpriced)
+export async function refreshPricing(fetchFn: typeof fetch = fetch): Promise<boolean> {
   try {
     const res = await fetchFn(`${env.OPENROUTER_BASE_URL}/models`, { signal: AbortSignal.timeout(15_000) });
     if (!res.ok) throw new Error(`status ${res.status}`);
@@ -32,18 +32,20 @@ export async function refreshPricing(fetchFn: typeof fetch = fetch): Promise<voi
     const dropped = [...wanted].filter((id) => !map.has(id));
     if (dropped.length > 0) console.error(`llm: dropping unlisted models: ${dropped.join(", ")}`);
     setPricing(map);
+    return true;
   } catch {
     console.error("llm: /models refresh failed");
+    return false;
   }
 }
 
 // O(1)
+// INV: pricing stays unloaded (model calls answer 502 upstream) until the first successful refresh, so a dollar cap is never checked against a $0 guess; retries every minute until then, daily after
 export function startPricingRefresh(): void {
-  const seed = new Map<string, Price>(MODELS.map((m) => [m.id, FREE_PRICE]));
-  seed.set(env.OPENROUTER_MODEL, FREE_PRICE);
-  setPricing(seed);
-  void refreshPricing();
-  setInterval(() => void refreshPricing(), DAY_MS).unref();
+  const tick = (): void => {
+    void refreshPricing().then((ok) => setTimeout(tick, ok ? DAY_MS : RETRY_MS).unref());
+  };
+  tick();
 }
 
 // O(1)
@@ -63,8 +65,8 @@ function prepareCall(who: Who, choice: ModelChoice, kind: string, messages: Chat
   const reasons = MODELS.some((m) => m.id === model);
   const budget = completionBudget(maxTokens, reasons ? env.OPENROUTER_REASONING_LEVEL : null);
   const est = estimateMicros(price, countPromptChars(messages), budget);
-  if (who.capMicros > 0n && est > who.capMicros) throw new HttpError(429, "quota_exceeded");
-  return { uid: who.uid, model, kind, period: periodOf(new Date()), est, cap: who.capMicros > 0n ? who.capMicros : NO_DOLLAR_CAP, maxTokens: budget, reasons, messages };
+  if (est > who.capMicros) throw new HttpError(429, "quota_exceeded");
+  return { uid: who.uid, model, kind, period: periodOf(new Date()), est, cap: who.capMicros, maxTokens: budget, reasons, messages };
 }
 
 // O(1)

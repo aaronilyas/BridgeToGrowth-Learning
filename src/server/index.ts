@@ -1,4 +1,8 @@
 import index from "../web/index.html";
+import { authRoutes } from "./auth/routes.ts";
+import { deleteExpiredSessions } from "./auth/sql.ts";
+import { billingRoutes } from "./billing/routes.ts";
+import { pruneStripeEvents } from "./billing/sql.ts";
 import { env } from "./env.ts";
 import { json, route } from "./http.ts";
 import { codeRoutes } from "./code/routes.ts";
@@ -9,15 +13,15 @@ import { startPricingRefresh } from "./llm/gateway.ts";
 import { SERVER_IDLE_TIMEOUT_S } from "./llm/timeouts.ts";
 import { llmRoutes } from "./llm/routes.ts";
 import { resetReservations } from "./llm/sql.ts";
-import { localRoutes } from "./local/routes.ts";
-import { ensureLocalUser } from "./local/sql.ts";
 import { seasonRoutes } from "./season/routes.ts";
 import { statsRoutes } from "./stats/routes.ts";
 import { styleRoutes } from "./styles/routes.ts";
 import { teachRoutes } from "./teach/routes.ts";
+import { deleteExpiredLessons } from "./teach/sql.ts";
 
 const routes = {
-  ...localRoutes,
+  ...authRoutes,
+  ...billingRoutes,
   ...llmRoutes,
   ...learnRoutes,
   ...genRoutes,
@@ -31,11 +35,24 @@ const routes = {
   "/*": index,
 };
 
+const HOUR_MS = 3_600_000;
+const SWEEP_MS = 15 * 60_000;
+
+// O(1) per tick
+// INV: background sweeps never throw into the event loop; failures are logged without detail
+function scheduleSweep(name: string, everyMs: number, fn: () => Promise<unknown>): void {
+  const run = (): void => void fn().catch(() => console.error(`${name} sweep failed`));
+  run();
+  setInterval(run, everyMs).unref();
+}
+
 // INV: single process ⇒ no in-flight reservations at boot
-await ensureLocalUser();
 await resetReservations();
 startPricingRefresh();
 void codeRuntime();
+scheduleSweep("session", HOUR_MS, deleteExpiredSessions);
+scheduleSweep("lesson expiry", SWEEP_MS, deleteExpiredLessons);
+scheduleSweep("stripe event", 24 * HOUR_MS, pruneStripeEvents);
 
 // INV: idleTimeout stays above the model budgets in llm/timeouts.ts. Bun's default of 10s resets the socket before a lesson step or chat reply is written.
 Bun.serve({ hostname: "127.0.0.1", port: env.PORT, maxRequestBodySize: 80 * 2 ** 20, idleTimeout: SERVER_IDLE_TIMEOUT_S, routes });

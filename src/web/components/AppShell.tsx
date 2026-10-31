@@ -2,15 +2,18 @@ import { useEffect, useState, type JSX, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { StatsResponse } from "../../shared/api.ts";
 import { api } from "../api.ts";
+import { formatCents } from "../money.ts";
+import { useIsPro, useMe, usePlanTerms, useSession } from "../session.tsx";
 import { Logo } from "./Logo.tsx";
 
-const NAV: { href: string; label: string; icon: string }[] = [
+const NAV: { href: string; label: string; icon: string; pro?: boolean }[] = [
   { href: "/teach", label: "Teach", icon: "M4 5.5A2.5 2.5 0 0 1 6.5 3H12v17H6.5A2.5 2.5 0 0 0 4 22.5zM20 5.5A2.5 2.5 0 0 0 17.5 3H12v17h5.5a2.5 2.5 0 0 1 2.5 2.5z" },
   { href: "/practice", label: "Practice", icon: "M9 3h6M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2.2h12.4a1.5 1.5 0 0 0 1.3-2.2L14 9V3M7 15h10" },
   { href: "/graph", label: "Graph", icon: "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM5 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM19 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM5 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM19 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM6.5 7.5l3.3 3M17.5 7.5l-3.3 3M6.5 16.5l3.3-3M17.5 16.5l-3.3-3" },
-  { href: "/stats", label: "Stats", icon: "M4 20V10M10 20V4M16 20v-7M22 20H2" },
-  { href: "/settings", label: "Settings", icon: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" },
+  { href: "/stats", label: "Stats", pro: true, icon: "M4 20V10M10 20V4M16 20v-7M22 20H2" },
+  { href: "/settings", label: "Settings", pro: true, icon: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" },
   { href: "/usage", label: "Usage", icon: "M4 19V5M4 19h16M8 15l3-4 3 2 4-6" },
+  { href: "/billing", label: "Billing", icon: "M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zM2 10h20M6 15h4" },
 ];
 
 function NavIcon({ d }: { d: string }): JSX.Element {
@@ -48,9 +51,25 @@ function ProgressCard(): JSX.Element | null {
   );
 }
 
+function UpgradeCard(): JSX.Element {
+  const terms = usePlanTerms();
+  return (
+    <div className="rounded-xl border border-accent/40 bg-accent-soft p-4">
+      <p className="text-sm font-semibold text-accent">Free plan</p>
+      <p className="mt-1 text-xs text-muted">Unlock settings, personal stats and lessons that are never deleted.</p>
+      <Link href="/billing" className="mt-3 inline-block rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent hover:brightness-110">
+        {terms ? `Go Pro · ${formatCents(terms.pro.priceCents)}/mo` : "Go Pro"}
+      </Link>
+    </div>
+  );
+}
+
 // O(1)
 export function AppShell({ children }: { children: ReactNode }): JSX.Element {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
+  const me = useMe();
+  const pro = useIsPro();
+  const { signOut } = useSession();
   return (
     <div className="relative z-10 flex min-h-screen gap-3 p-3">
       <aside className="sticky top-3 flex h-[calc(100vh-1.5rem)] w-60 shrink-0 flex-col gap-6 rounded-2xl border border-border bg-panel p-4">
@@ -69,12 +88,22 @@ export function AppShell({ children }: { children: ReactNode }): JSX.Element {
               >
                 <NavIcon d={n.icon} />
                 {n.label}
+                {n.pro && !pro && <span className="ml-auto rounded-md border border-accent/40 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">Pro</span>}
               </Link>
             );
           })}
         </nav>
-        <div className="mt-auto">
-          <ProgressCard />
+        <div className="mt-auto flex flex-col gap-3">
+          {pro ? <ProgressCard /> : <UpgradeCard />}
+          <div className="flex items-center justify-between gap-2 px-1 text-xs text-muted">
+            <span className="min-w-0 truncate" title={me.email}>
+              {me.email}
+              <span className="ml-1.5 rounded border border-border px-1 py-px text-[10px] uppercase">{pro ? "Pro" : "Free"}</span>
+            </span>
+            <button type="button" className="shrink-0 rounded-md px-2 py-1 hover:bg-panel-2 hover:text-text" onClick={() => void signOut().then(() => navigate("/login"))}>
+              Sign out
+            </button>
+          </div>
         </div>
       </aside>
       <main className="min-w-0 flex-1">{children}</main>

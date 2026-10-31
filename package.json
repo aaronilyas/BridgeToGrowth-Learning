@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun --hot src/server/index.ts",
-    "build": "bun build --target=bun --production src/server/index.ts --outdir dist",
+    "build": "bun scripts/build.ts",
     "start": "NODE_ENV=production bun src/server/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
@@ -19,6 +19,7 @@
     "react-markdown": "10.1.0",
     "rehype-katex": "7.0.1",
     "remark-math": "6.0.0",
+    "stripe": "23.1.0",
     "tailwindcss": "4.3.3",
     "wouter": "3.13.0",
     "zod": "4.6.7"
