@@ -34,4 +34,4 @@ await resetReservations();
 startPricingRefresh();
 
 // INV: idleTimeout stays above the model budgets in llm/timeouts.ts. Bun's default of 10s resets the socket before a lesson step or chat reply is written.
-Bun.serve({ hostname: "127.0.0.1", port: env.PORT, maxRequestBodySize: 12 * 2 ** 20, idleTimeout: SERVER_IDLE_TIMEOUT_S, routes });
+Bun.serve({ hostname: "127.0.0.1", port: env.PORT, maxRequestBodySize: 80 * 2 ** 20, idleTimeout: SERVER_IDLE_TIMEOUT_S, routes });

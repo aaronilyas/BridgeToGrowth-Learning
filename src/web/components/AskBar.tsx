@@ -4,8 +4,21 @@ import { GenerateResponse, LessonCreated, ModelsResponse } from "../../shared/ap
 import { beginAskJob, failAskJob, finishAskJob, getAskJob, useAskJob } from "../askJob.ts";
 import { api } from "../api.ts";
 import { useSettings } from "../session.tsx";
+import { AttachSources, type Attachments } from "./AttachSources.tsx";
 import { Button } from "./Button.tsx";
 import { ErrorBanner } from "./ErrorBanner.tsx";
+
+// O(n) in attachments
+// INV: plain JSON without attachments; multipart with prompt, model, url and file fields otherwise
+function lessonBody(prompt: string, model: string, a: Attachments): FormData | { prompt: string; model?: string } {
+  if (a.files.length === 0 && a.urls.length === 0) return { prompt, ...(model ? { model } : {}) };
+  const form = new FormData();
+  form.set("prompt", prompt);
+  if (model) form.set("model", model);
+  for (const u of a.urls) form.append("url", u);
+  for (const f of a.files) form.append("file", f, f.name);
+  return form;
+}
 
 // O(1)
 // INV: an in-flight teach request stays in askJob across unmount, so returning to /teach still shows that lesson
@@ -16,6 +29,7 @@ export function AskBar(): JSX.Element {
   const [text, setText] = useState(() => getAskJob()?.text ?? "");
   const [models, setModels] = useState<ModelsResponse>([]);
   const [model, setModel] = useState(() => getAskJob()?.model ?? settings.model ?? "");
+  const [attached, setAttached] = useState<Attachments>({ files: [], urls: [] });
   const busy = job?.phase === "running" ? job.mode : null;
   const error = job?.phase === "error" ? job.error : null;
 
@@ -36,8 +50,9 @@ export function AskBar(): JSX.Element {
     if (id === null) return;
     try {
       if (mode === "teach") {
-        const r = await api("/api/lessons", LessonCreated, { method: "POST", body: { prompt: topic, ...(chosen ? { model: chosen } : {}) } });
+        const r = await api("/api/lessons", LessonCreated, { method: "POST", body: lessonBody(topic, chosen, attached) });
         finishAskJob(id);
+        setAttached({ files: [], urls: [] });
         navigate(`/lesson/${r.lessonId}`);
       } else {
         await api("/api/questions/generate", GenerateResponse, { method: "POST", body: { topic, ...(chosen ? { model: chosen } : {}) } });
@@ -81,7 +96,8 @@ export function AskBar(): JSX.Element {
           Practice
         </Button>
       </div>
-      {busy && <p className="text-sm text-muted">{busy === "teach" ? `Finding papers and planning "${job?.text ?? text}"…` : "Writing practice questions…"}</p>}
+      <AttachSources value={attached} onChange={setAttached} disabled={busy !== null} />
+      {busy && <p className="text-sm text-muted">{busy === "teach" ? `${attached.files.length + attached.urls.length > 0 ? "Reading your attachments, finding papers" : "Finding papers"} and planning "${job?.text ?? text}"…` : "Writing practice questions…"}</p>}
       <ErrorBanner error={error} onRetry={() => void run(job?.mode ?? "teach")} />
     </form>
   );

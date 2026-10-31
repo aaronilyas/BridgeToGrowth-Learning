@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export type ErrorCode = "bad_request"|"forbidden_origin"|"not_found"|"rate_limited"|"quota_exceeded"|"model_not_allowed"|"unsupported_media"|"too_large"|"upstream"|"llm_bad_output"|"internal";
+export type ErrorCode = "bad_request"|"forbidden_origin"|"not_found"|"rate_limited"|"quota_exceeded"|"model_not_allowed"|"unsupported_media"|"too_large"|"upstream"|"llm_bad_output"|"source_blocked"|"source_unreadable"|"internal";
 
 export const HealthResponse = z.strictObject({ ok: z.literal(true) });
 export type HealthResponse = z.infer<typeof HealthResponse>;
@@ -115,7 +115,8 @@ export const LessonPlan = z.strictObject({
 });
 export type LessonPlan = z.infer<typeof LessonPlan>;
 
-export const CreateLessonRequest = z.strictObject({ prompt: z.string().trim().min(2).max(2000), model: z.string().min(1).max(100).optional() });
+export const MAX_LESSON_URLS = 3;
+export const CreateLessonRequest = z.strictObject({ prompt: z.string().trim().min(2).max(2000), model: z.string().min(1).max(100).optional(), urls: z.array(z.url({ protocol: /^https?$/ }).max(2048)).max(MAX_LESSON_URLS).optional() });
 export type CreateLessonRequest = z.infer<typeof CreateLessonRequest>;
 
 export const ChatRequest = z.strictObject({ message: z.string().trim().min(1).max(4000) });
