@@ -9,6 +9,7 @@ export const MATH_DELIM_RULE: string = [
 const FUNCS = new Set(["arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "sin", "cos", "tan", "sec", "csc", "cot", "ln", "log", "exp", "lim", "det", "gcd", "max", "min", "sup", "inf", "dim", "ker", "deg", "mod", "arg", "sqrt"]);
 const RELATIONS = new Set(["=", "+", "-", "*", "/", "<", ">", "\u2264", "\u2265", "\u2260", "\u2248", "\u00b1", "\u00d7", "\u00f7", "\u00b7", "\u2192", "\u21d2"]);
 const FUNC_RE = /^(?:arcsin|arccos|arctan|sinh|cosh|tanh|sin|cos|tan|sec|csc|cot|ln|log|exp|lim|det|gcd|max|min|sup|inf|dim|ker|deg|mod|arg|sqrt)\s*[([]/;
+const JOINERS = new Set([",", "...", "\u2026"]);
 const SYMBOL_RE = /[\u222b\u2211\u220f\u221a\u2202\u2207\u221e\u2264\u2265\u2260\u2248\u2208\u2209\u2282\u2283\u222a\u2229\u03c0\u03b8\u03bb\u03bc\u03c3\u03c6\u03c9\u03b1\u03b2\u03b3\u03b4\u03b5\u03c1\u03c4\u0394\u03a3\u03a0\u03a9]/;
 
 type Part = { keep: boolean; text: string };
@@ -25,7 +26,27 @@ export function wrapBareMath(text: string): string {
 function wrapRegion(text: string): string {
   const converted = text.replace(/\\\[([\s\S]+?)\\\]/g, (_m, g: string) => `$$${g}$$`).replace(/\\\(([\s\S]+?)\\\)/g, (_m, g: string) => `$${g}$`);
   if (converted !== text) return wrapRegion(converted);
-  return scan(converted, dollarAt).map((p) => (p.keep ? p.text : wrapPlain(p.text))).join("");
+  let out = "";
+  let prevInline = false;
+  for (const p of scan(converted, dollarAt)) {
+    const text = p.keep ? fixSpan(p.text) : wrapPlain(p.text);
+    const inline = p.keep && !text.startsWith("$$");
+    out = prevInline && inline ? out.slice(0, -1) + " " + text.slice(1) : out + text;
+    prevInline = inline;
+  }
+  return out;
+}
+
+function fixSpan(span: string): string {
+  const d = span.startsWith("$$") ? "$$" : "$";
+  return d + braceScripts(span.slice(d.length, -d.length)) + d;
+}
+
+function braceScripts(tex: string): string {
+  return tex
+    .replace(/(?<![A-Za-z\\])([A-Za-z}])\\_(?=[{\dA-Za-z(])/g, "$1_")
+    .replace(/(?<!\\)_\(([^()\n]{1,24})\)/g, "_{$1}")
+    .replace(/(?<!\\)_([A-Za-z]{2,}|\d{2,})(?![A-Za-z\d_^{]|\.\d)/g, "_{$1}");
 }
 
 function wrapPlain(text: string): string {
@@ -93,7 +114,7 @@ function closeInline(text: string, from: number): number {
       i++;
       continue;
     }
-    if (text.startsWith("$$", i)) return -1;
+    if (text.startsWith("$$", i)) return i > from && /\S/.test(text[i - 1] ?? "") && /[^\s$]/.test(text[i + 2] ?? "") ? i : -1;
     if (c === "$") return i;
   }
   return -1;
@@ -134,9 +155,10 @@ function funcsOnly(core: string): boolean {
 function isAnchor(core: string): boolean {
   if (/\\[a-zA-Z]{2,}/.test(core) || /d[a-z]{1,3}\/d?[a-z]{1,3}/.test(core) || FUNC_RE.test(core) || SYMBOL_RE.test(core)) return true;
   if (core.includes("=") && funcsOnly(core)) return true;
-  for (const m of core.matchAll(/([A-Za-z0-9]+)(\^|_)(\{|\d|[A-Za-z])/g)) {
+  for (const m of core.matchAll(/([A-Za-z0-9]+)(\^|_)(\{|\d|[A-Za-z]|\()/g)) {
     const base = m[1] ?? "";
     if (base.length <= 2 || /^\d+$/.test(base)) return true;
+    if (FUNCS.has(base.toLowerCase()) && !/[A-Za-z]/.test(core[(m.index ?? 0) + m[0].length] ?? "")) return true;
   }
   return false;
 }
@@ -145,7 +167,7 @@ function isAbsorbable(core: string): boolean {
   if (/^\[\d{1,9}\]$/.test(core)) return false;
   if (RELATIONS.has(core) || /^[A-Za-z](?:['\u2032])?[)\]']*$/.test(core) || /^[+\-][A-Za-z]$/.test(core)) return true;
   if (/^d[a-z][)\]']*$/.test(core) && !/^d(?:o|e|i)[)\]']*$/.test(core)) return true;
-  if (/^[+\-\u00b1]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?%?$/.test(core)) return true;
+  if (/^[+\-\u00b1]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?%?$/.test(core) || /^\d+\/\d+$/.test(core)) return true;
   if (/^[A-Za-z]{1,8}\s*\(/.test(core) && funcsOnly(core)) return true;
   return /^[(\[]/.test(core) && funcsOnly(core) && (/[0-9\\^_=+\-*/<>]/.test(core) || /^[(\[][A-Za-z][)\]]$/.test(core));
 }
@@ -193,7 +215,7 @@ function tryMark(toks: Tok[], math: boolean[], from: number, to: number): boolea
     math[to] = true;
     return true;
   }
-  if (!RELATIONS.has(dest.core)) return false;
+  if (!RELATIONS.has(dest.core) && !JOINERS.has(dest.core)) return false;
   const far = to > from ? to + 1 : to - 1;
   const other = toks[far];
   if (!other || !(to > from ? gap(toks, far) : gap(toks, to))) return false;
@@ -243,11 +265,11 @@ function emitGroup(toks: Tok[], i: number, j: number): string {
   for (let k = i; k <= j; k++) {
     const t = toks[k];
     if (!t) continue;
-    if (k > i) inner += t.ws;
+    if (k > i && t.core !== ",") inner += t.ws;
     inner += t.core;
     if (k < j) inner += t.trail;
   }
-  inner = inner.trim().replace(/([^\\]|^)([%#&])/g, "$1\\$2");
+  inner = braceScripts(inner.trim().replace(/([^\\]|^)([%#&])/g, "$1\\$2"));
   if (inner === "" || inner.includes("$") || inner.includes("`") || inner.includes("\n")) return rawSpan(toks, i, j);
   return first.ws + "$" + inner + "$" + last.trail;
 }
