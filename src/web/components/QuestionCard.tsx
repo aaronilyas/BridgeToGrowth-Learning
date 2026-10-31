@@ -3,6 +3,7 @@ import { AttemptResponse, type QuestionCategory, type QuestionPublic } from "../
 import { api } from "../api.ts";
 import { useSettings } from "../session.tsx";
 import { Button } from "./Button.tsx";
+import { CodeExercise, TestResults } from "./CodeExercise.tsx";
 import { ConfidenceSlider } from "./ConfidenceSlider.tsx";
 import { ErrorBanner } from "./ErrorBanner.tsx";
 import { Md } from "./Md.tsx";
@@ -11,6 +12,7 @@ import { Sources } from "./Sources.tsx";
 const LETTERS = ["A", "B", "C", "D"];
 const DAY_MS = 86_400_000;
 const CATEGORY_LABEL: Record<QuestionCategory, string> = { terminology: "Terminology", conceptual: "Conceptual", mcq: "Multiple choice", free: "Free response" };
+const CODE_LABEL = "Code exercise";
 
 // O(1)
 function reviewIn(nextDueAt: string | null, now: number): string | null {
@@ -26,20 +28,21 @@ export function QuestionCard({ question, onResult, label = "Quick Check" }: { qu
   const { settings } = useSettings();
   const started = useRef(performance.now());
   const [choice, setChoice] = useState<number | null>(null);
-  const [text, setText] = useState("");
+  const [text, setText] = useState(question.code?.starter ?? "");
   const [thinking, setThinking] = useState("");
   const [confidence, setConfidence] = useState(50);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [result, setResult] = useState<AttemptResponse | null>(null);
   const isMcq = question.kind === "mcq" && question.choices !== null;
+  const code = question.kind === "code" ? question.code : null;
   const ready = isMcq ? choice !== null : text.trim() !== "";
 
   const submit = async (): Promise<void> => {
     if (busy || result || !ready) return;
     setBusy(true);
     setError(null);
-    const response = isMcq ? thinking.trim() : text.trim();
+    const response = isMcq ? thinking.trim() : code ? text : text.trim();
     try {
       const r = await api("/api/practice/attempt", AttemptResponse, {
         method: "POST",
@@ -83,7 +86,7 @@ export function QuestionCard({ question, onResult, label = "Quick Check" }: { qu
     <section aria-label={label} className="rounded-2xl border border-border bg-panel p-5">
       <h3 className="mb-2 flex items-center gap-2 text-lg font-semibold text-accent">
         {label}
-        {question.category && <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium">{CATEGORY_LABEL[question.category]}</span>}
+        {question.category && <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium">{code ? CODE_LABEL : CATEGORY_LABEL[question.category]}</span>}
       </h3>
       <Md text={question.stem} />
       {isMcq ? (
@@ -101,6 +104,8 @@ export function QuestionCard({ question, onResult, label = "Quick Check" }: { qu
             );
           })}
         </fieldset>
+      ) : code ? (
+        <CodeExercise questionId={question.id} spec={code} value={text} onChange={setText} disabled={result !== null} />
       ) : (
         <textarea
           className="mt-3 min-h-28 w-full rounded-xl border border-border bg-panel-2 p-3 text-sm outline-none focus:border-accent"
@@ -152,6 +157,7 @@ export function QuestionCard({ question, onResult, label = "Quick Check" }: { qu
             {result.correct ? "Correct" : "Incorrect"} · score {Math.round(result.score * 100)}%
           </p>
           {result.feedback && <p className="mt-1">{result.feedback}</p>}
+          {result.answer.kind === "code" && <TestResults tests={result.answer.tests} model={result.answer.model} />}
           {result.answer.kind === "free" && (
             <div className="mt-2">
               <p className="text-muted">Model answer</p>
