@@ -23,3 +23,16 @@ test("route rejects foreign origin and unknown body keys", async () => {
   expect(originAllowed(null, "http://127.0.0.1:3000")).toBe(false);
   expect(originAllowed("null", "http://127.0.0.1:3000")).toBe(false);
 });
+
+test("route caps chunked JSON bodies and accepts the exact cap", async () => {
+  const { route, json } = await import("./http.ts");
+  const cap = 9;
+  const h = route({ body: z.strictObject({ a: z.string() }), maxBody: cap }, async (c) => json(c.body));
+  const req = (body: string) => new Request("http://127.0.0.1/x", {
+    method: "POST",
+    headers: { origin: "https://app.test", "content-type": "application/json", "transfer-encoding": "chunked" },
+    body,
+  });
+  expect((await h(req('{"a":"1"} '))).status).toBe(413);
+  expect((await h(req('{"a":"1"}'))).status).toBe(200);
+});

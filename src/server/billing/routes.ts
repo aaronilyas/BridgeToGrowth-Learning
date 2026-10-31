@@ -1,7 +1,7 @@
 import { Stripe } from "stripe";
 import type { AuthUser } from "../auth/core.ts";
 import { env } from "../env.ts";
-import { HttpError, json, route } from "../http.ts";
+import { HttpError, json, readBodyCapped, route } from "../http.ts";
 import { formatBilling } from "./core.ts";
 import { applyStripeEvent, claimCustomerId, saveUserSubscription } from "./sql.ts";
 import { createCheckoutUrl, createPortalUrl, createStripeCustomer, fetchSubscription, findCustomerSubscription, setStripeCancelAtPeriodEnd } from "./stripe.ts";
@@ -49,10 +49,11 @@ const resume = route({ auth: true, pro: true, rate: { key: "resume", cap: 10, pe
 
 // SEC: no session or Origin check; authenticity comes from the Stripe signature only
 // INV: order-independent; state comes from a fresh fetch, the payload contributes only event id and subscription id
-const webhook = route({ csrf: false, maxBody: WEBHOOK_MAX }, async (c) => {
+const webhook = route({ csrf: false, maxBody: WEBHOOK_MAX, rate: { key: "stripe-webhook", cap: 120, perMin: 120 } }, async (c) => {
   const sig = c.req.headers.get("stripe-signature");
-  const body = await c.req.text();
-  if (!sig || new TextEncoder().encode(body).length > WEBHOOK_MAX) throw new HttpError(400, "bad_request");
+  const rawBody = await readBodyCapped(c.req, WEBHOOK_MAX);
+  const body = new TextDecoder().decode(rawBody);
+  if (!sig) throw new HttpError(400, "bad_request");
   let event: Stripe.Event;
   try {
     event = await Stripe.webhooks.constructEventAsync(body, sig, env.STRIPE_WEBHOOK_SECRET, undefined, cryptoProvider);
