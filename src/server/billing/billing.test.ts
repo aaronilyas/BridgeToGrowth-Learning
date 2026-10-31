@@ -9,6 +9,7 @@ const retrieve = mock(async (id: string): Promise<Snap> => {
   if (!s) throw new Error(`no snapshot for ${id}`);
   return s;
 });
+const findCustomer = mock(async (): Promise<Snap | null> => null);
 const reject = async (): Promise<never> => {
   throw new Error("not mocked");
 };
@@ -21,7 +22,7 @@ let teachSql: typeof import("../teach/sql.ts");
 
 beforeAll(async () => {
   t = await bootTestServer();
-  mock.module("./stripe.ts", () => ({ fetchSubscription: retrieve, findCustomerSubscription: reject, createStripeCustomer: reject, createCheckoutUrl: reject, createPortalUrl: reject, setStripeCancelAtPeriodEnd: reject, deleteStripeCustomer: reject }));
+  mock.module("./stripe.ts", () => ({ fetchSubscription: retrieve, findCustomerSubscription: findCustomer, createStripeCustomer: reject, createCheckoutUrl: reject, createPortalUrl: reject, setStripeCancelAtPeriodEnd: reject, deleteStripeCustomer: reject }));
   mock.module("../llm/gateway.ts", () => ({ chatJson: reject, chatStream: reject, startPricingRefresh: () => {} }));
   r = (await import("./routes.ts")).billingRoutes;
   core = await import("./core.ts");
@@ -29,6 +30,18 @@ beforeAll(async () => {
   const { learnRoutes } = await import("../learn/routes.ts");
   const { statsRoutes } = await import("../stats/routes.ts");
   gates = { putSettings: learnRoutes["/api/settings"].PUT, stats: statsRoutes["/api/stats"].GET, insights: statsRoutes["/api/insights"].GET };
+});
+
+test("checkout syncs an active Stripe subscription before returning 409", async () => {
+  await t.reset();
+  const u = await createTestUser();
+  await t.sql`UPDATE users SET stripe_customer_id = 'cus_checkout' WHERE id = ${u.id}`;
+  findCustomer.mockResolvedValue({ id: "sub_checkout", customer: "cus_checkout", status: "active", cancelAtPeriodEnd: false, periodEnd: new Date("2030-01-01T00:00:00Z") });
+  const res = await callRoute(r["/api/billing/checkout"].POST, "POST", "/api/billing/checkout", { cookie: u.cookie });
+  expect(res.status).toBe(409);
+  const [row] = await t.sql`SELECT sub_id, sub_status FROM users WHERE id = ${u.id}`;
+  expect(row).toEqual({ sub_id: "sub_checkout", sub_status: "active" });
+  findCustomer.mockResolvedValue(null);
 });
 
 const post = (payload: string, sig: string) =>

@@ -26,6 +26,7 @@ export async function createStripeCustomer(uid: string, email: string): Promise<
 
 // O(1) network call
 export async function createCheckoutUrl(customer: string, uid: string): Promise<string> {
+  const bucket = Math.floor(Date.now() / 600_000);
   const s = await callStripe(() =>
     stripe.checkout.sessions.create({
       mode: "subscription",
@@ -35,7 +36,7 @@ export async function createCheckoutUrl(customer: string, uid: string): Promise<
       subscription_data: { metadata: { uid } },
       success_url: `${env.APP_ORIGIN}/billing?ok=1`,
       cancel_url: `${env.APP_ORIGIN}/billing`,
-    }),
+    }, { idempotencyKey: `checkout-${uid}-${bucket}` }),
   );
   if (!s.url) throw new HttpError(502, "upstream");
   return s.url;
