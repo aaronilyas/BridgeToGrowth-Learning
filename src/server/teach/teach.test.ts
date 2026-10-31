@@ -5,13 +5,25 @@ let t: TestServer;
 let h: { get: Handler; step: Handler; chat: Handler; del: Handler };
 let upsertTopics: typeof import("../topics/sql.ts")["upsertTopics"];
 let topicsReleasedByLesson: typeof import("../topics/core.ts")["topicsReleasedByLesson"];
+let stepCalls = 0;
+let stepGate: Promise<void> = Promise.resolve();
+let stepMock: { explanationMd: string; keyIdea: string; example: null; check: { kind: "mcq"; stem: string; choices: string[]; answerIndex: number; rubric: null; modelAnswer: null; explanation: string } } | null = null;
 
 beforeAll(async () => {
   t = await bootTestServer();
   const never = async (): Promise<never> => {
     throw new Error("llm must not be reached");
   };
-  mock.module("../llm/gateway.ts", () => ({ chatJson: never, chatStream: never, startPricingRefresh: () => {} }));
+  mock.module("../llm/gateway.ts", () => ({
+    chatJson: async () => {
+      if (!stepMock) throw new Error("llm must not be reached");
+      stepCalls += 1;
+      await stepGate;
+      return { data: stepMock, costMicros: 0n };
+    },
+    chatStream: never,
+    startPricingRefresh: () => {},
+  }));
   upsertTopics = (await import("../topics/sql.ts")).upsertTopics;
   topicsReleasedByLesson = (await import("../topics/core.ts")).topicsReleasedByLesson;
   const { teachRoutes } = await import("./routes.ts");
@@ -210,4 +222,48 @@ test("a generated quick check stores math inside dollar delimiters", async () =>
   expect(step.check.explanation).toBe("Only option B factors as a product of a function of $x (x^2)$ and a function of $y (y^3)$, allowing separation into $dy/y^3 = x^2 dx$.");
   expect(step.content.explanationMd).toBe("An ODE has the form $dy/dx = f(x, y)$.");
   expect(step.content.example).toBe("Solve $dy/dx = x y$.");
+});
+
+test("two concurrent step requests call the model once", async () => {
+  await t.reset();
+  const u = await createTestUser();
+  const [topic] = await t.sql`INSERT INTO topics (user_id, slug, name, domain) VALUES (${u.id}, 'share', 'Share', 'math') RETURNING id`;
+  const [lesson] = await t.sql`INSERT INTO lessons (user_id, topic_id, title, plan, model) VALUES (${u.id}, ${topic.id}, 'T', ${JSON.stringify(plan)}::text::jsonb, 'm') RETURNING id`;
+  let release = (): void => {};
+  stepGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  stepCalls = 0;
+  stepMock = {
+    explanationMd: "A term is a named idea.",
+    keyIdea: "Name the idea.",
+    example: null,
+    check: { kind: "mcq", stem: "Which word names the idea?", choices: ["alpha", "beta", "gamma", "delta"], answerIndex: 0, rubric: null, modelAnswer: null, explanation: "Alpha is the term." },
+  };
+  try {
+    const path = `/x?id=${lesson.id}`;
+    const first = callRoute(h.step, "POST", path, { cookie: u.cookie, body: {} });
+    const opened = Date.now();
+    while (stepCalls < 1 && Date.now() - opened < 2000) await Bun.sleep(5);
+    expect(stepCalls).toBe(1);
+    const second = callRoute(h.step, "POST", path, { cookie: u.cookie, body: {} });
+    const joined = Date.now();
+    while (Date.now() - joined < 1500) {
+      if (stepCalls > 1) break;
+      await Bun.sleep(10);
+    }
+    expect(stepCalls).toBe(1);
+    release();
+    const [a, b] = await Promise.all([first, second]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(await a.json()).toEqual(await b.json());
+    expect(stepCalls).toBe(1);
+    const [rows] = await t.sql`SELECT count(*)::int AS n FROM lesson_steps WHERE lesson_id = ${lesson.id}`;
+    expect(rows.n).toBe(1);
+  } finally {
+    release();
+    stepMock = null;
+    stepGate = Promise.resolve();
+  }
 });

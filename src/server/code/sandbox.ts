@@ -60,8 +60,8 @@ export function codeRuntime(): Promise<CodeRuntime> {
 }
 
 // O(code + output), one sandboxed process
-// SEC: the caller supplies only code; libraries and tests come from the stored question; at most MAX_CONCURRENT_RUNS sandboxes run at once
-export async function runInSandbox(libs: readonly CodeLibrary[], code: string, tests: readonly CodeTest[]): Promise<CodeRun> {
+// SEC: the caller supplies only code and whether dunder definitions are banned; libraries and tests come from the stored question; at most MAX_CONCURRENT_RUNS sandboxes run at once
+export async function runInSandbox(libs: readonly CodeLibrary[], code: string, tests: readonly CodeTest[], guardDefs: boolean = true): Promise<CodeRun> {
   const rt = await codeRuntime();
   const argv = rt.enabled ? locateSandbox() : null;
   if (!argv) throw new HttpError(503, "sandbox_unavailable");
@@ -69,7 +69,7 @@ export async function runInSandbox(libs: readonly CodeLibrary[], code: string, t
   running += 1;
   try {
     const nonce = crypto.randomUUID();
-    const out = await spawnSandbox(argv, buildRunPayload(nonce, libs, code, tests));
+    const out = await spawnSandbox(argv, buildRunPayload(nonce, libs, code, tests, guardDefs));
     return settleRun(out, parseHarnessLine(out.stdout, nonce, HarnessRun), tests);
   } finally {
     running -= 1;

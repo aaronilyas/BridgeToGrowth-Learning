@@ -22,6 +22,18 @@ const LESSON_JSON_BYTES = 64 * 1024;
 const LESSON_FORM_BYTES = MAX_SOURCE_FILES * MAX_PDF_BYTES + LESSON_JSON_BYTES;
 const FORM_FIELDS: ReadonlySet<string> = new Set(["prompt", "model"]);
 const MessagesQuery = z.strictObject({ before: z.string().regex(/^\d{1,18}$/).optional(), limit: z.coerce.number().int().min(1).max(50).default(50) });
+const stepJobs = new Map<string, Promise<StepPublic>>();
+
+// INV: concurrent requests for one user, lesson and step share one generation; the entry is removed when that promise settles, including on failure
+function shareStepJob(key: string, start: () => Promise<StepPublic>): Promise<StepPublic> {
+  const running = stepJobs.get(key);
+  if (running) return running;
+  const job = start().finally(() => {
+    if (stepJobs.get(key) === job) stepJobs.delete(key);
+  });
+  stepJobs.set(key, job);
+  return job;
+}
 
 function query(req: Request): Record<string, string> {
   return Object.fromEntries(new URL(req.url).searchParams);
@@ -121,22 +133,25 @@ const makeStep = route({ entitled: true, rate: { key: "step", cap: 30, perMin: 3
   if (!planned) throw new HttpError(404, "not_found");
   const have = (await listSteps(uid, lesson.id, idx))[0];
   if (have) return json(stepOf(have));
-  const settings = loadSettings(c.user);
-  const papers = await listPapers(lesson.paper_ids);
-  const r = await chatJson({
-    who: { uid, plan: c.plan, capMicros: c.capMicros },
-    model: pickLessonModel(lesson.model, settings, c.plan),
-    kind: "step",
-    system: buildStepPrompt(settings, plan, idx, papers),
-    user: plan.title,
-    schema: StepOut,
-    maxTokens: 2000,
+  const built = await shareStepJob(`${uid}:${lesson.id}:${idx}`, async () => {
+    const settings = loadSettings(c.user);
+    const papers = await listPapers(lesson.paper_ids);
+    const r = await chatJson({
+      who: { uid, plan: c.plan, capMicros: c.capMicros },
+      model: pickLessonModel(lesson.model, settings, c.plan),
+      kind: "step",
+      system: buildStepPrompt(settings, plan, idx, papers),
+      user: plan.title,
+      schema: StepOut,
+      maxTokens: 2000,
+    });
+    const step = normalizeStep(r.data, planned.title, settings.bite.maxWordsPerStep, papers, categoryOfStep(idx));
+    if (!(await insertStep(uid, lesson, idx, step))) throw new HttpError(404, "not_found");
+    const row = (await listSteps(uid, lesson.id, idx))[0];
+    if (!row) throw new Error("step missing after insert");
+    return stepOf(row);
   });
-  const step = normalizeStep(r.data, planned.title, settings.bite.maxWordsPerStep, papers, categoryOfStep(idx));
-  if (!(await insertStep(uid, lesson, idx, step))) throw new HttpError(404, "not_found");
-  const row = (await listSteps(uid, lesson.id, idx))[0];
-  if (!row) throw new Error("step missing after insert");
-  return json(stepOf(row));
+  return json(built);
 });
 
 const chat = route({ entitled: true, body: ChatRequest, rate: { key: "chat", cap: 20, perMin: 20 } }, async (c) => {

@@ -6,7 +6,7 @@ import { createToken, formatClearCookie, hashToken, RESET_SECONDS } from "./core
 import { deleteAccountCustomer } from "./customer.ts";
 import { passwordResetEnabled, sendPasswordReset } from "./mail.ts";
 import { buildSessionResponse, startSession } from "./routes.ts";
-import { applyPasswordReset, deletePasswordReset, deleteUserAccount, findUserAuthRow, findUserCreds, passwordResetIsLive, rotateUserPassword, savePasswordReset } from "./sql.ts";
+import { applyPasswordReset, clearUserStripe, deletePasswordReset, deleteUserAccount, findUserAuthRow, findUserCreds, passwordResetIsLive, rotateUserPassword, savePasswordReset } from "./sql.ts";
 import { verifyTurnstile } from "./turnstile.ts";
 import { verifyPassword } from "./verify.ts";
 
@@ -51,13 +51,16 @@ const resetPassword = route({ body: ResetPasswordRequest, rate: { key: "reset", 
   return startSession(user.id, user.email, 200);
 });
 
-// INV: Stripe is canceled before the row is removed; a failed cancel leaves the account and its subscription
+// INV: Stripe is deleted before the local billing link is cleared; a failed Stripe call keeps the live subscription. The user row is removed only after that link is cleared
 // SEC: the current password is required again so a signed-in browser cannot delete the account without it
 const deleteAccount = route({ auth: true, body: DeleteAccountRequest, rate: { key: "delete-account", cap: 5, perMin: 5 } }, async (c) => {
   const row = await findUserAuthRow(c.user.id);
   const ok = await verifyPassword(c.body.password, row?.pw_hash ?? null);
   if (!row || !ok) throw new HttpError(401, "wrong_password");
-  if (row.stripe_customer_id) await deleteAccountCustomer(row.stripe_customer_id);
+  if (row.stripe_customer_id) {
+    await deleteAccountCustomer(row.stripe_customer_id);
+    await clearUserStripe(c.user.id);
+  }
   await deleteUserAccount(c.user.id);
   return new Response(null, { status: 204, headers: { "set-cookie": formatClearCookie(), "cache-control": "no-store" } });
 });

@@ -37,9 +37,10 @@ export function buildSandboxArgv(prlimit: string, bwrap: string, harness: string
 }
 
 // O(n) in payload size
-// INV: libraries are passed as the import allowlist; tests run after the learner's code in the same namespace
-export function buildRunPayload(nonce: string, libs: readonly CodeLibrary[], code: string, tests: readonly CodeTest[]): string {
-  return JSON.stringify({ mode: "run", nonce, libs, code, tests });
+// INV: libraries are passed as the import allowlist; each hidden test runs in a shallow copy of the learner namespace
+// SEC: guardDefs is chosen by the server. Learner submissions keep it on. A reference-solution check passes false so model-written code is not rejected for dunder names
+export function buildRunPayload(nonce: string, libs: readonly CodeLibrary[], code: string, tests: readonly CodeTest[], guardDefs: boolean = true): string {
+  return JSON.stringify({ mode: "run", nonce, libs, code, tests, guardDefs });
 }
 
 // O(1)
