@@ -42,6 +42,14 @@ export function reasoningPayload(level: ReasoningLevel): { reasoning: { effort: 
   return { reasoning: { effort: level } };
 }
 
+const REASONING_BUDGET: Record<ReasoningLevel, number> = { low: 4000, high: 12000, max: 24000 };
+
+// O(1)
+// INV: reasoning tokens count against max_tokens upstream, so a reasoning call gets its level's budget on top of the answer's cap; otherwise the reasoning can use the whole cap and leave the answer empty
+export function completionBudget(answerTokens: number, level: ReasoningLevel | null): number {
+  return level === null ? answerTokens : answerTokens + REASONING_BUDGET[level];
+}
+
 // O(1)
 export function listModels(): ModelInfo[] {
   return [...MODELS];

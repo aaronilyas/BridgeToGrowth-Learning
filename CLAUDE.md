@@ -32,7 +32,7 @@ MODULE MAP (append one line per module: path · purpose · key exports):
 - scripts/db-setup.sh · create role btg + DBs btg, btg_test · none
 - src/server/local/{core,sql,routes}.ts · single local user, GET /api/me · localRoutes, LocalUser, ensureLocalUser, LOCAL_EMAIL
 - src/server/testkit.ts · test env + test DB helpers (import statically, server modules dynamically after boot) · bootTestServer, createTestUser, createOtherUser, callRoute, TEST_ORIGIN
-- src/server/llm/{models,core,sql,gateway,routes}.ts + src/shared/sse.ts · selectable OpenRouter models with one shared reasoning level, reserve/settle usage, usage API · MODELS, SYSTEM_MODELS, chatJson, chatStream, refreshPricing, assertModelAllowed, reasoningPayload, reserveQuota, llmRoutes, parseSseChunk
+- src/server/llm/{models,core,sql,gateway,routes}.ts + src/shared/sse.ts · selectable OpenRouter models with one shared reasoning level, reserve/settle usage, usage API · MODELS, SYSTEM_MODELS, chatJson, chatStream, refreshPricing, assertModelAllowed, reasoningPayload, completionBudget, reserveQuota, llmRoutes, parseSseChunk
 - src/server/lit/{core,sql,openalex}.ts · OpenAlex grounding, 7-day cache, citation filtering · retrievePapers, buildSourcesBlock, filterCitations, toCitations, GROUNDING_RULES, normalizeQuery, abstractFromInverted
 - src/shared/settings.ts · Settings schema with defaults, deep-partial patch, merge · Settings, SettingsPatch, mergeSettings
 - src/shared/math.ts · wrap bare lesson LaTeX in $ delimiters before storage and render · wrapBareMath, MATH_DELIM_RULE

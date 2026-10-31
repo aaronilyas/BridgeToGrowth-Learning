@@ -1,4 +1,4 @@
-export const JSON_TIMEOUT_MS = 60_000;
+export const JSON_TIMEOUT_MS = 90_000;
 export const STREAM_TIMEOUT_MS = 120_000;
 
 // INV: Bun.serve's default idleTimeout is 10s. Step generation and chat write no bytes until the model answers, so the socket is reset and the client reports "A provider is unavailable."

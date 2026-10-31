@@ -3,7 +3,7 @@ import type { Citation, ErrorCode, Plan } from "../../shared/api.ts";
 import { parseSseChunk } from "../../shared/sse.ts";
 import { env } from "../env.ts";
 import { HttpError } from "../http.ts";
-import { assertModelAllowed, buildMessages, countPromptChars, estimateMicros, parseJsonOutput, parsePricing, periodOf, readCompletion, readDelta, reasoningPayload, toSchemaName, type ChatMessage, type FilePart, type Turn, type Usage } from "./core.ts";
+import { assertModelAllowed, buildMessages, completionBudget, countPromptChars, estimateMicros, parseJsonOutput, parsePricing, periodOf, readCompletion, readDelta, reasoningPayload, toSchemaName, type ChatMessage, type FilePart, type Turn, type Usage } from "./core.ts";
 import { FREE_PRICE, MODELS, SYSTEM_MODELS, isModelListed, priceOf, setPricing, type Price, type SystemModelKey } from "./models.ts";
 import { reserveQuota, settleQuota } from "./sql.ts";
 import { JSON_TIMEOUT_MS, STREAM_TIMEOUT_MS } from "./timeouts.ts";
@@ -13,7 +13,7 @@ export type ModelChoice = string | { system: SystemModelKey };
 export type JsonCall<T> = { who: Who; model: ModelChoice; kind: string; system: string; user: string; schema: z.ZodType<T>; maxTokens: number; files?: FilePart[]; signal?: AbortSignal };
 export type StreamCall = { who: Who; model: ModelChoice; kind: string; system: string; messages: Turn[]; maxTokens: number; signal: AbortSignal; onDone: (text: string) => Promise<{ citations?: Citation[] } | void> };
 
-type Prepared = { uid: string; model: string; kind: string; period: string; est: bigint; cap: bigint; messages: ChatMessage[] };
+type Prepared = { uid: string; model: string; kind: string; period: string; est: bigint; cap: bigint; maxTokens: number; reasons: boolean; messages: ChatMessage[] };
 
 const DAY_MS = 86_400_000;
 const NO_DOLLAR_CAP = 9_223_372_036_854_775_807n;
@@ -60,9 +60,11 @@ function prepareCall(who: Who, choice: ModelChoice, kind: string, messages: Chat
   const model = chooseModel(choice);
   const { loaded, price } = priceOf(model);
   if (!price) throw loaded ? new HttpError(400, "model_not_allowed") : new HttpError(502, "upstream");
-  const est = estimateMicros(price, countPromptChars(messages), maxTokens);
+  const reasons = MODELS.some((m) => m.id === model);
+  const budget = completionBudget(maxTokens, reasons ? env.OPENROUTER_REASONING_LEVEL : null);
+  const est = estimateMicros(price, countPromptChars(messages), budget);
   if (who.capMicros > 0n && est > who.capMicros) throw new HttpError(429, "quota_exceeded");
-  return { uid: who.uid, model, kind, period: periodOf(new Date()), est, cap: who.capMicros > 0n ? who.capMicros : NO_DOLLAR_CAP, messages };
+  return { uid: who.uid, model, kind, period: periodOf(new Date()), est, cap: who.capMicros > 0n ? who.capMicros : NO_DOLLAR_CAP, maxTokens: budget, reasons, messages };
 }
 
 // O(1)
@@ -72,12 +74,12 @@ async function reserveOrThrow(p: Prepared): Promise<void> {
 
 // O(1)
 // SEC: fixed headers; no tools, no function calling; the API key never leaves this function
-function postCompletion(p: Prepared, maxTokens: number, extra: Record<string, unknown>, signal: AbortSignal): Promise<Response> {
+function postCompletion(p: Prepared, extra: Record<string, unknown>, signal: AbortSignal): Promise<Response> {
   return fetch(`${env.OPENROUTER_BASE_URL}/chat/completions`, {
     method: "POST",
     signal,
     headers: { authorization: `Bearer ${env.OPENROUTER_API_KEY}`, "content-type": "application/json", "HTTP-Referer": env.APP_ORIGIN, "X-Title": "BridgeToGrowth Learning" },
-    body: JSON.stringify({ model: p.model, messages: p.messages, max_tokens: maxTokens, usage: { include: true }, ...extra, ...(MODELS.some((m) => m.id === p.model) ? reasoningPayload(env.OPENROUTER_REASONING_LEVEL) : {}) }),
+    body: JSON.stringify({ model: p.model, messages: p.messages, max_tokens: p.maxTokens, usage: { include: true }, ...extra, ...(p.reasons ? reasoningPayload(env.OPENROUTER_REASONING_LEVEL) : {}) }),
   });
 }
 
@@ -89,12 +91,12 @@ function finalUsage(p: Prepared, u: Usage | null, conservative: boolean): Usage 
 
 // O(n) in response size
 // SEC: upstream bodies are never forwarded; any failure is 502 upstream
-async function runJsonAttempt(p: Prepared, maxTokens: number, format: Record<string, unknown>, signal: AbortSignal | undefined): Promise<{ content: string | null; costMicros: bigint }> {
+async function runJsonAttempt(p: Prepared, format: Record<string, unknown>, signal: AbortSignal | undefined): Promise<{ content: string | null; costMicros: bigint }> {
   await reserveOrThrow(p);
   let usage: Usage | null = null;
   try {
     const timeout = AbortSignal.timeout(JSON_TIMEOUT_MS);
-    const res = await postCompletion(p, maxTokens, format, signal ? AbortSignal.any([signal, timeout]) : timeout).catch(() => null);
+    const res = await postCompletion(p, format, signal ? AbortSignal.any([signal, timeout]) : timeout).catch(() => null);
     if (!res || !res.ok) {
       await res?.body?.cancel();
       throw new HttpError(502, "upstream");
@@ -115,7 +117,7 @@ export async function chatJson<T>(o: JsonCall<T>): Promise<{ data: T; costMicros
   const format = { response_format: { type: "json_schema", json_schema: { name: toSchemaName(o.kind), strict: true, schema: z.toJSONSchema(o.schema) } } };
   let total = 0n;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const r = await runJsonAttempt(p, o.maxTokens, format, o.signal);
+    const r = await runJsonAttempt(p, format, o.signal);
     total += r.costMicros;
     const data = parseJsonOutput(r.content, o.schema);
     if (data !== null) return { data, costMicros: total };
@@ -149,7 +151,7 @@ export function chatStream(o: StreamCall): ReadableStream<Uint8Array> {
     try {
       await reserveOrThrow(p);
       reserved = true;
-      const res = await postCompletion(p, o.maxTokens, { stream: true }, AbortSignal.any([upstream.signal, o.signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)])).catch(() => null);
+      const res = await postCompletion(p, { stream: true }, AbortSignal.any([upstream.signal, o.signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)])).catch(() => null);
       if (!res || !res.ok || !res.body) {
         await res?.body?.cancel();
         throw new HttpError(502, "upstream");
