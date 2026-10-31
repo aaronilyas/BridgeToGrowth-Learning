@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { StyleProfile } from "../../shared/api.ts";
 import { HttpError, json, route } from "../http.ts";
-import { chatJson } from "../llm/gateway.ts";
+import { assertQuotaHeadroom, chatJson } from "../llm/gateway.ts";
 import { MAX_STYLES, MAX_UPLOAD, STYLE_SYSTEM, acceptUpload, toFilePart } from "./core.ts";
 import { countStyles, deleteStyle, findStyleBySha, insertStyle, listStyles } from "./sql.ts";
 
@@ -9,6 +9,7 @@ const IdParams = z.strictObject({ id: z.uuid() });
 
 const upload = route({ entitled: true, raw: true, maxBody: MAX_UPLOAD, rate: { key: "style", cap: 5, perMin: 5 } }, async (c) => {
   const uid = c.user.id;
+  await assertQuotaHeadroom({ uid, plan: c.plan, capMicros: c.capMicros });
   let form: FormData;
   try {
     form = await c.req.formData();

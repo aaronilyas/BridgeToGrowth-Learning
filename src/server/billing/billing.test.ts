@@ -22,7 +22,7 @@ let teachSql: typeof import("../teach/sql.ts");
 beforeAll(async () => {
   t = await bootTestServer();
   mock.module("./stripe.ts", () => ({ fetchSubscription: retrieve, findCustomerSubscription: reject, createStripeCustomer: reject, createCheckoutUrl: reject, createPortalUrl: reject, setStripeCancelAtPeriodEnd: reject, deleteStripeCustomer: reject }));
-  mock.module("../llm/gateway.ts", () => ({ chatJson: reject, chatStream: reject, startPricingRefresh: () => {} }));
+  mock.module("../llm/gateway.ts", () => ({ chatJson: reject, chatStream: reject, startPricingRefresh: () => {}, assertQuotaHeadroom: async () => {} }));
   r = (await import("./routes.ts")).billingRoutes;
   core = await import("./core.ts");
   teachSql = await import("../teach/sql.ts");

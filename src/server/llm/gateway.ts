@@ -5,7 +5,7 @@ import { env } from "../env.ts";
 import { HttpError } from "../http.ts";
 import { assertModelAllowed, buildMessages, completionBudget, countPromptChars, estimateMicros, parseJsonOutput, parsePricing, periodOf, readCompletion, readDelta, reasoningPayload, toSchemaName, type ChatMessage, type FilePart, type Turn, type Usage } from "./core.ts";
 import { FREE_PRICE, MODELS, SYSTEM_MODELS, isModelListed, priceOf, setPricing, type SystemModelKey } from "./models.ts";
-import { reserveQuota, settleQuota } from "./sql.ts";
+import { findUsage, reserveQuota, settleQuota } from "./sql.ts";
 import { JSON_TIMEOUT_MS, STREAM_TIMEOUT_MS } from "./timeouts.ts";
 
 export type Who = { uid: string; plan: Plan; capMicros: bigint };
@@ -46,6 +46,13 @@ export function startPricingRefresh(): void {
     void refreshPricing().then((ok) => setTimeout(tick, ok ? DAY_MS : RETRY_MS).unref());
   };
   tick();
+}
+
+// O(log n)
+// SEC: short-circuits callers before unmetered pre-work when the user has no quota left
+export async function assertQuotaHeadroom(who: Who): Promise<void> {
+  const u = await findUsage(who.uid, periodOf(new Date()));
+  if (u.usedMicros + u.reservedMicros >= who.capMicros) throw new HttpError(429, "quota_exceeded");
 }
 
 // O(1)

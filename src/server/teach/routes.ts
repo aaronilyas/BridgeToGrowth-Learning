@@ -7,7 +7,7 @@ import { HttpError, json, route } from "../http.ts";
 import { loadSettings, resolveModel, StoredCitations } from "../learn/core.ts";
 import { retrievePapers } from "../lit/openalex.ts";
 import { filterCitations, toCitations } from "../lit/core.ts";
-import { chatJson, chatStream } from "../llm/gateway.ts";
+import { assertQuotaHeadroom, chatJson, chatStream } from "../llm/gateway.ts";
 import { slugOf } from "../topics/core.ts";
 import { findMasteredSlugs, listMasteredNames, upsertTopics } from "../topics/sql.ts";
 import { gatherSources } from "../sources/collect.ts";
@@ -80,6 +80,7 @@ async function readLessonInput(req: Request): Promise<{ body: CreateLessonReques
 const create = route({ entitled: true, raw: true, maxBody: LESSON_FORM_BYTES, rate: { key: "lesson", cap: 10, perMin: 10 } }, async (c) => {
   const uid = c.user.id;
   const input = await readLessonInput(c.req);
+  await assertQuotaHeadroom({ uid, plan: c.plan, capMicros: c.capMicros });
   const settings = loadSettings(c.user);
   const model = resolveModel(settings, c.plan, input.body.model);
   const [papers, known, sources] = await Promise.all([retrievePapers(input.body.prompt, 5), listMasteredNames(uid, KNOWN_TOPICS_IN_PROMPT), gatherSources(input.body.urls ?? [], input.files)]);

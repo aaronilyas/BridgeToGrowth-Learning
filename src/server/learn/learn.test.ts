@@ -8,7 +8,7 @@ let handlers: { queue: Handler; attempt: Handler };
 
 beforeAll(async () => {
   t = await bootTestServer();
-  mock.module("../llm/gateway.ts", () => ({ chatStream: async () => { throw new Error("unused"); }, chatJson: async () => ({ data: { score: 0.5, feedback: "ok" }, costMicros: 0n }) }));
+  mock.module("../llm/gateway.ts", () => ({ chatStream: async () => { throw new Error("unused"); }, chatJson: async () => ({ data: { score: 0.5, feedback: "ok" }, costMicros: 0n }), assertQuotaHeadroom: async () => {} }));
   core = await import("./core.ts");
   insertCards = (await import("./sql.ts")).insertCards;
   const { learnRoutes } = await import("./routes.ts");
