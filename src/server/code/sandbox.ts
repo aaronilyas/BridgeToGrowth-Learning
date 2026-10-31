@@ -6,7 +6,7 @@ import { HarnessProbe, HarnessRun, MAX_CONCURRENT_RUNS, RUN_TIMEOUT_MS, SANDBOX_
 export type CodeRuntime = { enabled: boolean; libraries: CodeLibrary[] };
 
 const TOOL_PATH = "/usr/bin:/bin";
-let running = 0;
+const runningUsers = new Set<string>();
 let runtime: Promise<CodeRuntime> | null = null;
 
 // O(1)
@@ -60,18 +60,18 @@ export function codeRuntime(): Promise<CodeRuntime> {
 }
 
 // O(code + output), one sandboxed process
-// SEC: the caller supplies only code; libraries and tests come from the stored question; at most MAX_CONCURRENT_RUNS sandboxes run at once
-export async function runInSandbox(libs: readonly CodeLibrary[], code: string, tests: readonly CodeTest[]): Promise<CodeRun> {
+// SEC: caller supplies only code; libraries and tests come from stored question; each user gets one run and global runs are bounded
+export async function runInSandbox(uid: string, libs: readonly CodeLibrary[], code: string, tests: readonly CodeTest[]): Promise<CodeRun> {
   const rt = await codeRuntime();
   const argv = rt.enabled ? locateSandbox() : null;
   if (!argv) throw new HttpError(503, "sandbox_unavailable");
-  if (running >= MAX_CONCURRENT_RUNS) throw new HttpError(429, "rate_limited");
-  running += 1;
+  if (runningUsers.has(uid) || runningUsers.size >= MAX_CONCURRENT_RUNS) throw new HttpError(429, "rate_limited");
+  runningUsers.add(uid);
   try {
     const nonce = crypto.randomUUID();
     const out = await spawnSandbox(argv, buildRunPayload(nonce, libs, code, tests));
     return settleRun(out, parseHarnessLine(out.stdout, nonce, HarnessRun), tests);
   } finally {
-    running -= 1;
+    runningUsers.delete(uid);
   }
 }

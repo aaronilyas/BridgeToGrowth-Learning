@@ -4,9 +4,10 @@ import { CODE_LIBRARIES, CODE_MAX_CHARS, CODE_MAX_LIBRARIES, CODE_MAX_TESTS, Cod
 export const SANDBOX_PYTHON = "/usr/bin/python3";
 export const RUN_TIMEOUT_MS = 10_000;
 export const STDOUT_CAP = 256 * 1024;
-export const MAX_CONCURRENT_RUNS = 2;
+export const MAX_CONCURRENT_RUNS = 4;
 const TMPFS_BYTES = 8 * 1024 * 1024;
-const LIMITS = ["--as=1073741824", "--cpu=5", "--fsize=1048576", "--nofile=64", "--core=0"];
+// INV: 512 leaves room for Bun's own threads because RLIMIT_NPROC counts all processes and threads for the real uid.
+const LIMITS = ["--as=1073741824", "--cpu=5", "--fsize=1048576", "--nofile=64", "--nproc=512", "--core=0"];
 const SANDBOX_ENV = ["--setenv", "PATH", "/usr/bin", "--setenv", "LANG", "C.UTF-8", "--setenv", "HOME", "/tmp", "--setenv", "OPENBLAS_NUM_THREADS", "1", "--setenv", "OMP_NUM_THREADS", "1", "--setenv", "MPLBACKEND", "Agg"];
 
 export const HarnessRun = z.strictObject({ stdout: z.string(), stderr: z.string(), error: z.string().nullable(), tests: z.array(CodeTestResult).max(CODE_MAX_TESTS) });

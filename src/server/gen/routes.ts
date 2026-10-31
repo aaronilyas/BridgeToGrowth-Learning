@@ -33,7 +33,7 @@ const generate = route({ entitled: true, body: GenerateRequest, rate: { key: "ge
   // INV: a code question is stored only if its reference solution passes every hidden test in the sandbox
   for (const q of qs) {
     if (q.kind !== "code" || !q.code || !("tests" in q.answer)) continue;
-    const check = await runInSandbox(q.code.libraries, q.answer.model, q.answer.tests);
+    const check = await runInSandbox(c.user.id, q.code.libraries, q.answer.model, q.answer.tests);
     const failed = check.run.tests.filter((t) => !t.passed).length;
     if (check.run.error === null && failed === 0) continue;
     console.error(`gen: code exercise rejected, reference solution ${check.run.error === null ? `failed ${failed} of ${check.run.tests.length} tests` : "raised an error"}`);
