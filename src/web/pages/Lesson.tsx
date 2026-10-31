@@ -139,6 +139,14 @@ export function LessonPage(): JSX.Element {
             <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${pct}%` }} />
           </div>
         </div>
+        {lesson.prerequisites.length > 0 && (
+          <div className="rounded-xl border border-border bg-panel-2 p-3 text-sm">
+            <h3 className="font-semibold">Before you start</h3>
+            <ul className="mt-1 list-disc pl-5 text-muted">
+              {lesson.prerequisites.map((p) => <li key={p}>{p}</li>)}
+            </ul>
+          </div>
+        )}
         <div className="rounded-xl border border-border bg-panel-2 p-3 text-sm">
           <p className="font-semibold text-accent">Keep going!</p>
           <p className="text-muted">{lesson.title}</p>

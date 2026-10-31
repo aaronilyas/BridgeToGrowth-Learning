@@ -1,4 +1,6 @@
 import type { SQL } from "bun";
+import { sql } from "../db.ts";
+import { MASTERED_AT } from "../stats/core.ts";
 import { HttpError } from "../http.ts";
 import { dedupeTopics, resolveEdges, type EdgeIn, type TopicIn } from "./core.ts";
 
@@ -24,4 +26,22 @@ export async function upsertTopics(tx: SQL, uid: string, topics: TopicIn[], edge
       ON CONFLICT DO NOTHING`;
   }
   return rowOf.map((r) => rowIds[r] ?? "");
+}
+
+// O(limit)
+// INV: served by topics(user_id, last_seen_at DESC); most recently practised mastered topics first
+export async function listMasteredNames(uid: string, limit: number): Promise<string[]> {
+  const rows: { name: string }[] = await sql`
+    SELECT name FROM topics WHERE user_id = ${uid} AND mastery >= ${MASTERED_AT}
+    ORDER BY last_seen_at DESC NULLS LAST LIMIT ${limit}`;
+  return rows.map((r) => r.name);
+}
+
+// O(k log n)
+// INV: served by the (user_id, slug) unique index; returns the subset of slugs the user has mastered
+export async function findMasteredSlugs(uid: string, slugs: string[]): Promise<Set<string>> {
+  if (slugs.length === 0) return new Set();
+  const rows: { slug: string }[] = await sql`
+    SELECT slug FROM topics WHERE user_id = ${uid} AND slug = ANY(${slugs}::text[]) AND mastery >= ${MASTERED_AT} LIMIT ${slugs.length}`;
+  return new Set(rows.map((r) => r.slug));
 }

@@ -7,8 +7,9 @@ import { loadSettings, resolveModel, StoredCitations } from "../learn/core.ts";
 import { retrievePapers } from "../lit/openalex.ts";
 import { filterCitations, toCitations } from "../lit/core.ts";
 import { chatJson, chatStream } from "../llm/gateway.ts";
-import { upsertTopics } from "../topics/sql.ts";
-import { StepContent, StepOut, allCitations, buildChatContext, buildPlanPrompt, buildStepPrompt, buildTutorSystem, categoryOfStep, normalizePlan, normalizeStep, pickLessonModel, toStepPublic } from "./core.ts";
+import { slugOf } from "../topics/core.ts";
+import { findMasteredSlugs, listMasteredNames, upsertTopics } from "../topics/sql.ts";
+import { StepContent, StepOut, allCitations, buildChatContext, buildPlanPrompt, buildStepPrompt, buildTutorSystem, categoryOfStep, KNOWN_TOPICS_IN_PROMPT, listPrereqs, maxPlanSteps, normalizePlan, normalizeStep, pickLessonModel, toStepPublic, unmetPrereqs } from "./core.ts";
 import { deleteLessonData, ensureConversation, findLesson, insertLesson, insertStep, insertMessagePair, listLessons, listMessages, listPapers, listSteps, type LessonRow } from "./sql.ts";
 
 const IdParams = z.strictObject({ id: z.uuid() });
@@ -41,9 +42,9 @@ const create = route({ entitled: true, body: CreateLessonRequest, rate: { key: "
   const uid = c.user.id;
   const settings = loadSettings(c.user);
   const model = resolveModel(settings, c.body.model);
-  const papers = await retrievePapers(c.body.prompt, 5);
-  const r = await chatJson({ who: { uid, plan: c.plan, capMicros: c.capMicros }, model, kind: "lesson", system: buildPlanPrompt(settings, papers), user: c.body.prompt, schema: LessonPlan, maxTokens: 2500 });
-  const plan = normalizePlan(r.data, settings.bite.stepsPerLesson);
+  const [papers, known] = await Promise.all([retrievePapers(c.body.prompt, 5), listMasteredNames(uid, KNOWN_TOPICS_IN_PROMPT)]);
+  const r = await chatJson({ who: { uid, plan: c.plan, capMicros: c.capMicros }, model, kind: "lesson", system: buildPlanPrompt(settings, papers, known), user: c.body.prompt, schema: LessonPlan, maxTokens: 2500 });
+  const plan = normalizePlan(r.data, settings.bite.stepsPerLesson, maxPlanSteps(settings.bite.stepsPerLesson));
   const lessonId = await sql.begin(async (tx) => {
     const ids = await upsertTopics(tx, uid, [plan.topic, ...plan.related], plan.related.map((rel, i) => ({ src: 0, dst: i + 1, kind: rel.kind })));
     const topicId = ids[0];
@@ -62,8 +63,9 @@ const list = route({ auth: true }, async (c) => {
 
 const get = route({ auth: true }, async (c) => {
   const lesson = await requireLesson(c.user.id, c.params);
-  const [papers, steps] = await Promise.all([listPapers(lesson.paper_ids), listSteps(c.user.id, lesson.id)]);
-  return json({ id: lesson.id, title: lesson.title, plan: readPlan(lesson), steps: steps.map(stepOf), citations: allCitations(papers) });
+  const plan = readPlan(lesson);
+  const [papers, steps, mastered] = await Promise.all([listPapers(lesson.paper_ids), listSteps(c.user.id, lesson.id), findMasteredSlugs(c.user.id, listPrereqs(plan).map(slugOf))]);
+  return json({ id: lesson.id, title: lesson.title, plan, prerequisites: unmetPrereqs(plan, mastered), steps: steps.map(stepOf), citations: allCitations(papers) });
 });
 
 const makeStep = route({ entitled: true, rate: { key: "step", cap: 30, perMin: 30 } }, async (c) => {
