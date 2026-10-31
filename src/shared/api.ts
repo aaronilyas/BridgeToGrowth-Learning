@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { CodeSpec, CodeTestResult } from "./code.ts";
 
-export type ErrorCode = "bad_request"|"forbidden_origin"|"not_found"|"rate_limited"|"quota_exceeded"|"model_not_allowed"|"unsupported_media"|"too_large"|"upstream"|"llm_bad_output"|"source_blocked"|"source_unreadable"|"internal";
+export type ErrorCode = "bad_request"|"forbidden_origin"|"not_found"|"rate_limited"|"quota_exceeded"|"model_not_allowed"|"unsupported_media"|"too_large"|"upstream"|"llm_bad_output"|"source_blocked"|"source_unreadable"|"sandbox_unavailable"|"internal";
 
 export const HealthResponse = z.strictObject({ ok: z.literal(true) });
 export type HealthResponse = z.infer<typeof HealthResponse>;
@@ -48,7 +49,7 @@ export type Domain = z.infer<typeof Domain>;
 export const EdgeKind = z.enum(["prereq", "related"]);
 export type EdgeKind = z.infer<typeof EdgeKind>;
 
-export const QuestionKind = z.enum(["mcq", "free"]);
+export const QuestionKind = z.enum(["mcq", "free", "code"]);
 export type QuestionKind = z.infer<typeof QuestionKind>;
 
 export const QuestionCategory = z.enum(["terminology", "conceptual", "mcq", "free"]);
@@ -57,7 +58,7 @@ export const QUESTION_CATEGORIES: readonly QuestionCategory[] = QuestionCategory
 export const PRACTICE_SET_SIZE = 4;
 
 // INV: the only shape in which a question leaves the server before it is answered; no answer, explanation or rubric
-export const QuestionPublic = z.strictObject({ id: z.uuid(), topicId: z.uuid(), kind: QuestionKind, category: QuestionCategory.nullable(), stem: z.string(), choices: z.array(z.string()).nullable(), lessonId: z.uuid().nullable() });
+export const QuestionPublic = z.strictObject({ id: z.uuid(), topicId: z.uuid(), kind: QuestionKind, category: QuestionCategory.nullable(), stem: z.string(), choices: z.array(z.string()).nullable(), code: CodeSpec.nullable(), lessonId: z.uuid().nullable() });
 export type QuestionPublic = z.infer<typeof QuestionPublic>;
 
 export const AttemptRequest = z.strictObject({
@@ -69,7 +70,7 @@ export const AttemptRequest = z.strictObject({
 });
 export type AttemptRequest = z.infer<typeof AttemptRequest>;
 
-export const AttemptAnswer = z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("mcq"), index: z.int() }), z.strictObject({ kind: z.literal("free"), model: z.string() })]);
+export const AttemptAnswer = z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("mcq"), index: z.int() }), z.strictObject({ kind: z.literal("free"), model: z.string() }), z.strictObject({ kind: z.literal("code"), model: z.string(), tests: z.array(CodeTestResult) })]);
 export type AttemptAnswer = z.infer<typeof AttemptAnswer>;
 
 export const AttemptResponse = z.strictObject({

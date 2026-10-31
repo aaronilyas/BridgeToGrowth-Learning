@@ -84,6 +84,12 @@ function postCompletion(p: Prepared, extra: Record<string, unknown>, signal: Abo
 }
 
 // O(1)
+// SEC: logs only the model id and HTTP status, never the body or headers, so an expired key or provider outage is diagnosable without leaking secrets
+function logUpstreamFailure(model: string, res: Response | null): void {
+  console.error(`llm: ${model} failed with ${res ? `HTTP ${res.status}` : "network error or timeout"}`);
+}
+
+// O(1)
 function finalUsage(p: Prepared, u: Usage | null, conservative: boolean): Usage & { costMicros: bigint } {
   const cost = conservative || !u || u.costMicros === null ? p.est : u.costMicros;
   return { costMicros: cost, promptTokens: u?.promptTokens ?? null, completionTokens: u?.completionTokens ?? null };
@@ -98,6 +104,7 @@ async function runJsonAttempt(p: Prepared, format: Record<string, unknown>, sign
     const timeout = AbortSignal.timeout(JSON_TIMEOUT_MS);
     const res = await postCompletion(p, format, signal ? AbortSignal.any([signal, timeout]) : timeout).catch(() => null);
     if (!res || !res.ok) {
+      logUpstreamFailure(p.model, res);
       await res?.body?.cancel();
       throw new HttpError(502, "upstream");
     }
@@ -153,6 +160,7 @@ export function chatStream(o: StreamCall): ReadableStream<Uint8Array> {
       reserved = true;
       const res = await postCompletion(p, { stream: true }, AbortSignal.any([upstream.signal, o.signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)])).catch(() => null);
       if (!res || !res.ok || !res.body) {
+        logUpstreamFailure(p.model, res);
         await res?.body?.cancel();
         throw new HttpError(502, "upstream");
       }
