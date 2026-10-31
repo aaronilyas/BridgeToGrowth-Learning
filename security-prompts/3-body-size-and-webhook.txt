@@ -1,0 +1,7 @@
+Context (MEDIUM): In src/server/http.ts, maxBody is enforced only through the content-length header. A chunked request (no content-length) skips that check, and req.text() buffers the whole body before its size is checked. Bun.serve allows 80 MB on every route (src/server/index.ts). /api/stripe/webhook (src/server/billing/routes.ts) needs no session and has no rate limit, so concurrent 80 MB chunked posts can exhaust memory.
+
+Task: Add an exported readBodyCapped(req, cap): Promise<Uint8Array> to src/server/http.ts. It streams req.body, throws HttpError(413, "too_large") as soon as the cap is passed, and cancels the stream. Use it in route() for JSON bodies and in the Stripe webhook instead of req.text(). Give the webhook rate: { key: "stripe-webhook", cap: 120, perMin: 120 }. Add a note to deploy/cloudflare-dashboard.md suggesting a WAF rule that limits /api/stripe/webhook to Stripe's published IP ranges.
+
+Tests: a chunked body (no content-length) one byte over maxBody returns 413, and an exact-size body still parses.
+
+VERIFY: bun run typecheck && bun test pass.

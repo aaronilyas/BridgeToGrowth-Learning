@@ -4,46 +4,51 @@ import { join } from "node:path";
 import { HttpError } from "../http.ts";
 import type { FilePart } from "../llm/core.ts";
 import { sniffMime } from "../styles/core.ts";
-import { MAX_PDF_BYTES, MAX_SCAN_PAGES, MAX_SENT_PDF_BYTES, MAX_TEXT_PAGES, MIN_TEXT_CHARS, tidyText } from "./core.ts";
+import { MAX_CONCURRENT_PDF_TOOLS, MAX_PDF_BYTES, MAX_SCAN_PAGES, MAX_SENT_PDF_BYTES, MAX_TEXT_PAGES, MIN_TEXT_CHARS, buildPdfToolArgv, tidyText } from "./core.ts";
 
 export type PdfRead = { kind: "text"; text: string } | { kind: "file"; part: FilePart };
 
 const TOOL_TIMEOUT_MS = 30_000;
 const TEXT_OUT_CAP = 4 * 1024 * 1024;
 const GS_OUT_CAP = 256 * 1024;
-const TOOL_ENV = { PATH: "/usr/local/bin:/usr/bin:/bin", LANG: "C.UTF-8", HOME: "/nonexistent" };
-const LIMITS = ["--as=3221225472", "--cpu=40", "--fsize=67108864", "--nofile=64"];
+const TOOL_PATH = "/usr/bin:/bin";
 const COMPRESS_PRESETS = ["/ebook", "/screen"] as const;
+let running = 0;
 
 // O(1)
-// SEC: missing tools mean the PDF cannot be read safely, so the request fails rather than sending the raw file
+// SEC: tools resolve only from system directories; a missing tool, bwrap or prlimit means the PDF cannot be read safely, so the request fails rather than running unsandboxed or sending the raw file
 function locateTool(name: string): string {
-  const path = Bun.which(name, { PATH: TOOL_ENV.PATH });
+  const path = Bun.which(name, { PATH: TOOL_PATH });
   if (!path) throw new HttpError(422, "source_unreadable");
   return path;
 }
 
 // O(output) bounded by cap
-// SEC: argv only, no shell; minimal env; stdin closed; prlimit caps memory, CPU, file size and open files when present; killed on timeout or oversized output
-async function runTool(argv: string[], cwd: string, cap: number): Promise<{ ok: boolean; out: Uint8Array }> {
-  const bin = locateTool(argv[0] ?? "");
-  const prlimit = Bun.which("prlimit", { PATH: TOOL_ENV.PATH });
-  const cmd = prlimit ? [prlimit, ...LIMITS, "--", bin, ...argv.slice(1)] : [bin, ...argv.slice(1)];
-  const proc = Bun.spawn(cmd, { cwd, env: TOOL_ENV, stdin: "ignore", stdout: "pipe", stderr: "ignore", timeout: TOOL_TIMEOUT_MS, killSignal: "SIGKILL" });
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  let over = false;
-  for await (const chunk of proc.stdout) {
-    size += chunk.length;
-    if (size > cap) {
-      over = true;
-      proc.kill("SIGKILL");
-      break;
+// SEC: always inside bubblewrap under prlimit (see buildPdfToolArgv); argv only, no shell; empty env; stdin closed; killed on timeout or oversized output
+// SEC: at most MAX_CONCURRENT_PDF_TOOLS run at once across all users; extra requests get 429
+async function runTool(tool: string, args: string[], dir: string, cap: number): Promise<{ ok: boolean; out: Uint8Array }> {
+  const argv = buildPdfToolArgv(locateTool("prlimit"), locateTool("bwrap"), locateTool(tool), args, dir);
+  if (running >= MAX_CONCURRENT_PDF_TOOLS) throw new HttpError(429, "rate_limited");
+  running += 1;
+  try {
+    const proc = Bun.spawn(argv, { env: {}, stdin: "ignore", stdout: "pipe", stderr: "ignore", timeout: TOOL_TIMEOUT_MS, killSignal: "SIGKILL" });
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    let over = false;
+    for await (const chunk of proc.stdout) {
+      size += chunk.length;
+      if (size > cap) {
+        over = true;
+        proc.kill("SIGKILL");
+        break;
+      }
+      chunks.push(chunk);
     }
-    chunks.push(chunk);
+    const code = await proc.exited;
+    return { ok: code === 0 && !over && proc.signalCode === null, out: Buffer.concat(chunks) };
+  } finally {
+    running -= 1;
   }
-  const code = await proc.exited;
-  return { ok: code === 0 && !over && proc.signalCode === null, out: Buffer.concat(chunks) };
 }
 
 // O(n) in text length
@@ -55,7 +60,7 @@ function countVisible(text: string): number {
 // INV: a scanned PDF is cut to MAX_SCAN_PAGES and downsampled, trying coarser presets until it fits MAX_SENT_PDF_BYTES
 async function compressPdf(dir: string): Promise<Uint8Array> {
   for (const preset of COMPRESS_PRESETS) {
-    const r = await runTool(["gs", "-q", "-dSAFER", "-dBATCH", "-dNOPAUSE", "-dNOPROMPT", "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.5", `-dPDFSETTINGS=${preset}`, "-dDetectDuplicateImages=true", "-dFirstPage=1", `-dLastPage=${MAX_SCAN_PAGES}`, "-sOutputFile=out.pdf", "in.pdf"], dir, GS_OUT_CAP);
+    const r = await runTool("gs", ["-q", "-dSAFER", "-dBATCH", "-dNOPAUSE", "-dNOPROMPT", "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.5", `-dPDFSETTINGS=${preset}`, "-dDetectDuplicateImages=true", "-dFirstPage=1", `-dLastPage=${MAX_SCAN_PAGES}`, "-sOutputFile=out.pdf", "in.pdf"], dir, GS_OUT_CAP);
     const size = await stat(join(dir, "out.pdf")).then((s) => s.size, () => -1);
     if (!r.ok || size <= 0) throw new HttpError(422, "source_unreadable");
     if (size <= MAX_SENT_PDF_BYTES) return new Uint8Array(await Bun.file(join(dir, "out.pdf")).arrayBuffer());
@@ -72,7 +77,7 @@ export async function readPdf(bytes: Uint8Array, idx: number): Promise<PdfRead> 
   const dir = await mkdtemp(join(tmpdir(), "btg-pdf-"));
   try {
     await writeFile(join(dir, "in.pdf"), bytes, { mode: 0o600 });
-    const r = await runTool(["pdftotext", "-q", "-enc", "UTF-8", "-nopgbrk", "-f", "1", "-l", String(MAX_TEXT_PAGES), "in.pdf", "-"], dir, TEXT_OUT_CAP);
+    const r = await runTool("pdftotext", ["-q", "-enc", "UTF-8", "-nopgbrk", "-f", "1", "-l", String(MAX_TEXT_PAGES), "in.pdf", "-"], dir, TEXT_OUT_CAP);
     const text = r.ok ? tidyText(new TextDecoder("utf-8", { fatal: false }).decode(r.out)) : "";
     if (countVisible(text) >= MIN_TEXT_CHARS) return { kind: "text", text };
     const small = await compressPdf(dir);

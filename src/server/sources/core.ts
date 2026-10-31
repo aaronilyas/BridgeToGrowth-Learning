@@ -11,6 +11,9 @@ export const MIN_TEXT_CHARS = 200;
 export const SOURCE_CHARS = 32_000;
 export const TOTAL_SOURCE_CHARS = 48_000;
 export const MAX_NOTE_CHARS = 600;
+export const MAX_CONCURRENT_PDF_TOOLS = 2;
+const PDF_TOOL_LIMITS = ["--as=1073741824", "--cpu=20", "--fsize=67108864", "--nofile=64", "--core=0"];
+const PDF_TOOL_ENV = ["--setenv", "PATH", "/usr/bin", "--setenv", "LANG", "C.UTF-8", "--setenv", "HOME", "/work", "--setenv", "TMPDIR", "/work"];
 
 export type SourceText = { label: string; text: string };
 
@@ -186,4 +189,20 @@ export function buildAttachmentBlock(sources: SourceText[], fileLabels: string[]
   });
   const files = fileLabels.map((l, i) => `Attachment ${sources.length + i + 1}: ${cleanLabel(l)} (scanned pages, sent as an attached PDF file)`);
   return `\n\nMaterial I attached for this lesson:\n${[...parts, ...files].join("\n\n")}`;
+}
+
+// O(a) in argument count
+// SEC: bubblewrap gives fresh user, pid, net, ipc, uts and cgroup namespaces with no network, nested user namespaces disabled and all capabilities dropped;
+// SEC: the only filesystem is read-only /usr, a minimal /dev and the per-request temp dir read-write at /work; no /proc, /etc, /home or /run, so the server's environ and sockets are unreachable;
+// SEC: prlimit caps memory, CPU seconds, written file size and open files; the environment is cleared; the child dies with its parent and gets its own session
+export function buildPdfToolArgv(prlimit: string, bwrap: string, tool: string, args: readonly string[], dir: string): string[] {
+  return [
+    prlimit, ...PDF_TOOL_LIMITS, "--",
+    bwrap,
+    "--unshare-all", "--unshare-user", "--disable-userns", "--die-with-parent", "--new-session", "--cap-drop", "ALL", "--uid", "65534", "--gid", "65534", "--hostname", "sandbox",
+    "--ro-bind", "/usr", "/usr", "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib", "/lib64", "--symlink", "usr/bin", "/bin",
+    "--dev", "/dev", "--bind", dir, "/work", "--chdir", "/work",
+    "--clearenv", ...PDF_TOOL_ENV,
+    "--", tool, ...args,
+  ];
 }

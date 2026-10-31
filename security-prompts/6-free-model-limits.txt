@@ -1,0 +1,7 @@
+Context (MEDIUM): With OPENROUTER_MODEL=openrouter/free, the system grade, style and insight calls are priced at $0, so the dollar cap never limits them; only route rate limits do (grading allows 60/min). One user can use up the shared OpenRouter free-tier quota for the whole API key, which breaks grading for everyone. Separately, if OPENROUTER_MODEL is a paid model missing from /models (typo or delisting), refreshPricing in src/server/llm/gateway.ts silently prices it at $0.
+
+Task: In src/server/llm/gateway.ts prepareCall, when the price is zero, enforce a per-user daily count with takeToken(`free-llm:${uid}`, 200, 200 / 1440) and throw HttpError(429, "rate_limited") when it is empty. In refreshPricing, apply the FREE_PRICE fallback only when env.OPENROUTER_MODEL ends with ":free" or equals "openrouter/free". Otherwise drop the model and log "llm: system model unlisted".
+
+Tests: refreshPricing with a mocked /models response that does not list a paid OPENROUTER_MODEL leaves it unpriced; the 201st zero-priced call in a day throws rate_limited.
+
+VERIFY: bun run typecheck && bun test pass.

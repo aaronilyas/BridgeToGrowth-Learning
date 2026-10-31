@@ -1,0 +1,7 @@
+Context (MEDIUM): The checkout route in src/server/billing/routes.ts refuses only when the stored plan is already pro. Before the webhook lands, a second tab or a retry creates another Checkout Session, and the user can pay twice. Only one sub_id is stored, so cancel/resume never touch the second subscription and it keeps billing unseen.
+
+Task: In the checkout route, when the user already has a stripe_customer_id, call findCustomerSubscription first. If it returns a pro-status subscription, save it with saveUserSubscription and throw HttpError(409, "already_subscribed"). In src/server/billing/stripe.ts, create the Checkout Session with idempotency key checkout-${uid}-${10-minute bucket} so repeated clicks get the same session. In applyStripeEvent (src/server/billing/sql.ts), when a pro snapshot arrives for a customer whose stored sub_id is a different subscription that is still pro, log "billing: duplicate active subscription for customer" (no IDs) so it can be refunded.
+
+Tests (Stripe mocked via mock.module): checkout returns 409 when the mocked findCustomerSubscription returns an active subscription, and the user row becomes pro.
+
+VERIFY: bun run typecheck && bun test pass.

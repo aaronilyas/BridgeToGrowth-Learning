@@ -1,0 +1,7 @@
+Context (MEDIUM): In src/server/teach/routes.ts the lesson create route runs URL fetches, PDF parsing and OpenAlex lookups before chatJson checks the quota. A free user already over their cap can still drive 10 requests a minute of fetching and Ghostscript work. The style upload route (src/server/styles/routes.ts) has the same shape.
+
+Task: Add an exported assertQuotaHeadroom(who: Who): Promise<void> to src/server/llm/gateway.ts. It uses findUsage and throws HttpError(429, "quota_exceeded") when used + reserved >= cap. Call it in the create route in src/server/teach/routes.ts before gatherSources and retrievePapers, and at the top of the upload route in src/server/styles/routes.ts.
+
+Tests: a free user whose usage_periods.used_micros equals the cap gets 429 from POST /api/lessons with a URL attached, and the mocked fetchUrlSource is never called.
+
+VERIFY: bun run typecheck && bun test pass.

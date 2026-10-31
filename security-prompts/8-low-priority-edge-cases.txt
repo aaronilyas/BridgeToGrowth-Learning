@@ -1,0 +1,11 @@
+Context (LOW, combined):
+- Code grading runs the learner's code and hidden tests in one namespace; a class whose def __eq__ always returns True passes because the AST check does not inspect FunctionDef names. Self-only impact.
+- Two parallel POST /api/lessons/:id/steps/:idx requests both call the LLM, charging the user twice; the losing result is discarded.
+- If deleteUserAccount fails after the Stripe customer is deleted, the account remains pointing at a missing customer and billing sync returns 502.
+
+Task:
+(a) In src/server/code/harness.ts, run each hidden test in a fresh copy of the learner namespace (dict(_ns)), and reject FunctionDef, AsyncFunctionDef and ClassDef names starting with "__" in learner code. Test: learner code defining a class with __eq__ returning True is rejected with a policy error.
+(b) In src/server/teach/routes.ts makeStep, keep an in-process Map<string, Promise<StepPublic>> keyed by `${lessonId}:${idx}` so concurrent requests share one generation. Test: two concurrent calls with a mocked chatJson call it once.
+(c) In the account deletion flow (src/server/auth/account.ts), right after deleteAccountCustomer succeeds and before deleteUserAccount, clear stripe_customer_id, sub_id and set sub_status to 'canceled' in the DB, so a failed user delete leaves a consistent free account. Do not clear them before the Stripe delete: a failed Stripe call must keep the link to the live subscription.
+
+VERIFY: bun run typecheck && bun test pass.
