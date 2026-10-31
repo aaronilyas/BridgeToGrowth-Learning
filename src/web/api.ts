@@ -4,7 +4,7 @@ import type { ErrorCode } from "../shared/api.ts";
 export type ApiError = Error & { status: number; code: ErrorCode };
 export type ApiInit = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown };
 
-const CODES: ReadonlySet<string> = new Set<ErrorCode>(["bad_request", "unauthenticated", "forbidden_origin", "not_found", "rate_limited", "pro_required", "quota_exceeded", "email_taken", "bad_credentials", "turnstile_failed", "already_subscribed", "model_not_allowed", "unsupported_media", "too_large", "upstream", "llm_bad_output", "source_blocked", "source_unreadable", "sandbox_unavailable", "internal"]);
+const CODES: ReadonlySet<string> = new Set<ErrorCode>(["bad_request", "unauthenticated", "forbidden_origin", "not_found", "rate_limited", "pro_required", "quota_exceeded", "email_taken", "bad_credentials", "wrong_password", "turnstile_failed", "already_subscribed", "model_not_allowed", "unsupported_media", "too_large", "upstream", "llm_bad_output", "source_blocked", "source_unreadable", "sandbox_unavailable", "internal"]);
 
 const MESSAGES: Record<ErrorCode, string> = {
   bad_request: "That request wasn't valid. Check the fields and try again.",
@@ -16,6 +16,7 @@ const MESSAGES: Record<ErrorCode, string> = {
   quota_exceeded: "You've reached this month's usage cap.",
   email_taken: "An account with that email already exists. Sign in instead.",
   bad_credentials: "That email and password don't match.",
+  wrong_password: "That password is incorrect.",
   turnstile_failed: "The human check failed. Try it again.",
   already_subscribed: "You already have a Pro subscription.",
   model_not_allowed: "That model isn't available.",

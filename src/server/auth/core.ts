@@ -10,6 +10,7 @@ export type AuthUser = {
 };
 
 export const SESSION_SECONDS = 30 * 24 * 60 * 60;
+export const RESET_SECONDS = 60 * 60;
 export const MAX_SESSIONS = 10;
 const COOKIE = "__Host-sid";
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;

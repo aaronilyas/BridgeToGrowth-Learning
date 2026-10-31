@@ -28,7 +28,13 @@ const Schema = z.object({
   PRO_CAP_USD: requireNumber(z.number().min(0).max(1000)),
   PRO_PRICE_USD: requireNumber(z.number().positive().max(10000)),
   FREE_LESSON_TTL_DAYS: requireNumber(z.number().int().min(1).max(365)),
+  RESEND_API_KEY: z.string().trim().min(1).optional(),
+  MAIL_FROM: z.string().trim().min(3).max(200).optional(),
 }).superRefine((e, ctx) => {
+  if (Boolean(e.RESEND_API_KEY) !== Boolean(e.MAIL_FROM)) {
+    ctx.addIssue({ code: "custom", path: ["RESEND_API_KEY"], message: "set with MAIL_FROM" });
+    ctx.addIssue({ code: "custom", path: ["MAIL_FROM"], message: "set with RESEND_API_KEY" });
+  }
   // SEC: production is served over the tunnel; __Host- cookies need https and Cloudflare's always-pass Turnstile test keys must not ship
   if (e.NODE_ENV !== "production") return;
   if (!e.APP_ORIGIN.startsWith("https://")) ctx.addIssue({ code: "custom", path: ["APP_ORIGIN"], message: "https required" });

@@ -3,7 +3,7 @@ import { claimLocalProfile, setUserPassword } from "../src/server/auth/sql.ts";
 import { sql } from "../src/server/db.ts";
 
 // usage: bun [--env-file=/etc/btg/btg.env] scripts/set-password.ts <email> [--claim-local]
-// Sets a new password for an existing account and signs it out everywhere (operator-assisted reset).
+// Sets a new password for an existing account, signs it out everywhere, and invalidates its reset links.
 // --claim-local renames the pre-accounts local profile (local@localhost) to <email>, keeping all its lessons and history.
 // The password is read from stdin: typed without echo on a terminal, or piped.
 

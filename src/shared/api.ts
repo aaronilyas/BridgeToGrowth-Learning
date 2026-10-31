@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { CodeSpec, CodeTestResult } from "./code.ts";
 
-export type ErrorCode = "bad_request"|"unauthenticated"|"forbidden_origin"|"not_found"|"rate_limited"|"pro_required"|"quota_exceeded"|"email_taken"|"bad_credentials"|"turnstile_failed"|"already_subscribed"|"model_not_allowed"|"unsupported_media"|"too_large"|"upstream"|"llm_bad_output"|"source_blocked"|"source_unreadable"|"sandbox_unavailable"|"internal";
+export type ErrorCode = "bad_request"|"unauthenticated"|"forbidden_origin"|"not_found"|"rate_limited"|"pro_required"|"quota_exceeded"|"email_taken"|"bad_credentials"|"wrong_password"|"turnstile_failed"|"already_subscribed"|"model_not_allowed"|"unsupported_media"|"too_large"|"upstream"|"llm_bad_output"|"source_blocked"|"source_unreadable"|"sandbox_unavailable"|"internal";
 
 export const HealthResponse = z.strictObject({ ok: z.literal(true) });
 export type HealthResponse = z.infer<typeof HealthResponse>;
@@ -11,11 +11,26 @@ export type ErrorResponse = z.infer<typeof ErrorResponse>;
 
 const Email = z.string().trim().toLowerCase().max(254).pipe(z.email());
 
-export const SignupRequest = z.strictObject({ email: Email, password: z.string().min(12).max(256), turnstile: z.string().max(2048) });
+export const MIN_PASSWORD = 12;
+
+export const SignupRequest = z.strictObject({ email: Email, password: z.string().min(MIN_PASSWORD).max(256), turnstile: z.string().max(2048) });
 export type SignupRequest = z.infer<typeof SignupRequest>;
 
 export const LoginRequest = z.strictObject({ email: Email, password: z.string().min(1).max(256), turnstile: z.string().max(2048) });
 export type LoginRequest = z.infer<typeof LoginRequest>;
+
+export const PasswordChangeRequest = z.strictObject({ currentPassword: z.string().min(1).max(256), newPassword: z.string().min(MIN_PASSWORD).max(256) });
+export type PasswordChangeRequest = z.infer<typeof PasswordChangeRequest>;
+
+export const ForgotPasswordRequest = z.strictObject({ email: Email, turnstile: z.string().max(2048) });
+export type ForgotPasswordRequest = z.infer<typeof ForgotPasswordRequest>;
+
+export const RESET_TOKEN = /^[A-Za-z0-9_-]{43}$/;
+export const ResetPasswordRequest = z.strictObject({ token: z.string().regex(RESET_TOKEN), password: z.string().min(MIN_PASSWORD).max(256) });
+export type ResetPasswordRequest = z.infer<typeof ResetPasswordRequest>;
+
+export const DeleteAccountRequest = z.strictObject({ password: z.string().min(1).max(256) });
+export type DeleteAccountRequest = z.infer<typeof DeleteAccountRequest>;
 
 export const AuthUserResponse = z.strictObject({ id: z.uuid(), email: z.string() });
 export type AuthUserResponse = z.infer<typeof AuthUserResponse>;
@@ -29,7 +44,7 @@ export const PlanTerms = z.strictObject({
 });
 export type PlanTerms = z.infer<typeof PlanTerms>;
 
-export const ConfigResponse = z.strictObject({ turnstileSiteKey: z.string(), plans: PlanTerms });
+export const ConfigResponse = z.strictObject({ turnstileSiteKey: z.string(), plans: PlanTerms, passwordReset: z.boolean() });
 export type ConfigResponse = z.infer<typeof ConfigResponse>;
 
 export const BillingResponse = z.strictObject({ plan: Plan, subStatus: z.string(), periodEnd: z.iso.datetime().nullable(), cancelAtPeriodEnd: z.boolean(), hasCustomer: z.boolean() });

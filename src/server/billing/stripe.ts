@@ -64,3 +64,16 @@ export async function findCustomerSubscription(customer: string): Promise<SubSna
 export async function setStripeCancelAtPeriodEnd(id: string, cancel: boolean): Promise<SubSnapshot> {
   return snapshotSubscription(await callStripe(() => stripe.subscriptions.update(id, { cancel_at_period_end: cancel })));
 }
+
+// O(1) network call
+// INV: a missing customer is already gone, so account deletion can continue; any other Stripe failure leaves the account in place
+// SEC: Stripe error messages are logged by type only
+export async function deleteStripeCustomer(customer: string): Promise<void> {
+  try {
+    await stripe.customers.del(customer);
+  } catch (e) {
+    if (e instanceof Stripe.errors.StripeError && e.code === "resource_missing") return;
+    console.error(`stripe error: ${e instanceof Stripe.errors.StripeError ? e.type : "unknown"}`);
+    throw new HttpError(502, "upstream");
+  }
+}

@@ -45,7 +45,9 @@ The app runs as the `btg` system user from `/opt/btg`, bound to `127.0.0.1`. `cl
 4. `sudo deploy/setup-tunnel.sh <your-host>` (once) creates the tunnel, the DNS record and the `cloudflared` service.
 5. Work through [deploy/cloudflare-dashboard.md](deploy/cloudflare-dashboard.md): TLS, security headers, WAF rate limit, Turnstile, the Stripe product, webhook and customer portal, and an OpenRouter credit limit.
 
-Password resets are operator-assisted (there is no email delivery): `sudo bun --env-file=/etc/btg/btg.env /opt/btg/scripts/set-password.ts <email>` sets a new password and signs the account out everywhere.
+Signed-in users change their password on the Account page. That signs out every other session. The same page deletes the account: lessons, practice history and settings are removed, and a Pro subscription is canceled immediately so it cannot renew.
+
+Set `RESEND_API_KEY` and `MAIL_FROM` (for example `BridgeToGrowth <learn@your-host>`) to email a one-hour, one-time reset link from the sign-in page. Without those, a forgotten password stays operator-assisted: `sudo bun --env-file=/etc/btg/btg.env /opt/btg/scripts/set-password.ts <email>`.
 
 Lessons and chat let you choose DeepSeek V4.1 Flash (`deepseek/deepseek-v4.1-flash`), GLM-5.3-Flash (`z-ai/glm-5.3-flash`), or GPT-6-Luna (`openai/gpt-6-luna`). `.env.example` sets `OPENROUTER_BASE_URL=https://openrouter.ai/api/v1`. Requests go to `${OPENROUTER_BASE_URL}/chat/completions`. `OPENROUTER_REASONING_LEVEL` (`low`, `high`, or `max`) is sent as the same reasoning effort for all three. Grading, extraction, and insights still use `OPENROUTER_MODEL`.
 
@@ -57,6 +59,6 @@ For programming and computational topics, the free-response question in a practi
 
 - The `btg-backup.timer` systemd unit runs nightly at 03:30 local time. It writes mode 0600 dumps under `/var/backups/btg` and removes dumps older than 14 days. Restore with `createdb btg_restore_check && pg_restore -d btg_restore_check /var/backups/btg/btg-YYYY-MM-DD.dump`.
 - Rotate secrets in `/etc/btg/btg.env`, then restart `btg.service`. Never commit `.env` or production credentials.
-- Background sweeps run inside the app: expired sessions hourly, expired free-plan lessons every 15 minutes, and Stripe event ids older than 30 days daily.
+- Background sweeps run inside the app: expired sessions and password-reset links hourly, expired free-plan lessons every 15 minutes, and Stripe event ids older than 30 days daily.
 - If a webhook is missed, returning from Checkout calls `POST /api/billing/sync`, which reads the subscription straight from Stripe.
 - Selectable models are DeepSeek V4.1 Flash, GLM-5.3-Flash, and GPT-6-Luna. `OPENROUTER_REASONING_LEVEL` sets their shared reasoning effort. `OPENROUTER_MODEL` is only for server-side grading, extraction, and insights.

@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type JSX } from "react";
 import { Link, useLocation } from "wouter";
-import { AuthUserResponse } from "../../shared/api.ts";
+import { AuthUserResponse, MIN_PASSWORD } from "../../shared/api.ts";
 import { api, describeError } from "../api.ts";
 import { formatCents, formatMicros } from "../money.ts";
 import { useSession } from "../session.tsx";
@@ -10,7 +10,6 @@ import { Panel } from "./Panel.tsx";
 import { Spinner } from "./Spinner.tsx";
 import { Turnstile } from "./Turnstile.tsx";
 
-const MIN_PASSWORD = 12;
 const field = "w-full rounded-xl border border-border bg-panel-2 px-3.5 py-2.5 text-text placeholder:text-muted focus:border-accent focus:outline-none";
 
 // O(1)
@@ -80,7 +79,12 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }): JSX.Element {
             {signup ? "Create account" : "Sign in"}
           </Button>
         </form>
-        <p className="mt-6 text-center text-sm text-muted">
+        {!signup && config?.passwordReset && (
+          <p className="mt-6 text-center text-sm">
+            <Link href="/forgot" className="font-medium text-accent hover:underline">Forgot your password?</Link>
+          </p>
+        )}
+        <p className={`${signup || !config?.passwordReset ? "mt-6" : "mt-3"} text-center text-sm text-muted`}>
           {signup ? "Already have an account? " : "New here? "}
           <Link href={signup ? "/login" : "/signup"} className="font-medium text-accent hover:underline">
             {signup ? "Sign in" : "Create an account"}
