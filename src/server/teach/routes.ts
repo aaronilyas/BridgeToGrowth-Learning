@@ -79,8 +79,8 @@ async function readLessonInput(req: Request): Promise<{ body: CreateLessonReques
 // INV: attachments are read before any model call and passed to this one plan call only; the plan keeps at most short per-step notes
 const create = route({ entitled: true, raw: true, maxBody: LESSON_FORM_BYTES, rate: { key: "lesson", cap: 10, perMin: 10 } }, async (c) => {
   const uid = c.user.id;
-  const input = await readLessonInput(c.req);
   await assertQuotaHeadroom({ uid, plan: c.plan, capMicros: c.capMicros });
+  const input = await readLessonInput(c.req);
   const settings = loadSettings(c.user);
   const model = resolveModel(settings, c.plan, input.body.model);
   const [papers, known, sources] = await Promise.all([retrievePapers(input.body.prompt, 5), listMasteredNames(uid, KNOWN_TOPICS_IN_PROMPT), gatherSources(input.body.urls ?? [], input.files)]);
