@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ChatRequest, CreateLessonRequest, LessonPlan, type StepPublic } from "../../shared/api.ts";
+import { SETTINGS_LIMITS } from "../../shared/settings.ts";
 import { sql } from "../db.ts";
 import { HttpError, json, route } from "../http.ts";
 import { loadSettings, resolveModel, StoredCitations } from "../learn/core.ts";
@@ -11,7 +12,7 @@ import { StepContent, StepOut, allCitations, buildChatContext, buildPlanPrompt, 
 import { deleteLessonData, ensureConversation, findLesson, insertLesson, insertStep, insertMessagePair, listLessons, listMessages, listPapers, listSteps, type LessonRow } from "./sql.ts";
 
 const IdParams = z.strictObject({ id: z.uuid() });
-const StepParams = z.strictObject({ id: z.uuid(), idx: z.coerce.number().int().min(0).max(7) });
+const StepParams = z.strictObject({ id: z.uuid(), idx: z.coerce.number().int().min(0).max(SETTINGS_LIMITS.bite.stepsPerLesson.max - 1) });
 const ListQuery = z.strictObject({ limit: z.coerce.number().int().min(1).max(20).default(20) });
 const MessagesQuery = z.strictObject({ before: z.string().regex(/^\d{1,18}$/).optional(), limit: z.coerce.number().int().min(1).max(50).default(50) });
 
@@ -41,7 +42,7 @@ const create = route({ entitled: true, body: CreateLessonRequest, rate: { key: "
   const settings = loadSettings(c.user);
   const model = resolveModel(settings, c.body.model);
   const papers = await retrievePapers(c.body.prompt, 5);
-  const r = await chatJson({ who: { uid, plan: c.plan, capMicros: c.capMicros }, model, kind: "lesson", system: buildPlanPrompt(settings, papers), user: c.body.prompt, schema: LessonPlan, maxTokens: 1500 });
+  const r = await chatJson({ who: { uid, plan: c.plan, capMicros: c.capMicros }, model, kind: "lesson", system: buildPlanPrompt(settings, papers), user: c.body.prompt, schema: LessonPlan, maxTokens: 2500 });
   const plan = normalizePlan(r.data, settings.bite.stepsPerLesson);
   const lessonId = await sql.begin(async (tx) => {
     const ids = await upsertTopics(tx, uid, [plan.topic, ...plan.related], plan.related.map((rel, i) => ({ src: 0, dst: i + 1, kind: rel.kind })));

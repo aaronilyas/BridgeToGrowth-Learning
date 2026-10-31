@@ -5,7 +5,7 @@ const int = (min: number, max: number) => z.int().min(min).max(max);
 export const SETTINGS_LIMITS = {
   srs: { newPerDay: { min: 0, max: 50 }, maxReviewsPerDay: { min: 0, max: 500 } },
   recall: { freeResponseRatio: { min: 0, max: 1 } },
-  bite: { stepsPerLesson: { min: 2, max: 8 }, maxWordsPerStep: { min: 60, max: 400 }, questionsPerSession: { min: 3, max: 20 } },
+  bite: { stepsPerLesson: { min: 2, max: 16 }, maxWordsPerStep: { min: 60, max: 400 }, questionsPerSession: { min: 3, max: 20 } },
   practice: { dailyGoal: { min: 1, max: 100 } },
 } as const;
 

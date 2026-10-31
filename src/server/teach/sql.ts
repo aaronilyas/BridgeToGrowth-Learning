@@ -51,7 +51,7 @@ export async function listPapers(ids: string[]): Promise<Paper[]> {
 }
 
 // O(steps), one statement
-// INV: steps are joined to their question in a single query; limit 8 is the maximum stepsPerLesson
+// INV: steps are joined to their question in a single query; limit 16 is the maximum stepsPerLesson
 export async function listSteps(uid: string, lessonId: string, only: number | null = null): Promise<StepRow[]> {
   const rows: (QuestionRow & { idx: number; content: unknown })[] = await sql`
     SELECT s.idx, s.content, q.id, q.topic_id, q.lesson_id, q.kind, q.category, q.stem, q.choices, q.answer, q.explanation, q.citations
@@ -59,7 +59,7 @@ export async function listSteps(uid: string, lessonId: string, only: number | nu
     JOIN lessons l ON l.id = s.lesson_id
     JOIN questions q ON q.id = (s.content->>'questionId')::uuid
     WHERE s.lesson_id = ${lessonId} AND l.user_id = ${uid} AND q.user_id = ${uid} AND (${only}::int IS NULL OR s.idx = ${only}::int)
-    ORDER BY s.idx LIMIT 8`;
+    ORDER BY s.idx LIMIT 16`;
   return rows.map((r) => ({ idx: r.idx, content: r.content, question: r }));
 }
 
