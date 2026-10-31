@@ -1,4 +1,4 @@
-import { beforeAll, expect, mock, test } from "bun:test";
+import { afterAll, beforeAll, expect, mock, test } from "bun:test";
 import { bootTestServer, callRoute, createTestUser, type TestServer } from "../testkit.ts";
 
 const OLD = "correct horse battery";
@@ -7,7 +7,8 @@ const NEXT = "replacement horse";
 let t: TestServer;
 let account: typeof import("./account.ts")["accountRoutes"];
 let auth: typeof import("./routes.ts")["authRoutes"];
-let mailOn = true;
+// null follows env. mock.module is process-global, so a leftover true makes /api/config lie in later files.
+let mailOn: boolean | null = null;
 let mailOk = true;
 let stripeOk = true;
 const sent: { to: string; url: string }[] = [];
@@ -18,7 +19,7 @@ beforeAll(async () => {
   t = await bootTestServer();
   const { HttpError } = await import("../http.ts");
   mock.module("./mail.ts", () => ({
-    passwordResetEnabled: () => mailOn,
+    passwordResetEnabled: () => mailOn ?? Boolean(t.env.RESEND_API_KEY && t.env.MAIL_FROM),
     sendPasswordReset: async (to: string, url: string) => {
       sent.push({ to, url });
       return mailOk;
@@ -32,6 +33,10 @@ beforeAll(async () => {
   }));
   account = (await import("./account.ts")).accountRoutes;
   auth = (await import("./routes.ts")).authRoutes;
+});
+
+afterAll(() => {
+  mailOn = null;
 });
 
 function ip(): string {
