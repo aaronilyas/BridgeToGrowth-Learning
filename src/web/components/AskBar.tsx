@@ -40,7 +40,7 @@ export function AskBar(): JSX.Element {
         finishAskJob(id);
         navigate(`/lesson/${r.lessonId}`);
       } else {
-        await api("/api/questions/generate", GenerateResponse, { method: "POST", body: { topic, count: settings.bite.questionsPerSession, ...(chosen ? { model: chosen } : {}) } });
+        await api("/api/questions/generate", GenerateResponse, { method: "POST", body: { topic, ...(chosen ? { model: chosen } : {}) } });
         finishAskJob(id);
         navigate("/practice");
       }

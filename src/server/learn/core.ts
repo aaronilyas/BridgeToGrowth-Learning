@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Citation, type AttemptAnswer, type QuestionPublic } from "../../shared/api.ts";
+import { Citation, type AttemptAnswer, type QuestionCategory, type QuestionPublic } from "../../shared/api.ts";
 import { Settings } from "../../shared/settings.ts";
 import { HttpError } from "../http.ts";
 import { listModels } from "../llm/core.ts";
@@ -20,6 +20,7 @@ export type QuestionRow = {
   topic_id: string;
   lesson_id: string | null;
   kind: "mcq" | "free";
+  category: QuestionCategory | null;
   stem: string;
   choices: unknown;
   answer: unknown;
@@ -99,10 +100,10 @@ export function resolveModel(settings: Settings, requested?: string): string {
 }
 
 // O(1)
-// INV: only id, topic, kind, stem, choices and lesson leave the server before an attempt
+// INV: only id, topic, kind, category, stem, choices and lesson leave the server before an attempt
 export function toQuestionPublic(row: QuestionRow): QuestionPublic {
   const choices = row.choices === null ? null : StoredChoices.parse(row.choices);
-  return { id: row.id, topicId: row.topic_id, kind: row.kind, stem: row.stem, choices, lessonId: row.lesson_id };
+  return { id: row.id, topicId: row.topic_id, kind: row.kind, category: row.category, stem: row.stem, choices, lessonId: row.lesson_id };
 }
 
 // O(1)

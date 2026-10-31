@@ -6,7 +6,6 @@ import { Settings, SETTINGS_LIMITS } from "../../shared/settings.ts";
 import { api, describeError } from "../api.ts";
 import { Button } from "../components/Button.tsx";
 import { Panel } from "../components/Panel.tsx";
-import { Slider } from "../components/Slider.tsx";
 import { useSeason, useSettings } from "../session.tsx";
 
 const NumberField = z.number();
@@ -27,7 +26,7 @@ export function SettingsPage(): JSX.Element {
     void api("/api/models", ModelsResponse).then(setModels).catch(() => setMessage("Models could not be loaded."));
     void api("/api/season", SeasonResponse).then((response) => setAutoSeason(response.season), () => undefined);
   }, []);
-  function setNumber(path: "srs.newPerDay" | "srs.maxReviewsPerDay" | "bite.stepsPerLesson" | "bite.maxWordsPerStep" | "bite.questionsPerSession" | "practice.dailyGoal", value: number): void {
+  function setNumber(path: "srs.newPerDay" | "srs.maxReviewsPerDay" | "bite.stepsPerLesson" | "bite.maxWordsPerStep" | "practice.dailyGoal", value: number): void {
     const [group, key] = path.split(".") as ["srs" | "bite" | "practice", string];
     setDraft((old) => ({ ...old, [group]: { ...old[group], [key]: NumberField.parse(value) } }));
   }
@@ -49,8 +48,8 @@ export function SettingsPage(): JSX.Element {
     <Section title="Spaced repetition"><Toggle label="Enable spaced repetition" checked={draft.srs.enabled} onChange={(v) => setDraft((d) => ({ ...d, srs: { ...d.srs, enabled: v } }))} />
       <label className="grid gap-1 text-sm">New cards per day<input className={input} type="number" min={SETTINGS_LIMITS.srs.newPerDay.min} max={SETTINGS_LIMITS.srs.newPerDay.max} value={draft.srs.newPerDay} onChange={(e) => setNumber("srs.newPerDay", Number(e.currentTarget.value))} /></label>
       <label className="grid gap-1 text-sm">Maximum reviews per day<input className={input} type="number" min={SETTINGS_LIMITS.srs.maxReviewsPerDay.min} max={SETTINGS_LIMITS.srs.maxReviewsPerDay.max} value={draft.srs.maxReviewsPerDay} onChange={(e) => setNumber("srs.maxReviewsPerDay", Number(e.currentTarget.value))} /></label></Section>
-    <Section title="Active recall"><Slider label="Free response" min={SETTINGS_LIMITS.recall.freeResponseRatio.min} max={SETTINGS_LIMITS.recall.freeResponseRatio.max} step={0.05} value={draft.recall.freeResponseRatio} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => setDraft((d) => ({ ...d, recall: { ...d.recall, freeResponseRatio: v } }))} /><Toggle label="Ask for confidence after each answer" checked={draft.recall.confidencePrompt} onChange={(v) => setDraft((d) => ({ ...d, recall: { ...d.recall, confidencePrompt: v } }))} /></Section>
-    <Section title="Bite-sized learning"><NumberInput label="Steps per lesson" value={draft.bite.stepsPerLesson} min={SETTINGS_LIMITS.bite.stepsPerLesson.min} max={SETTINGS_LIMITS.bite.stepsPerLesson.max} onChange={(v) => setNumber("bite.stepsPerLesson", v)} /><NumberInput label="Maximum words per step" value={draft.bite.maxWordsPerStep} min={SETTINGS_LIMITS.bite.maxWordsPerStep.min} max={SETTINGS_LIMITS.bite.maxWordsPerStep.max} onChange={(v) => setNumber("bite.maxWordsPerStep", v)} /><NumberInput label="Questions per session" value={draft.bite.questionsPerSession} min={SETTINGS_LIMITS.bite.questionsPerSession.min} max={SETTINGS_LIMITS.bite.questionsPerSession.max} onChange={(v) => setNumber("bite.questionsPerSession", v)} /></Section>
+    <Section title="Active recall"><Toggle label="Ask for confidence after each answer" checked={draft.recall.confidencePrompt} onChange={(v) => setDraft((d) => ({ ...d, recall: { ...d.recall, confidencePrompt: v } }))} /></Section>
+    <Section title="Bite-sized learning"><NumberInput label="Steps per lesson" value={draft.bite.stepsPerLesson} min={SETTINGS_LIMITS.bite.stepsPerLesson.min} max={SETTINGS_LIMITS.bite.stepsPerLesson.max} onChange={(v) => setNumber("bite.stepsPerLesson", v)} /><NumberInput label="Maximum words per step" value={draft.bite.maxWordsPerStep} min={SETTINGS_LIMITS.bite.maxWordsPerStep.min} max={SETTINGS_LIMITS.bite.maxWordsPerStep.max} onChange={(v) => setNumber("bite.maxWordsPerStep", v)} /></Section>
     <Section title="Daily practice"><NumberInput label="Daily goal" value={draft.practice.dailyGoal} min={SETTINGS_LIMITS.practice.dailyGoal.min} max={SETTINGS_LIMITS.practice.dailyGoal.max} onChange={(v) => setNumber("practice.dailyGoal", v)} /></Section>
     <Section title="Model"><label className="grid gap-1 text-sm">Preferred model<select className={input} value={modelId} onChange={(e) => setDraft((d) => ({ ...d, model: e.currentTarget.value }))}>{models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label><label className="grid gap-1 text-sm">Learning level<select className={input} value={draft.level} onChange={(e) => setDraft((d) => ({ ...d, level: e.currentTarget.value as typeof d.level }))}><option value="undergrad">Undergraduate</option><option value="grad">Graduate</option></select></label></Section>
     <Section title="Appearance"><label className="grid gap-1 text-sm">Season<select className={input} value={draft.season} onChange={(e) => setSeason(e.currentTarget.value as Settings["season"])}>{["auto", "spring", "summer", "fall", "winter"].map((s) => <option key={s} value={s}>{s[0]?.toUpperCase()}{s.slice(1)}</option>)}</select></label></Section>

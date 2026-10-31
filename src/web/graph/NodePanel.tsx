@@ -4,12 +4,10 @@ import { GenerateResponse, LessonCreated } from "../../shared/api.ts";
 import { api } from "../api.ts";
 import { Button } from "../components/Button.tsx";
 import { ErrorBanner } from "../components/ErrorBanner.tsx";
-import { useSettings } from "../session.tsx";
 import { hueOf, type GNode } from "./GraphView.tsx";
 
 // O(1)
 export function NodePanel({ node, onClose }: { node: GNode; onClose: () => void }): JSX.Element {
-  const { settings } = useSettings();
   const [, navigate] = useLocation();
   const [busy, setBusy] = useState<"teach" | "practice" | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -25,7 +23,7 @@ export function NodePanel({ node, onClose }: { node: GNode; onClose: () => void 
         const r = await api("/api/lessons", LessonCreated, { method: "POST", body: { prompt: node.name } });
         navigate(`/lesson/${r.lessonId}`);
       } else {
-        await api("/api/questions/generate", GenerateResponse, { method: "POST", body: { topic: node.name, count: settings.bite.questionsPerSession } });
+        await api("/api/questions/generate", GenerateResponse, { method: "POST", body: { topic: node.name } });
         navigate("/practice");
       }
     } catch (e) {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type JSX } from "react";
-import { AttemptResponse, type QuestionPublic } from "../../shared/api.ts";
+import { AttemptResponse, type QuestionCategory, type QuestionPublic } from "../../shared/api.ts";
 import { api } from "../api.ts";
 import { useSettings } from "../session.tsx";
 import { Button } from "./Button.tsx";
@@ -10,6 +10,7 @@ import { Sources } from "./Sources.tsx";
 
 const LETTERS = ["A", "B", "C", "D"];
 const DAY_MS = 86_400_000;
+const CATEGORY_LABEL: Record<QuestionCategory, string> = { terminology: "Terminology", conceptual: "Conceptual", mcq: "Multiple choice", free: "Free response" };
 
 // O(1)
 function reviewIn(nextDueAt: string | null, now: number): string | null {
@@ -80,7 +81,10 @@ export function QuestionCard({ question, onResult, label = "Quick Check" }: { qu
 
   return (
     <section aria-label={label} className="rounded-2xl border border-border bg-panel p-5">
-      <h3 className="mb-2 flex items-center gap-2 text-lg font-semibold text-accent">{label}</h3>
+      <h3 className="mb-2 flex items-center gap-2 text-lg font-semibold text-accent">
+        {label}
+        {question.category && <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium">{CATEGORY_LABEL[question.category]}</span>}
+      </h3>
       <Md text={question.stem} />
       {isMcq ? (
         <fieldset className="mt-3 flex flex-col gap-2" disabled={result !== null}>

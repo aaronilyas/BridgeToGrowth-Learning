@@ -7,7 +7,7 @@ import { retrievePapers } from "../lit/openalex.ts";
 import { filterCitations, toCitations } from "../lit/core.ts";
 import { chatJson, chatStream } from "../llm/gateway.ts";
 import { upsertTopics } from "../topics/sql.ts";
-import { StepContent, StepOut, allCitations, buildChatContext, buildPlanPrompt, buildStepPrompt, buildTutorSystem, normalizePlan, normalizeStep, pickLessonModel, toStepPublic } from "./core.ts";
+import { StepContent, StepOut, allCitations, buildChatContext, buildPlanPrompt, buildStepPrompt, buildTutorSystem, categoryOfStep, normalizePlan, normalizeStep, pickLessonModel, toStepPublic } from "./core.ts";
 import { deleteLessonData, ensureConversation, findLesson, insertLesson, insertStep, insertMessagePair, listLessons, listMessages, listPapers, listSteps, type LessonRow } from "./sql.ts";
 
 const IdParams = z.strictObject({ id: z.uuid() });
@@ -85,9 +85,9 @@ const makeStep = route({ entitled: true, rate: { key: "step", cap: 30, perMin: 3
     system: buildStepPrompt(settings, plan, idx, papers),
     user: plan.title,
     schema: StepOut,
-    maxTokens: 1500,
+    maxTokens: 2000,
   });
-  const step = normalizeStep(r.data, planned.title, settings.bite.maxWordsPerStep, papers);
+  const step = normalizeStep(r.data, planned.title, settings.bite.maxWordsPerStep, papers, categoryOfStep(idx));
   if (!(await insertStep(uid, lesson, idx, step))) throw new HttpError(404, "not_found");
   const row = (await listSteps(uid, lesson.id, idx))[0];
   if (!row) throw new Error("step missing after insert");

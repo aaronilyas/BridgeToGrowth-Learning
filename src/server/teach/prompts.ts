@@ -27,7 +27,7 @@ export const EXPLANATION_RULES: string = [
   "- Never use filler or hedges such as \"it is important to note\", \"simply\", \"obviously\", \"basically\", \"in essence\", \"plays a crucial role\", or \"various\".",
   "keyIdea is one sentence of at most 200 characters. It states the main takeaway as a precise claim, for example \"A first-order ODE is separable exactly when $dy/dx$ factors as $g(x)h(y)$.\". Never describe the step instead, as in \"This step covers ...\".",
   "example is a worked example of at most 600 characters. State the problem, then give each step on its own line with the reason for it, then the result. Use different numbers from explanationMd. Set it to null only when the step is purely conceptual and no worked problem fits.",
-  "check is one multiple-choice question that tests the goal of this step by asking the learner to apply it to a new case. Never ask the learner to recall a phrase from explanationMd.",
+  "check is one question that tests the goal of this step on a new case or with new wording. Never ask the learner to repeat a sentence from explanationMd word for word.",
 ].join("\n");
 
 export const TUTOR_RULES: string = [

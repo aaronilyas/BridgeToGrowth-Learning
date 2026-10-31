@@ -6,7 +6,7 @@ import { CORRECT_AT, nextMastery, qualityOf, scheduleSm2, type Card, type Questi
 export type AttemptIn = { uid: string; topicId: string; questionId: string; score: number; confidence: number; latencyMs: number; response: string | null; srsEnabled: boolean };
 type CardRow = { ef: number; interval_d: number; reps: number; lapses: number; due_at: Date };
 
-const QUESTION_COLS = sql`q.id, q.topic_id, q.lesson_id, q.kind, q.stem, q.choices, q.answer, q.explanation, q.citations`;
+const QUESTION_COLS = sql`q.id, q.topic_id, q.lesson_id, q.kind, q.category, q.stem, q.choices, q.answer, q.explanation, q.citations`;
 
 // O(log n)
 export async function findQuestion(uid: string, id: string): Promise<QuestionRow | null> {
