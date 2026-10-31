@@ -188,15 +188,19 @@ test("a generated quick check stores math inside dollar delimiters", async () =>
       keyIdea: "Separate the variables.",
       example: "Solve $dy/dx = x y$.",
       check: {
+        kind: "mcq",
         stem: "Which of the following first-order ODEs is separable?",
         choices: ["dy/dx = x + y", "dy/dx = x^2 y^3", "dy/dx = sin(x+y)", "dy/dx = e^{x} + e^{y}"],
         answerIndex: 1,
+        rubric: null,
+        modelAnswer: null,
         explanation: "Only option B factors as a product of a function of x (x^2) and a function of y (y^3), allowing separation into dy/y^3 = x^2 dx.",
       },
     },
     "Separable",
     180,
     [],
+    "mcq",
   );
   expect(step.check.choices).toEqual(["$dy/dx = x + y$", "$dy/dx = x^2 y^3$", "$dy/dx = sin(x+y)$", "$dy/dx = e^{x} + e^{y}$"]);
   expect(step.check.stem).toBe("Which of the following first-order ODEs is separable?");

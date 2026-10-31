@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type JSX } from "react";
 import { z } from "zod";
-import { GenerateResponse, QuestionPublic, StatsResponse, StyleSummary } from "../../shared/api.ts";
+import { GenerateResponse, PRACTICE_SET_SIZE, QuestionPublic, StatsResponse, StyleSummary } from "../../shared/api.ts";
 import { api } from "../api.ts";
 import { Button } from "../components/Button.tsx";
 import { ErrorBanner } from "../components/ErrorBanner.tsx";
@@ -8,19 +8,13 @@ import { Panel } from "../components/Panel.tsx";
 import { QuestionCard } from "../components/QuestionCard.tsx";
 import { Spinner } from "../components/Spinner.tsx";
 import { UploadDrop } from "../components/UploadDrop.tsx";
-import { useSettings } from "../session.tsx";
 
 type Goal = { done: number; target: number };
-type Kind = "mcq" | "free" | "mix";
 
 const FIELD = "rounded-xl border border-border bg-panel-2 px-3 py-2.5 text-sm outline-none focus:border-accent";
 
 function GeneratePanel({ onGenerated }: { onGenerated: () => void }): JSX.Element {
-  const { settings } = useSettings();
-  const max = settings.bite.questionsPerSession;
   const [topic, setTopic] = useState("");
-  const [count, setCount] = useState(Math.min(4, max));
-  const [kind, setKind] = useState<Kind>("mix");
   const [styles, setStyles] = useState<StyleSummary[]>([]);
   const [styleId, setStyleId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -39,7 +33,7 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }): JSX.Elemen
     setBusy(true);
     setError(null);
     try {
-      await api("/api/questions/generate", GenerateResponse, { method: "POST", body: { topic: topic.trim(), count, kind, ...(styleId ? { styleId } : {}) } });
+      await api("/api/questions/generate", GenerateResponse, { method: "POST", body: { topic: topic.trim(), ...(styleId ? { styleId } : {}) } });
       onGenerated();
     } catch (e) {
       setError(e);
@@ -50,7 +44,7 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }): JSX.Elemen
 
   return (
     <Panel as="aside" className="flex h-fit flex-col gap-3">
-      <h2 className="text-lg font-semibold">Generate questions</h2>
+      <h2 className="text-lg font-semibold">Generate a practice set</h2>
       <form
         className="flex flex-col gap-3"
         onSubmit={(e) => {
@@ -62,20 +56,7 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }): JSX.Elemen
           Topic
           <input className={FIELD} value={topic} maxLength={120} placeholder="e.g. Newton's laws" onChange={(e) => setTopic(e.currentTarget.value)} />
         </label>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="flex flex-col gap-1 text-sm text-muted">
-            Count
-            <input className={FIELD} type="number" min={1} max={max} value={count} onChange={(e) => setCount(Math.max(1, Math.min(max, Math.round(Number(e.currentTarget.value)) || 1)))} />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-muted">
-            Kind
-            <select className={FIELD} value={kind} onChange={(e) => setKind(e.currentTarget.value === "mcq" ? "mcq" : e.currentTarget.value === "free" ? "free" : "mix")}>
-              <option value="mix">Mix</option>
-              <option value="mcq">Multiple choice</option>
-              <option value="free">Free response</option>
-            </select>
-          </label>
-        </div>
+        <p className="text-sm text-muted">Each set has {PRACTICE_SET_SIZE} questions: one terminology, one conceptual, one multiple choice and one free response, modelled on standard homework and exam problems.</p>
         <label className="flex flex-col gap-1 text-sm text-muted">
           Style
           <select className={FIELD} value={styleId} onChange={(e) => setStyleId(e.currentTarget.value)}>
@@ -155,7 +136,7 @@ export function PracticePage(): JSX.Element {
         {queue?.length === 0 && (
           <Panel>
             <h2 className="text-xl font-semibold text-accent">All caught up</h2>
-            <p className="mt-1 text-muted">Nothing is due right now. Generate a new set of questions to keep going.</p>
+            <p className="mt-1 text-muted">Nothing is due right now. Generate a new practice set to keep going.</p>
           </Panel>
         )}
         {card && (

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { Domain, type Citation, type StyleProfile } from "../../shared/api.ts";
+import { Domain, QUESTION_CATEGORIES, QuestionCategory, type Citation, type QuestionKind, type StyleProfile } from "../../shared/api.ts";
+import { wrapBareMath } from "../../shared/math.ts";
 import type { Settings } from "../../shared/settings.ts";
 import { GROUNDING_RULES, buildSourcesBlock, filterCitations, toCitations, type Paper } from "../lit/core.ts";
 import { wrapUserData } from "../llm/core.ts";
@@ -10,6 +11,7 @@ export const GenOut = z.strictObject({
   topic: z.strictObject({ name: z.string().max(120), domain: Domain }),
   questions: z.array(
     z.strictObject({
+      category: QuestionCategory,
       kind: z.enum(["mcq", "free"]),
       stem: z.string().max(1500),
       choices: z.array(z.string().max(400)).nullable(),
@@ -22,15 +24,25 @@ export const GenOut = z.strictObject({
 });
 export type GenOut = z.infer<typeof GenOut>;
 
-export type NewQuestion = { kind: "mcq" | "free"; stem: string; choices: string[] | null; answer: StoredAnswer; explanation: string; citations: Citation[] };
+export type NewQuestion = { kind: QuestionKind; category: QuestionCategory; stem: string; choices: string[] | null; answer: StoredAnswer; explanation: string; citations: Citation[] };
 
-// O(1)
-export function splitCounts(count: number, kind: "mcq" | "free" | "mix", ratio: number): { mcq: number; free: number } {
-  if (kind === "mcq") return { mcq: count, free: 0 };
-  if (kind === "free") return { mcq: 0, free: count };
-  const free = Math.round(count * ratio);
-  return { mcq: count - free, free };
-}
+export type RawQuestion = { kind: QuestionKind; stem: string; choices: string[] | null; answerIndex: number | null; rubric: string | null; modelAnswer: string | null; explanation: string };
+
+// INV: mcq and free categories fix the answer format; terminology and conceptual questions may use either
+export const CATEGORY_KINDS: Record<QuestionCategory, readonly QuestionKind[]> = { terminology: ["mcq", "free"], conceptual: ["mcq", "free"], mcq: ["mcq"], free: ["free"] };
+
+export const CATEGORY_RULES: Record<QuestionCategory, string> = {
+  terminology: "terminology: tests the exact meaning of one standard technical term of the topic, as a glossary or exam definition question does. Either describe a definition or a concrete situation and ask which term names it, or name the term and ask for its precise definition and conditions. Use kind \"mcq\" or \"free\".",
+  conceptual: "conceptual: tests why or when an idea holds, with little or no calculation, as a conceptual exam question does. Ask the learner to predict an outcome, explain a cause, compare two cases, or spot the flaw in a plausible but wrong claim. Use kind \"mcq\" or \"free\".",
+  mcq: "mcq: a standard homework or exam problem in multiple-choice form. The learner applies a method or computes a result and picks it from the choices. Use kind \"mcq\".",
+  free: "free: a standard homework or exam problem that needs shown working, such as a multi-step calculation, a derivation or a short proof. Use kind \"free\".",
+};
+
+export const SOURCE_RULES: string = [
+  "Model every question on the standard homework and exam problems for this topic in established open course materials: MIT OpenCourseWare problem sets and exams, OpenStax end-of-chapter exercises, Khan Academy practice exercises, and comparable standard textbooks. Match the problem types, difficulty, notation and conventions those materials use at the learner's level.",
+  "If those materials do not cover the topic, model the question on a typical university exam question in the field instead.",
+  "Write each question in your own words with your own numbers. Never copy a problem verbatim, and never name a specific course, book, chapter or problem number.",
+].join("\n");
 
 export const MCQ_RULES: string = [
   "Multiple-choice rules: the stem is a complete question ending in \"?\", or a precise instruction such as \"Compute ...\". It gives every quantity, unit and condition needed to answer it.",
@@ -41,7 +53,7 @@ export const MCQ_RULES: string = [
   "The explanation first says why the correct choice is right, then names the mistake behind each wrong choice.",
 ].join("\n");
 
-const FREE_RULES = [
+export const FREE_RULES: string = [
   "Free-response rules: the stem is self-contained and says what a complete answer contains and how long it is, for example \"Explain in 2 to 3 sentences why ...\" or \"Compute ... and show each step.\". Ask for one thing.",
   "rubric lists 2 to 4 numbered criteria, one per line. Each criterion names the exact fact, step or result a full-credit answer must contain. Good: \"1. States that momentum is conserved because no external force acts.\" Bad: \"1. Shows understanding of momentum.\"",
   "modelAnswer is a complete correct answer that meets every rubric criterion and shows its working.",
@@ -50,12 +62,14 @@ const FREE_RULES = [
 
 // O(n) in prompt parts
 // SEC: the learner's topic and the style profile (derived from an untrusted upload) are wrapped as data
-export function buildGenPrompt(settings: Settings, want: { mcq: number; free: number }, papers: Paper[], style: StyleProfile | null): string {
+export function buildGenPrompt(settings: Settings, papers: Paper[], style: StyleProfile | null): string {
   const parts = [
-    `You write STEM practice questions for a learner at the ${settings.level} level. Return JSON {topic, questions}.`,
-    `Write exactly ${want.mcq} multiple-choice questions (kind "mcq": choices and answerIndex set, rubric and modelAnswer null) and exactly ${want.free} free-response questions (kind "free": rubric and modelAnswer set, choices and answerIndex null).`,
-    "Each question tests one specific concept or skill within the learner's topic, and no two questions test the same thing. Cover the topic's main sub-skills.",
-    "Prefer questions that ask the learner to apply, compute, predict or explain. Ask for a memorized definition only when the definition itself is the skill.",
+    `You write a STEM practice set for a learner at the ${settings.level} level. Return JSON {topic, questions}.`,
+    `Write exactly ${QUESTION_CATEGORIES.length} questions, one per category, in this order: ${QUESTION_CATEGORIES.join(", ")}. Set category on each question.`,
+    ...QUESTION_CATEGORIES.map((c) => CATEGORY_RULES[c]),
+    "A kind \"mcq\" question sets choices and answerIndex, with rubric and modelAnswer null. A kind \"free\" question sets rubric and modelAnswer, with choices and answerIndex null.",
+    "Each question tests one specific concept or skill within the learner's topic, and no two questions test the same thing.",
+    SOURCE_RULES,
     "Write each stem, choice, explanation, rubric and model answer in short, unambiguous sentences. Never use vague words such as \"various\", \"some\" or \"appropriate\" where a precise term exists.",
     MCQ_RULES,
     FREE_RULES,
@@ -70,25 +84,37 @@ export function buildGenPrompt(settings: Settings, want: { mcq: number; free: nu
   return parts.join("\n");
 }
 
+// O(n) in text length
+// INV: returns null unless the kind is allowed for the category and the kind's fields are complete; math is wrapped and citations are limited to the k sources
+export function toNewQuestion(q: RawQuestion, category: QuestionCategory, papers: Paper[]): NewQuestion | null {
+  if (!CATEGORY_KINDS[category].includes(q.kind)) return null;
+  const stem = q.stem.trim();
+  if (stem === "") return null;
+  const f = filterCitations(q.explanation, papers.length);
+  const base = { category, stem: wrapBareMath(stem), explanation: wrapBareMath(f.text), citations: toCitations(f.used, papers) };
+  if (q.kind === "mcq") {
+    const choices = (q.choices ?? []).map((c) => c.trim());
+    if (choices.length !== 4 || choices.some((c) => c === "") || q.answerIndex === null) return null;
+    return { ...base, kind: "mcq", choices: choices.map((c) => wrapBareMath(c)), answer: { index: q.answerIndex } };
+  }
+  const rubric = q.rubric?.trim() ?? "";
+  const model = q.modelAnswer?.trim() ?? "";
+  if (rubric === "" || model === "") return null;
+  return { ...base, kind: "free", choices: null, answer: { rubric, model: wrapBareMath(model) } };
+}
+
 // O(n)
-// INV: invalid questions are dropped, kinds are capped at the wanted counts, citations are limited to the k sources
-export function normalizeQuestions(out: GenOut, want: { mcq: number; free: number }, papers: Paper[]): NewQuestion[] {
-  const left = { mcq: want.mcq, free: want.free };
+// INV: keeps the first valid question of each category, in QUESTION_CATEGORIES order; a set missing any category is shorter than PRACTICE_SET_SIZE
+export function normalizeQuestions(out: GenOut, papers: Paper[]): NewQuestion[] {
   const res: NewQuestion[] = [];
-  for (const q of out.questions) {
-    if (left[q.kind] <= 0) continue;
-    const stem = q.stem.trim();
-    if (stem === "") continue;
-    const f = filterCitations(q.explanation, papers.length);
-    const base = { stem, explanation: f.text, citations: toCitations(f.used, papers) };
-    if (q.kind === "mcq") {
-      if (q.choices?.length !== 4 || q.answerIndex === null) continue;
-      res.push({ ...base, kind: "mcq", choices: q.choices, answer: { index: q.answerIndex } });
-    } else {
-      if (!q.rubric?.trim() || !q.modelAnswer?.trim()) continue;
-      res.push({ ...base, kind: "free", choices: null, answer: { rubric: q.rubric, model: q.modelAnswer } });
+  for (const category of QUESTION_CATEGORIES) {
+    for (const q of out.questions) {
+      if (q.category !== category) continue;
+      const n = toNewQuestion(q, category, papers);
+      if (!n) continue;
+      res.push(n);
+      break;
     }
-    left[q.kind]--;
   }
   return res;
 }

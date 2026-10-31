@@ -51,8 +51,13 @@ export type EdgeKind = z.infer<typeof EdgeKind>;
 export const QuestionKind = z.enum(["mcq", "free"]);
 export type QuestionKind = z.infer<typeof QuestionKind>;
 
+export const QuestionCategory = z.enum(["terminology", "conceptual", "mcq", "free"]);
+export type QuestionCategory = z.infer<typeof QuestionCategory>;
+export const QUESTION_CATEGORIES: readonly QuestionCategory[] = QuestionCategory.options;
+export const PRACTICE_SET_SIZE = 4;
+
 // INV: the only shape in which a question leaves the server before it is answered; no answer, explanation or rubric
-export const QuestionPublic = z.strictObject({ id: z.uuid(), topicId: z.uuid(), kind: QuestionKind, stem: z.string(), choices: z.array(z.string()).nullable(), lessonId: z.uuid().nullable() });
+export const QuestionPublic = z.strictObject({ id: z.uuid(), topicId: z.uuid(), kind: QuestionKind, category: QuestionCategory.nullable(), stem: z.string(), choices: z.array(z.string()).nullable(), lessonId: z.uuid().nullable() });
 export type QuestionPublic = z.infer<typeof QuestionPublic>;
 
 export const AttemptRequest = z.strictObject({
@@ -83,8 +88,6 @@ export type QueueQuery = z.infer<typeof QueueQuery>;
 
 export const GenerateRequest = z.strictObject({
   topic: z.string().trim().min(2).max(120),
-  count: z.int().min(1).max(20),
-  kind: z.enum(["mcq", "free", "mix"]).default("mix"),
   styleId: z.uuid().optional(),
   model: z.string().min(1).max(100).optional(),
 });

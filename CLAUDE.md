@@ -38,9 +38,9 @@ MODULE MAP (append one line per module: path · purpose · key exports):
 - src/shared/math.ts · wrap bare lesson LaTeX in $ delimiters before storage and render · wrapBareMath, MATH_DELIM_RULE
 - src/server/learn/{core,sql,routes}.ts · SM-2, attempt pipeline, practice queue, settings routes · qualityOf, scheduleSm2, nextMastery, foldTopicStats, loadSettings, resolveModel, toQuestionPublic, insertCards, recordAttempt, learnRoutes
 - src/server/topics/{core,sql}.ts · topic slugs, batched topic and edge upsert, lesson topic release · slugOf, upsertTopics, topicsReleasedByLesson
-- src/server/gen/{core,sql,routes}.ts · standard and style-mimic question generation, strict-mode GenOut, count normalizer · genRoutes, GenOut, splitCounts, buildGenPrompt, normalizeQuestions, insertQuestions
+- src/server/gen/{core,sql,routes}.ts · 4-question practice sets (terminology, conceptual, mcq, free) modelled on standard homework/exam problems, style mimic, shared question normalizer · genRoutes, GenOut, CATEGORY_RULES, SOURCE_RULES, buildGenPrompt, toNewQuestion, normalizeQuestions, insertQuestions
 - src/server/styles/{core,sql,routes}.ts · PDF/PNG style-profile uploads (magic bytes, profile only stored) · styleRoutes, sniffMime, acceptUpload, toFilePart
-- src/server/teach/{core,sql,routes,prompts}.ts · grounded lessons, lazy steps with MCQ check, streamed Socratic chat, lesson delete · teachRoutes, StepOut, normalizePlan, normalizeStep, buildChatContext, TUTOR_RULES, deleteLessonData
+- src/server/teach/{core,sql,routes,prompts}.ts · grounded lessons, lazy steps with a check whose category cycles by step index, streamed Socratic chat, lesson delete · teachRoutes, StepOut, categoryOfStep, normalizePlan, normalizeStep, buildChatContext, TUTOR_RULES, deleteLessonData
 - src/server/stats/{core,sql,routes}.ts · topic-independent metrics, knowledge graph, daily cached insights · computeMetrics, streakOf, statsRoutes
 - src/shared/season.ts + src/server/season/routes.ts · northern-hemisphere season from the server clock, GET /api/season · Season, SeasonResponse, hemisphereOf, seasonOf, seasonRoutes
 - src/web/{api,sse,session,router}.ts(x) · typed fetch (ApiError, describeError), SSE reader, local profile context (me/settings/season), wouter routes · api, streamSse, useSession, useMe, useSettings, useSeason, AppRouter
