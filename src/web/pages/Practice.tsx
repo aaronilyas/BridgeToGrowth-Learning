@@ -8,6 +8,7 @@ import { Panel } from "../components/Panel.tsx";
 import { QuestionCard } from "../components/QuestionCard.tsx";
 import { Spinner } from "../components/Spinner.tsx";
 import { UploadDrop } from "../components/UploadDrop.tsx";
+import { useIsPro } from "../session.tsx";
 
 type Goal = { done: number; target: number };
 
@@ -86,7 +87,9 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }): JSX.Elemen
 
 // O(n) in queue
 // INV: the card stays on screen with its result until "Next"; only then does it leave the local queue
+// INV: the daily goal comes from personal stats, so it is shown on the pro plan only
 export function PracticePage(): JSX.Element {
+  const pro = useIsPro();
   const [queue, setQueue] = useState<QuestionPublic[] | null>(null);
   const [answered, setAnswered] = useState(false);
   const [goal, setGoal] = useState<Goal | null>(null);
@@ -95,15 +98,15 @@ export function PracticePage(): JSX.Element {
   const load = useCallback(async (): Promise<void> => {
     setError(null);
     try {
-      const [q, s] = await Promise.all([api("/api/practice/queue?limit=20", z.array(QuestionPublic)), api("/api/stats?days=7", StatsResponse)]);
+      const [q, s] = await Promise.all([api("/api/practice/queue?limit=20", z.array(QuestionPublic)), pro ? api("/api/stats?days=7", StatsResponse) : null]);
       setQueue(q);
       setAnswered(false);
-      setGoal(s.totals.goalToday);
+      setGoal(s ? s.totals.goalToday : null);
     } catch (e) {
       setError(e);
       setQueue((q) => q ?? []);
     }
-  }, []);
+  }, [pro]);
 
   useEffect(() => {
     void load();
@@ -147,7 +150,7 @@ export function PracticePage(): JSX.Element {
               label="Question"
               onResult={() => {
                 setAnswered(true);
-                api("/api/stats?days=7", StatsResponse).then((s) => setGoal(s.totals.goalToday), () => undefined);
+                if (pro) api("/api/stats?days=7", StatsResponse).then((s) => setGoal(s.totals.goalToday), () => undefined);
               }}
             />
             {answered && (

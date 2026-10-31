@@ -27,13 +27,14 @@ const graph = route({ auth: true }, async (c) => {
   return json(body);
 });
 
-const stats = route({ auth: true }, async (c) => {
+// INV: personal stats and insights are a pro feature; the free plan gets 402 pro_required
+const stats = route({ auth: true, pro: true }, async (c) => {
   const q = StatsQuery.safeParse(Object.fromEntries(new URL(c.req.url).searchParams));
   if (!q.success) throw new HttpError(400, "bad_request");
   return json(await loadStats(c.user, q.data.days));
 });
 
-const insights = route({ entitled: true }, async (c) => {
+const insights = route({ entitled: true, pro: true }, async (c) => {
   const uid = c.user.id;
   const day = toDayString(new Date());
   const stored = await findInsight(uid, day);

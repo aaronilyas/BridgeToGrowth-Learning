@@ -1,5 +1,5 @@
 import { beforeAll, expect, mock, test } from "bun:test";
-import { bootTestServer, callRoute, createOtherUser, createTestUser, type Handler, type TestServer } from "../testkit.ts";
+import { bootTestServer, callRoute, createTestUser, type Handler, type TestServer } from "../testkit.ts";
 
 let t: TestServer;
 let h: { get: Handler; step: Handler; chat: Handler; del: Handler };
@@ -25,20 +25,22 @@ beforeAll(async () => {
   };
 });
 
-test("another user's lesson is 404 for the local user", async () => {
+test("another user's lesson is 404 for the session user", async () => {
   await t.reset();
   const local = await createTestUser();
-  const other = await createOtherUser();
+  const other = await createTestUser();
   const plan = { title: "T", topic: { name: "X", domain: "math" }, related: [], steps: [{ title: "s", summary: "s" }] };
   const [foreignTopic] = await t.sql`INSERT INTO topics (user_id, slug, name, domain) VALUES (${other.id}, 'x', 'X', 'math') RETURNING id`;
   const [foreign] = await t.sql`INSERT INTO lessons (user_id, topic_id, title, plan, model) VALUES (${other.id}, ${foreignTopic.id}, 'T', ${JSON.stringify(plan)}::text::jsonb, 'm') RETURNING id`;
   const hidden = `?id=${foreign.id}`;
-  expect((await callRoute(h.get, "GET", `/x${hidden}`)).status).toBe(404);
-  expect((await callRoute(h.step, "POST", `/x${hidden}`, { body: {} })).status).toBe(404);
-  expect((await callRoute(h.chat, "POST", `/x${hidden}`, { body: { message: "hi" } })).status).toBe(404);
+  const cookie = local.cookie;
+  expect((await callRoute(h.get, "GET", `/x${hidden}`, { cookie })).status).toBe(404);
+  expect((await callRoute(h.step, "POST", `/x${hidden}`, { cookie, body: {} })).status).toBe(404);
+  expect((await callRoute(h.chat, "POST", `/x${hidden}`, { cookie, body: { message: "hi" } })).status).toBe(404);
   const [ownTopic] = await t.sql`INSERT INTO topics (user_id, slug, name, domain) VALUES (${local.id}, 'y', 'Y', 'math') RETURNING id`;
   const [own] = await t.sql`INSERT INTO lessons (user_id, topic_id, title, plan, model) VALUES (${local.id}, ${ownTopic.id}, 'T', ${JSON.stringify(plan)}::text::jsonb, 'm') RETURNING id`;
-  expect((await callRoute(h.get, "GET", `/x?id=${own.id}`)).status).toBe(200);
+  expect((await callRoute(h.get, "GET", `/x?id=${own.id}`, { cookie })).status).toBe(200);
+  expect((await callRoute(h.get, "GET", `/x?id=${own.id}`)).status).toBe(401);
 });
 
 test("upsertTopics is idempotent and dedupes by slug", async () => {
@@ -93,7 +95,7 @@ test("topicsReleasedByLesson keeps a topic another lesson still uses", () => {
 test("deleting a lesson removes its chat, checks, and topics nothing else uses", async () => {
   await t.reset();
   const u = await createTestUser();
-  const other = await createOtherUser();
+  const other = await createTestUser();
   const topicId = await addTopic(u.id, "photo");
   const relatedId = await addTopic(u.id, "chloro");
   const keptId = await addTopic(u.id, "algebra");
@@ -111,10 +113,11 @@ test("deleting a lesson removes its chat, checks, and topics nothing else uses",
   await t.sql`INSERT INTO insights (user_id, day, body) VALUES (${u.id}, (now() AT TIME ZONE 'UTC')::date, ${JSON.stringify({ trends: [] })}::text::jsonb)`;
   await t.sql`INSERT INTO insights (user_id, day, body) VALUES (${u.id}, ((now() AT TIME ZONE 'UTC')::date - 1), ${JSON.stringify({ trends: [] })}::text::jsonb)`;
   const foreignLesson = await addLesson(other.id, await addTopic(other.id, "foreign"));
-  expect((await callRoute(h.del, "DELETE", `/x?id=${lessonId}`)).status).toBe(204);
-  expect((await callRoute(h.del, "DELETE", `/x?id=${lessonId}`)).status).toBe(404);
-  expect((await callRoute(h.del, "DELETE", `/x?id=${foreignLesson}`)).status).toBe(404);
-  expect((await callRoute(h.del, "DELETE", "/x?id=not-a-uuid")).status).toBe(404);
+  const cookie = u.cookie;
+  expect((await callRoute(h.del, "DELETE", `/x?id=${lessonId}`, { cookie })).status).toBe(204);
+  expect((await callRoute(h.del, "DELETE", `/x?id=${lessonId}`, { cookie })).status).toBe(404);
+  expect((await callRoute(h.del, "DELETE", `/x?id=${foreignLesson}`, { cookie })).status).toBe(404);
+  expect((await callRoute(h.del, "DELETE", "/x?id=not-a-uuid", { cookie })).status).toBe(404);
   const [left] = await t.sql`
     SELECT
       (SELECT count(*)::int FROM lessons WHERE id = ${lessonId}) AS lessons,
@@ -160,7 +163,7 @@ test("deleting a lesson replays mastery from the attempts that remain", async ()
   await addAttempt(u.id, topicId, dropQ, 1, 0, false);
   await addAttempt(u.id, topicId, keepQ, 0, 100, false);
   await t.sql`UPDATE topics SET mastery = 0.21, attempts = 2, correct = 1, conf_err_sum = 2 WHERE id = ${topicId} AND user_id = ${u.id}`;
-  expect((await callRoute(h.del, "DELETE", `/x?id=${dropLesson}`)).status).toBe(204);
+  expect((await callRoute(h.del, "DELETE", `/x?id=${dropLesson}`, { cookie: u.cookie })).status).toBe(204);
   const [topic] = await t.sql`SELECT attempts, correct, mastery, conf_err_sum FROM topics WHERE id = ${topicId}`;
   expect(topic.attempts).toBe(1);
   expect(topic.correct).toBe(0);

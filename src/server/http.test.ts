@@ -1,13 +1,8 @@
 import { expect, test } from "bun:test";
 import { z } from "zod";
+import { TEST_ENV } from "./testkit.ts";
 
-process.env.NODE_ENV = "test";
-process.env.APP_ORIGIN = "https://app.test";
-process.env.DATABASE_URL = process.env.TEST_DATABASE_URL ?? "postgres://x";
-process.env.OPENROUTER_API_KEY = "k";
-process.env.OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
-process.env.OPENROUTER_MODEL = "openrouter/free";
-process.env.OPENALEX_MAILTO = "a@example.com";
+Object.assign(process.env, TEST_ENV, { DATABASE_URL: process.env.TEST_DATABASE_URL ?? "postgres://x" });
 
 test("route rejects foreign origin and unknown body keys", async () => {
   const { route, json, originAllowed } = await import("./http.ts");

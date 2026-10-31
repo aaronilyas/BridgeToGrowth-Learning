@@ -1,8 +1,9 @@
 import type { z } from "zod";
 import type { ErrorCode, Plan } from "../shared/api.ts";
 import { env } from "./env.ts";
-import type { LocalUser } from "./local/core.ts";
-import { ensureLocalUser } from "./local/sql.ts";
+import { hashToken, readSessionToken, type AuthUser } from "./auth/core.ts";
+import { findSession } from "./auth/sql.ts";
+import { entitlementOf } from "./billing/core.ts";
 import { takeToken } from "./rate.ts";
 
 export class HttpError extends Error {
@@ -16,11 +17,11 @@ export type Ctx<B, A extends boolean = false, E extends boolean = false> = {
   ip: string;
   params: Record<string, string>;
   body: B;
-  user: true extends A | E ? LocalUser : undefined;
-  plan: true extends E ? Plan : undefined;
-  capMicros: true extends E ? bigint : undefined;
+  user: true extends A | E ? AuthUser : undefined;
+  plan: true extends A | E ? Plan : undefined;
+  capMicros: true extends A | E ? bigint : undefined;
 };
-export type RouteOpts<B, A extends boolean = false, E extends boolean = false> = { auth?: A; entitled?: E; body?: z.ZodType<B>; rate?: { key: string; cap: number; perMin: number }; csrf?: boolean; maxBody?: number; raw?: boolean };
+export type RouteOpts<B, A extends boolean = false, E extends boolean = false> = { auth?: A; entitled?: E; pro?: boolean; body?: z.ZodType<B>; rate?: { key: string; cap: number; perMin: number }; csrf?: boolean; maxBody?: number; raw?: boolean };
 
 const JSON_HEADERS = { "content-type": "application/json", "cache-control": "no-store", "x-content-type-options": "nosniff" };
 const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -50,21 +51,22 @@ export function json(data: unknown, status: number = 200): Response {
 }
 
 // O(1)
-// SEC: the server binds to 127.0.0.1, so every caller shares one local rate bucket
-function readIp(): string {
-  return "local";
+// SEC: cf-connecting-ip is trustworthy only because the server binds to 127.0.0.1 and cloudflared is the only ingress; direct local requests share one bucket
+function readIp(req: Request): string {
+  return req.headers.get("cf-connecting-ip") ?? "local";
 }
 
 // O(1)
-// INV: capMicros 0 means the free router has no dollar cap
-export function freeEntitlement(): { plan: Plan; capMicros: bigint } {
-  return { plan: "free", capMicros: 0n };
+// INV: free-plan settings are not configurable, so a free user is served the defaults; the stored settings return on upgrade
+function applyPlanSettings(u: AuthUser, plan: Plan): AuthUser {
+  return plan === "pro" ? u : { ...u, settings: {} };
 }
 
 // O(n) in body size
-// INV: check order is size, csrf, rate limit, local user, body parse, handler
+// INV: check order is size, csrf, session, pro gate, rate limit, body parse, handler
 // INV: raw skips body parsing so the handler reads the stream itself (multipart); size is capped by content-length here and by the handler
-// INV: auth and entitled both load the single local user; entitled also sets the free entitlement
+// INV: auth, entitled and pro all require a session; every account has an entitlement, pro also requires the pro plan (402 pro_required)
+// INV: rate buckets are per user on authenticated routes and per client IP otherwise
 export function route<B = undefined, A extends boolean = false, E extends boolean = false>(opts: RouteOpts<B, A, E>, fn: (c: Ctx<B, A, E>) => Promise<Response>): (req: Request & { params?: Record<string, string> }) => Promise<Response> {
   const maxBody = opts.maxBody ?? 64 * 1024;
   return async (req) => {
@@ -73,11 +75,18 @@ export function route<B = undefined, A extends boolean = false, E extends boolea
       if (len > maxBody) throw new HttpError(413, "too_large");
       const csrf = opts.csrf ?? (req.method !== "GET" && req.method !== "HEAD");
       if (csrf && !originAllowed(req.headers.get("origin"), env.APP_ORIGIN)) throw new HttpError(403, "forbidden_origin");
-      const ip = readIp();
-      if (opts.rate && !takeToken(`${opts.rate.key}:${ip}`, opts.rate.cap, opts.rate.perMin)) throw new HttpError(429, "rate_limited");
-      let user: LocalUser | undefined;
-      if (opts.auth || opts.entitled) user = await ensureLocalUser();
-      const ent = opts.entitled ? freeEntitlement() : undefined;
+      const ip = readIp(req);
+      let user: AuthUser | undefined;
+      let ent: { plan: Plan; capMicros: bigint } | undefined;
+      if (opts.auth || opts.entitled || opts.pro) {
+        const token = readSessionToken(req.headers.get("cookie"));
+        const found = token ? await findSession(hashToken(token)) : null;
+        if (!found) throw new HttpError(401, "unauthenticated");
+        ent = entitlementOf(found);
+        if (opts.pro && ent.plan !== "pro") throw new HttpError(402, "pro_required");
+        user = applyPlanSettings(found, ent.plan);
+      }
+      if (opts.rate && !takeToken(`${opts.rate.key}:${user ? `u:${user.id}` : `ip:${ip}`}`, opts.rate.cap, opts.rate.perMin)) throw new HttpError(429, "rate_limited");
       let body = undefined as B;
       if (opts.body && !opts.raw) {
         const text = await req.text();

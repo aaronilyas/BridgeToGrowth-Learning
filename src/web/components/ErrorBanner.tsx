@@ -1,16 +1,22 @@
-import { useState, type JSX } from "react";
+import { useEffect, useState, type JSX } from "react";
 import { Link } from "wouter";
 import { describeError, isApiError } from "../api.ts";
+import { useSession } from "../session.tsx";
 import { Button } from "./Button.tsx";
 
 // O(1)
-// INV: quota_exceeded links /usage, upstream and llm_bad_output offer a retry
+// INV: quota_exceeded links /usage (and /billing on the free plan), pro_required links /billing, unauthenticated reloads the session so the guard sends the user to sign in, upstream and llm_bad_output offer a retry
 export function ErrorBanner({ error, onRetry }: { error: unknown; onRetry?: () => void }): JSX.Element | null {
+  const { me, refresh } = useSession();
   const code = isApiError(error) ? error.code : null;
   const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    if (code === "unauthenticated") void refresh();
+  }, [code, refresh]);
   if (error === null || error === undefined) return null;
   if (code === "quota_exceeded" && dismissed) return null;
   const retry = (code === "upstream" || code === "llm_bad_output") && onRetry;
+  const free = me?.entitlement.plan !== "pro";
   const now = new Date();
   const reset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toLocaleDateString(undefined, { timeZone: "UTC" });
   return (
@@ -19,6 +25,11 @@ export function ErrorBanner({ error, onRetry }: { error: unknown; onRetry?: () =
       {code === "quota_exceeded" && (
         <Link href="/usage" className="font-semibold underline">
           View usage
+        </Link>
+      )}
+      {(code === "pro_required" || (code === "quota_exceeded" && free)) && (
+        <Link href="/billing" className="font-semibold underline">
+          Upgrade to Pro
         </Link>
       )}
       {code === "quota_exceeded" && <button type="button" aria-label="Dismiss usage limit message" className="px-2 text-lg" onClick={() => setDismissed(true)}>×</button>}

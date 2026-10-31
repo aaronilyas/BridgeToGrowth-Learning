@@ -16,7 +16,7 @@ const generate = route({ entitled: true, body: GenerateRequest, rate: { key: "ge
   const settings = loadSettings(c.user);
   const style = c.body.styleId ? await findStyleProfile(uid, c.body.styleId) : null;
   if (c.body.styleId && !style) throw new HttpError(404, "not_found");
-  const model = resolveModel(settings, c.body.model);
+  const model = resolveModel(settings, c.plan, c.body.model);
   const [papers, rt] = await Promise.all([retrievePapers(c.body.topic, 3), codeRuntime()]);
   const codeLibs = rt.enabled ? rt.libraries : null;
   const r = await chatJson({

@@ -1,0 +1,11 @@
+# Rendered by deploy/setup-tunnel.sh (envsubst). Placeholders only; no secrets here.
+tunnel: ${TUNNEL_ID}
+credentials-file: /etc/cloudflared/${TUNNEL_ID}.json
+
+ingress:
+  - hostname: ${HOST}
+    service: http://127.0.0.1:${PORT}
+    originRequest:
+      connectTimeout: 10s
+      keepAliveTimeout: 90s
+  - service: http_status:404

@@ -11,7 +11,8 @@ import { countReviewsToday, findQuestion, listDueQuestions, recordAttempt, updat
 
 const getSettings = route({ auth: true }, async (c) => json(loadSettings(c.user)));
 
-const putSettings = route({ auth: true, body: SettingsPatch }, async (c) => {
+// INV: settings are a pro feature; the free plan reads the defaults from GET and gets 402 pro_required here
+const putSettings = route({ auth: true, pro: true, body: SettingsPatch }, async (c) => {
   const next = Settings.safeParse(mergeSettings(loadSettings(c.user), c.body));
   if (!next.success) throw new HttpError(400, "bad_request");
   // SEC: a newly chosen model must be one of the selectable models

@@ -4,14 +4,20 @@ import type { ErrorCode } from "../shared/api.ts";
 export type ApiError = Error & { status: number; code: ErrorCode };
 export type ApiInit = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown };
 
-const CODES: ReadonlySet<string> = new Set<ErrorCode>(["bad_request", "forbidden_origin", "not_found", "rate_limited", "quota_exceeded", "model_not_allowed", "unsupported_media", "too_large", "upstream", "llm_bad_output", "source_blocked", "source_unreadable", "sandbox_unavailable", "internal"]);
+const CODES: ReadonlySet<string> = new Set<ErrorCode>(["bad_request", "unauthenticated", "forbidden_origin", "not_found", "rate_limited", "pro_required", "quota_exceeded", "email_taken", "bad_credentials", "turnstile_failed", "already_subscribed", "model_not_allowed", "unsupported_media", "too_large", "upstream", "llm_bad_output", "source_blocked", "source_unreadable", "sandbox_unavailable", "internal"]);
 
 const MESSAGES: Record<ErrorCode, string> = {
   bad_request: "That request wasn't valid. Check the fields and try again.",
+  unauthenticated: "Your session has ended. Sign in again.",
   forbidden_origin: "Request blocked. Reload the page.",
   not_found: "Not found.",
   rate_limited: "Too many attempts. Wait a minute and retry.",
+  pro_required: "That's a Pro feature. Upgrade to unlock it.",
   quota_exceeded: "You've reached this month's usage cap.",
+  email_taken: "An account with that email already exists. Sign in instead.",
+  bad_credentials: "That email and password don't match.",
+  turnstile_failed: "The human check failed. Try it again.",
+  already_subscribed: "You already have a Pro subscription.",
   model_not_allowed: "That model isn't available.",
   unsupported_media: "That file or link type isn't supported. Question styles take PDF or PNG; lesson attachments take PDFs, web pages or plain text.",
   too_large: "That's too large.",

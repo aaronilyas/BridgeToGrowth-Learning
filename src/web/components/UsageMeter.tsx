@@ -11,9 +11,9 @@ export function UsageMeter({ usedMicros, reservedMicros, capMicros }: { usedMicr
       <Panel>
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="text-lg font-semibold">Monthly usage</h2>
-          <span className="text-sm text-muted">Not billed</span>
+          <span className="text-sm text-muted">No AI allowance</span>
         </div>
-        <p className="mt-3 text-sm text-muted">{formatUsageAmount(usedMicros)} recorded. Calls are not billed.</p>
+        <p className="mt-3 text-sm text-muted">{formatUsageAmount(usedMicros)} used. Your plan has no AI allowance this month.</p>
       </Panel>
     );
   }

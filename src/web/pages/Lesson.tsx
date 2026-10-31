@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
-import { useLocation, useParams } from "wouter";
+import { Link, useLocation, useParams } from "wouter";
 import { LessonDetail, StepPublic } from "../../shared/api.ts";
 import { api } from "../api.ts";
 import { ChatPanel } from "../components/ChatPanel.tsx";
@@ -105,6 +105,15 @@ export function LessonPage(): JSX.Element {
       </Panel>
 
       <Panel className="min-w-0">
+        {lesson.expiresAt && (
+          <p className="mb-4 rounded-xl border border-accent-2/40 bg-panel-2 px-4 py-2.5 text-sm text-muted">
+            Free plan: this lesson will be deleted on {new Date(lesson.expiresAt).toLocaleDateString()}.{" "}
+            <Link href="/billing" className="font-medium text-accent hover:underline">
+              Upgrade to keep it
+            </Link>
+            .
+          </p>
+        )}
         <div className="mb-4 flex justify-end">
           <DeleteLessonButton lessonId={lesson.id} lessonTitle={lesson.title} onDeleted={() => navigate("/teach")} />
         </div>
