@@ -2,7 +2,7 @@ import { ConfigResponse, LoginRequest, SignupRequest, type AuthUserResponse, typ
 import { readPlanTerms } from "../billing/core.ts";
 import { env } from "../env.ts";
 import { HttpError, json, route } from "../http.ts";
-import { takeToken } from "../rate.ts";
+import { hasToken, takeToken } from "../rate.ts";
 import { createToken, formatClearCookie, formatSessionCookie, hashToken, readSessionToken } from "./core.ts";
 import { passwordResetEnabled } from "./mail.ts";
 import { deleteSession, findUserCreds, insertSession, insertUser } from "./sql.ts";
@@ -34,12 +34,17 @@ const signup = route({ body: SignupRequest, rate: { key: "signup", cap: 5, perMi
 });
 
 const login = route({ body: LoginRequest, rate: { key: "login", cap: 10, perMin: 10 } }, async (c) => {
-  if (!takeToken(`login-email:${c.body.email}`, 5, 5)) throw new HttpError(429, "rate_limited");
+  // SEC: Turnstile runs before the per-email bucket; a token is spent only after a failed password check
   if (!(await verifyTurnstile(c.body.turnstile, c.ip))) throw new HttpError(400, "turnstile_failed");
+  const emailKey = `login-email:${c.body.email}`;
+  if (!hasToken(emailKey, 5, 5)) throw new HttpError(429, "rate_limited");
   const creds = await findUserCreds(c.body.email);
   // SEC: timing + enumeration parity
   const ok = await verifyPassword(c.body.password, creds?.pw_hash ?? null);
-  if (!creds || !ok) throw new HttpError(401, "bad_credentials");
+  if (!creds || !ok) {
+    takeToken(emailKey, 5, 5);
+    throw new HttpError(401, "bad_credentials");
+  }
   return startSession(creds.id, creds.email, 200);
 });
 

@@ -35,8 +35,9 @@ const changePassword = route({ auth: true, body: PasswordChangeRequest, rate: { 
 });
 
 const forgotPassword = route({ body: ForgotPasswordRequest, rate: { key: "forgot", cap: 5, perMin: 5 } }, async (c) => {
-  if (!takeToken(`forgot-email:${c.body.email}`, 3, 3)) throw new HttpError(429, "rate_limited");
+  // SEC: the per-email bucket is spent only after Turnstile passes
   if (!(await verifyTurnstile(c.body.turnstile, c.ip))) throw new HttpError(400, "turnstile_failed");
+  if (!takeToken(`forgot-email:${c.body.email}`, 3, 3)) throw new HttpError(429, "rate_limited");
   await issuePasswordReset(c.body.email);
   return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
 });
