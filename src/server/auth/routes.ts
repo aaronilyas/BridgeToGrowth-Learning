@@ -4,27 +4,24 @@ import { env } from "../env.ts";
 import { HttpError, json, route } from "../http.ts";
 import { takeToken } from "../rate.ts";
 import { createToken, formatClearCookie, formatSessionCookie, hashToken, readSessionToken } from "./core.ts";
+import { passwordResetEnabled } from "./mail.ts";
 import { deleteSession, findUserCreds, insertSession, insertUser } from "./sql.ts";
 import { verifyTurnstile } from "./turnstile.ts";
+import { verifyPassword } from "./verify.ts";
 
-const DUMMY_HASH = await Bun.password.hash("dummy-password-for-timing-parity", "argon2id");
-
-// O(1) plus one argon2id verify
-// SEC: a malformed stored hash (for example the retired local profile's placeholder) is a failed login, not a 500
-async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  try {
-    return await Bun.password.verify(password, hash);
-  } catch {
-    return false;
-  }
-}
-
-async function startSession(uid: string, email: string, status: number): Promise<Response> {
-  const token = createToken();
-  await insertSession(uid, hashToken(token));
+// O(1)
+export function buildSessionResponse(uid: string, email: string, token: string, status: number): Response {
   const res = json({ id: uid, email } satisfies AuthUserResponse, status);
   res.headers.append("set-cookie", formatSessionCookie(token));
   return res;
+}
+
+// O(log n + MAX_SESSIONS)
+// INV: the cookie carries the raw token and the database stores only its hash
+export async function startSession(uid: string, email: string, status: number): Promise<Response> {
+  const token = createToken();
+  await insertSession(uid, hashToken(token));
+  return buildSessionResponse(uid, email, token, status);
 }
 
 const signup = route({ body: SignupRequest, rate: { key: "signup", cap: 5, perMin: 5 } }, async (c) => {
@@ -41,7 +38,7 @@ const login = route({ body: LoginRequest, rate: { key: "login", cap: 10, perMin:
   if (!(await verifyTurnstile(c.body.turnstile, c.ip))) throw new HttpError(400, "turnstile_failed");
   const creds = await findUserCreds(c.body.email);
   // SEC: timing + enumeration parity
-  const ok = await verifyPassword(c.body.password, creds?.pw_hash ?? DUMMY_HASH);
+  const ok = await verifyPassword(c.body.password, creds?.pw_hash ?? null);
   if (!creds || !ok) throw new HttpError(401, "bad_credentials");
   return startSession(creds.id, creds.email, 200);
 });
@@ -54,7 +51,7 @@ const logout = route({ auth: true }, async (c) => {
 
 const me = route({ auth: true }, async (c) => json({ id: c.user.id, email: c.user.email, settings: c.user.settings, entitlement: { plan: c.plan, capMicros: Number(c.capMicros) } } satisfies MeResponse));
 
-const config = route({}, async () => json(ConfigResponse.parse({ turnstileSiteKey: env.TURNSTILE_SITE_KEY, plans: readPlanTerms() })));
+const config = route({}, async () => json(ConfigResponse.parse({ turnstileSiteKey: env.TURNSTILE_SITE_KEY, plans: readPlanTerms(), passwordReset: passwordResetEnabled() })));
 
 export const authRoutes = {
   "/api/auth/signup": { POST: signup },

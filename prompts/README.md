@@ -51,7 +51,7 @@ claude "$(cat prompts/03-auth.md)"
 - **Season:** Cloudflare `cf-iplatitude` gives the hemisphere, and the UTC month gives the season. A user override is available in settings.
 
 ## Deferred (not in the MVP)
-Password reset and email verification (both need an email provider), dictation, FSRS, OAuth, running more than one instance (the in-memory rate limiter assumes one process) and admin UI.
+Email verification (needs an email provider), dictation, FSRS, OAuth, running more than one instance (the in-memory rate limiter assumes one process) and admin UI.
 
 ## Test budget
 20 tests in total. CI is 1 workflow with 1 job (typecheck and `bun test`). There are no E2E tests in CI; UI prompts are verified by hand.

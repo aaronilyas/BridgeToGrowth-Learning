@@ -1,6 +1,7 @@
 import index from "../web/index.html";
+import { accountRoutes } from "./auth/account.ts";
 import { authRoutes } from "./auth/routes.ts";
-import { deleteExpiredSessions } from "./auth/sql.ts";
+import { deleteExpiredPasswordResets, deleteExpiredSessions } from "./auth/sql.ts";
 import { billingRoutes } from "./billing/routes.ts";
 import { pruneStripeEvents } from "./billing/sql.ts";
 import { env } from "./env.ts";
@@ -21,6 +22,7 @@ import { deleteExpiredLessons } from "./teach/sql.ts";
 
 const routes = {
   ...authRoutes,
+  ...accountRoutes,
   ...billingRoutes,
   ...llmRoutes,
   ...learnRoutes,
@@ -50,7 +52,10 @@ function scheduleSweep(name: string, everyMs: number, fn: () => Promise<unknown>
 await resetReservations();
 startPricingRefresh();
 void codeRuntime();
-scheduleSweep("session", HOUR_MS, deleteExpiredSessions);
+scheduleSweep("session", HOUR_MS, async () => {
+  await deleteExpiredSessions();
+  await deleteExpiredPasswordResets();
+});
 scheduleSweep("lesson expiry", SWEEP_MS, deleteExpiredLessons);
 scheduleSweep("stripe event", 24 * HOUR_MS, pruneStripeEvents);
 

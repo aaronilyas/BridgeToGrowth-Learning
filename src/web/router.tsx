@@ -3,12 +3,15 @@ import { Redirect, Route, Switch } from "wouter";
 import { AppShell } from "./components/AppShell.tsx";
 import { ProGate } from "./components/ProGate.tsx";
 import { Spinner } from "./components/Spinner.tsx";
+import { AccountPage } from "./pages/Account.tsx";
 import { BillingPage } from "./pages/Billing.tsx";
 import { CancelPage } from "./pages/Cancel.tsx";
+import { ForgotPage } from "./pages/Forgot.tsx";
 import { GraphPage } from "./pages/Graph.tsx";
 import { LessonPage } from "./pages/Lesson.tsx";
 import { LoginPage } from "./pages/Login.tsx";
 import { PracticePage } from "./pages/Practice.tsx";
+import { ResetPage } from "./pages/Reset.tsx";
 import { SettingsPage } from "./pages/Settings.tsx";
 import { SignupPage } from "./pages/Signup.tsx";
 import { StatsPage } from "./pages/Stats.tsx";
@@ -63,6 +66,7 @@ function Guarded(): JSX.Element {
         <Route path="/settings" component={SettingsRoute} />
         <Route path="/billing/cancel" component={CancelPage} />
         <Route path="/billing" component={BillingPage} />
+        <Route path="/account" component={AccountPage} />
         <Route path="/usage" component={UsagePage} />
         <Route>
           <Redirect to="/teach" replace />
@@ -93,6 +97,12 @@ export function AppRouter(): JSX.Element {
           <SignupPage />
         </PublicOnly>
       </Route>
+      <Route path="/forgot">
+        <PublicOnly>
+          <ForgotPage />
+        </PublicOnly>
+      </Route>
+      <Route path="/reset" component={ResetPage} />
       <Route>
         <Guarded />
       </Route>
