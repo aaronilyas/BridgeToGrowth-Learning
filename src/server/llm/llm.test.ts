@@ -1,6 +1,14 @@
 import { beforeAll, expect, test } from "bun:test";
 import { parseSseChunk } from "../../shared/sse.ts";
 import { bootTestServer, createTestUser, type TestServer } from "../testkit.ts";
+import type * as GatewayModule from "./gateway.ts";
+
+// O(1)
+// INV: a query suffix loads the gateway implementation past the suite's module replacement
+async function loadRealGateway(): Promise<typeof GatewayModule> {
+  const specifier = "./gateway.ts?real=1";
+  return import(specifier);
+}
 
 let t: TestServer;
 let core: typeof import("./core.ts");
@@ -56,4 +64,66 @@ test("assertModelAllowed accepts only the selectable models", async () => {
   expect(core.reasoningPayload("low")).toEqual({ reasoning: { effort: "low" } });
   expect(core.reasoningPayload("high")).toEqual({ reasoning: { effort: "high" } });
   expect(core.reasoningPayload("max")).toEqual({ reasoning: { effort: "max" } });
+});
+
+test("refreshPricing leaves an unlisted paid system model unpriced", async () => {
+  const { env } = await import("../env.ts");
+  const { TEST_ENV } = await import("../testkit.ts");
+  const { refreshPricing } = await loadRealGateway();
+  const { MODELS, SYSTEM_MODELS, priceOf, setPricing } = await import("./models.ts");
+  const paid = "openai/gpt-4o";
+  const previousEnv = env.OPENROUTER_MODEL;
+  const previousTest = TEST_ENV.OPENROUTER_MODEL ?? "openrouter/free";
+  const previousSystems = { grade: SYSTEM_MODELS.grade, extract: SYSTEM_MODELS.extract, insight: SYSTEM_MODELS.insight };
+  env.OPENROUTER_MODEL = paid;
+  TEST_ENV.OPENROUTER_MODEL = paid;
+  SYSTEM_MODELS.grade = paid;
+  SYSTEM_MODELS.extract = paid;
+  SYSTEM_MODELS.insight = paid;
+  setPricing(null);
+  const logged: string[] = [];
+  const prevError = console.error;
+  console.error = (...args: unknown[]) => {
+    logged.push(args.map((part) => String(part)).join(" "));
+    prevError(...args);
+  };
+  try {
+    const data = MODELS.map((m) => ({ id: m.id, context_length: 128_000, pricing: { prompt: "0.000001", completion: "0.000002" } }));
+    const fetchFn: typeof fetch = Object.assign(async () => Response.json({ data }), { preconnect: () => {} });
+    expect(await refreshPricing(fetchFn)).toBe(true);
+    expect(priceOf(paid)).toEqual({ loaded: true, price: undefined });
+    expect(logged).toContain("llm: system model unlisted");
+  } finally {
+    console.error = prevError;
+    env.OPENROUTER_MODEL = previousEnv;
+    TEST_ENV.OPENROUTER_MODEL = previousTest;
+    SYSTEM_MODELS.grade = previousSystems.grade;
+    SYSTEM_MODELS.extract = previousSystems.extract;
+    SYSTEM_MODELS.insight = previousSystems.insight;
+    setPricing(null);
+  }
+});
+
+test("the 201st zero-priced call in a day throws rate_limited", async () => {
+  const { prepareCall } = await loadRealGateway();
+  const { FREE_PRICE, SYSTEM_MODELS, setPricing } = await import("./models.ts");
+  const { HttpError } = await import("../http.ts");
+  setPricing(new Map([[SYSTEM_MODELS.grade, FREE_PRICE]]));
+  const who = { uid: crypto.randomUUID(), plan: "free" as const, capMicros: 1_000_000n };
+  const messages = [{ role: "user" as const, content: "grade this" }];
+  try {
+    for (let i = 0; i < 200; i++) prepareCall(who, { system: "grade" }, "grade", messages, 200);
+    let caught: unknown;
+    try {
+      prepareCall(who, { system: "grade" }, "grade", messages, 200);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(HttpError);
+    if (!(caught instanceof HttpError)) throw new Error("missing rate limit");
+    expect(caught.status).toBe(429);
+    expect(caught.code).toBe("rate_limited");
+  } finally {
+    setPricing(null);
+  }
 });

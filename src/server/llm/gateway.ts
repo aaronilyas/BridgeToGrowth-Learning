@@ -3,6 +3,7 @@ import type { Citation, ErrorCode, Plan } from "../../shared/api.ts";
 import { parseSseChunk } from "../../shared/sse.ts";
 import { env } from "../env.ts";
 import { HttpError } from "../http.ts";
+import { takeToken } from "../rate.ts";
 import { assertModelAllowed, buildMessages, completionBudget, countPromptChars, estimateMicros, parseJsonOutput, parsePricing, periodOf, readCompletion, readDelta, reasoningPayload, toSchemaName, type ChatMessage, type FilePart, type Turn, type Usage } from "./core.ts";
 import { FREE_PRICE, MODELS, SYSTEM_MODELS, isModelListed, priceOf, setPricing, type SystemModelKey } from "./models.ts";
 import { reserveQuota, settleQuota } from "./sql.ts";
@@ -19,15 +20,23 @@ const DAY_MS = 86_400_000;
 const RETRY_MS = 60_000;
 const enc = new TextEncoder();
 
+// O(1)
+function isFreeModelId(id: string): boolean {
+  return id === "openrouter/free" || id.endsWith(":free");
+}
+
 // O(n) in the /models payload
-// INV: failure keeps the previous pricing; OPENROUTER_MODEL falls back to $0 only when upstream does not list it (openrouter/free is unpriced)
+// INV: failure keeps the previous pricing; a missing OPENROUTER_MODEL is priced at $0 only when its id is openrouter/free or ends with :free
 export async function refreshPricing(fetchFn: typeof fetch = fetch): Promise<boolean> {
   try {
     const res = await fetchFn(`${env.OPENROUTER_BASE_URL}/models`, { signal: AbortSignal.timeout(15_000) });
     if (!res.ok) throw new Error(`status ${res.status}`);
     const wanted = new Set([...MODELS.map((m) => m.id), ...Object.values(SYSTEM_MODELS)]);
     const map = parsePricing(await res.json(), wanted);
-    if (!map.has(env.OPENROUTER_MODEL)) map.set(env.OPENROUTER_MODEL, FREE_PRICE);
+    if (!map.has(env.OPENROUTER_MODEL)) {
+      if (isFreeModelId(env.OPENROUTER_MODEL)) map.set(env.OPENROUTER_MODEL, FREE_PRICE);
+      else console.error("llm: system model unlisted");
+    }
     if (map.size === 0) throw new Error("no allowlisted models listed");
     const dropped = [...wanted].filter((id) => !map.has(id));
     if (dropped.length > 0) console.error(`llm: dropping unlisted models: ${dropped.join(", ")}`);
@@ -58,10 +67,12 @@ function chooseModel(choice: ModelChoice): string {
 }
 
 // O(n) in message size
-function prepareCall(who: Who, choice: ModelChoice, kind: string, messages: ChatMessage[], maxTokens: number): Prepared {
+// SEC: both per-token prices at 0 skip the dollar cap, so each user is limited to 200 of those calls per day
+export function prepareCall(who: Who, choice: ModelChoice, kind: string, messages: ChatMessage[], maxTokens: number): Prepared {
   const model = chooseModel(choice);
   const { loaded, price } = priceOf(model);
   if (!price) throw loaded ? new HttpError(400, "model_not_allowed") : new HttpError(502, "upstream");
+  if (price.promptPerTok === 0 && price.completionPerTok === 0 && !takeToken(`free-llm:${who.uid}`, 200, 200 / 1440)) throw new HttpError(429, "rate_limited");
   const reasons = MODELS.some((m) => m.id === model);
   const budget = completionBudget(maxTokens, reasons ? env.OPENROUTER_REASONING_LEVEL : null);
   const est = estimateMicros(price, countPromptChars(messages), budget);
