@@ -1,14 +1,16 @@
 import { z } from "zod";
 import { Citation, type AttemptAnswer, type QuestionCategory, type QuestionPublic } from "../../shared/api.ts";
+import { CodeSpec, type CodeTestResult } from "../../shared/code.ts";
 import { Settings } from "../../shared/settings.ts";
+import { StoredCodeAnswer } from "../code/core.ts";
 import { HttpError } from "../http.ts";
 import { listModels } from "../llm/core.ts";
 
 export type Card = { ef: number; intervalD: number; reps: number; lapses: number; dueAt: Date };
 export type Quality = 0 | 1 | 2 | 3 | 4 | 5;
 
-// INV: questions.answer jsonb is {index} for mcq and {rubric, model} for free; questions.choices is a jsonb array of strings (null for free)
-export const StoredAnswer = z.union([z.strictObject({ index: z.int().min(0).max(3) }), z.strictObject({ rubric: z.string(), model: z.string() })]);
+// INV: questions.answer jsonb is {index} for mcq, {rubric, model} for free and {tests, model} for code; questions.choices is a jsonb array of strings (null otherwise); questions.code_spec is set only for code
+export const StoredAnswer = z.union([z.strictObject({ index: z.int().min(0).max(3) }), z.strictObject({ rubric: z.string(), model: z.string() }), StoredCodeAnswer]);
 export type StoredAnswer = z.infer<typeof StoredAnswer>;
 export const StoredChoices = z.array(z.string());
 export const StoredCitations = z.array(Citation);
@@ -19,10 +21,11 @@ export type QuestionRow = {
   id: string;
   topic_id: string;
   lesson_id: string | null;
-  kind: "mcq" | "free";
+  kind: "mcq" | "free" | "code";
   category: QuestionCategory | null;
   stem: string;
   choices: unknown;
+  code_spec: unknown;
   answer: unknown;
   explanation: string;
   citations: unknown;
@@ -100,10 +103,11 @@ export function resolveModel(settings: Settings, requested?: string): string {
 }
 
 // O(1)
-// INV: only id, topic, kind, category, stem, choices and lesson leave the server before an attempt
+// INV: only id, topic, kind, category, stem, choices, the public code spec and lesson leave the server before an attempt
 export function toQuestionPublic(row: QuestionRow): QuestionPublic {
   const choices = row.choices === null ? null : StoredChoices.parse(row.choices);
-  return { id: row.id, topicId: row.topic_id, kind: row.kind, category: row.category, stem: row.stem, choices, lessonId: row.lesson_id };
+  const code = row.code_spec === null ? null : CodeSpec.parse(row.code_spec);
+  return { id: row.id, topicId: row.topic_id, kind: row.kind, category: row.category, stem: row.stem, choices, code, lessonId: row.lesson_id };
 }
 
 // O(1)
@@ -132,9 +136,10 @@ export function buildGradePrompt(stem: string, a: { rubric: string; model: strin
 }
 
 // O(1)
-// SEC: called only after grading; the rubric never leaves the server
-export function toAttemptAnswer(kind: "mcq" | "free", a: StoredAnswer): AttemptAnswer {
+// SEC: called only after grading; the rubric and hidden test code never leave the server, only each test's name and outcome
+export function toAttemptAnswer(kind: "mcq" | "free" | "code", a: StoredAnswer, tests: CodeTestResult[] = []): AttemptAnswer {
   if (kind === "mcq" && "index" in a) return { kind: "mcq", index: a.index };
-  if (kind === "free" && "model" in a) return { kind: "free", model: a.model };
+  if (kind === "free" && "rubric" in a) return { kind: "free", model: a.model };
+  if (kind === "code" && "tests" in a) return { kind: "code", model: a.model, tests };
   throw new Error("stored answer does not match question kind");
 }

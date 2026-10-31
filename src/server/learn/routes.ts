@@ -1,5 +1,7 @@
 import { AttemptRequest, QueueQuery, type AttemptResponse } from "../../shared/api.ts";
-
+import { CodeSpec, type CodeTestResult } from "../../shared/code.ts";
+import { codeFeedback, scoreTests } from "../code/core.ts";
+import { runInSandbox } from "../code/sandbox.ts";
 import { Settings, SettingsPatch, mergeSettings } from "../../shared/settings.ts";
 import { listModels } from "../llm/core.ts";
 import { HttpError, json, route } from "../http.ts";
@@ -36,9 +38,17 @@ const attempt = route({ entitled: true, body: AttemptRequest, rate: { key: "atte
   const stored = StoredAnswer.parse(row.answer);
   let score = 0;
   let feedback: string | null = null;
+  let tests: CodeTestResult[] = [];
   if (row.kind === "mcq") {
     if (c.body.choice === undefined || !("index" in stored)) throw new HttpError(400, "bad_request");
     score = c.body.choice === stored.index ? 1 : 0;
+  } else if (row.kind === "code") {
+    // SEC: libraries and hidden tests come from the stored question; the client sends only its code
+    if (!c.body.response?.trim() || !("tests" in stored)) throw new HttpError(400, "bad_request");
+    const r = await runInSandbox(CodeSpec.parse(row.code_spec).libraries, c.body.response, stored.tests);
+    tests = r.run.tests;
+    score = scoreTests(tests);
+    feedback = codeFeedback(r.run);
   } else {
     if (!c.body.response?.trim() || !("rubric" in stored)) throw new HttpError(400, "bad_request");
     const p = buildGradePrompt(row.stem, stored, c.body.response);
@@ -47,8 +57,8 @@ const attempt = route({ entitled: true, body: AttemptRequest, rate: { key: "atte
     feedback = g.data.feedback;
   }
   const now = new Date();
-  const due = await recordAttempt({ uid, topicId: row.topic_id, questionId: row.id, score, confidence: c.body.confidence, latencyMs: c.body.latencyMs, response: row.kind === "free" ? (c.body.response ?? null) : null, srsEnabled: loadSettings(c.user).srs.enabled }, now);
-  const body: AttemptResponse = { score, correct: score >= CORRECT_AT, feedback, answer: toAttemptAnswer(row.kind, stored), explanation: row.explanation, citations: StoredCitations.parse(row.citations), nextDueAt: due ? due.toISOString() : null };
+  const due = await recordAttempt({ uid, topicId: row.topic_id, questionId: row.id, score, confidence: c.body.confidence, latencyMs: c.body.latencyMs, response: row.kind === "mcq" ? null : (c.body.response ?? null), srsEnabled: loadSettings(c.user).srs.enabled }, now);
+  const body: AttemptResponse = { score, correct: score >= CORRECT_AT, feedback, answer: toAttemptAnswer(row.kind, stored, tests), explanation: row.explanation, citations: StoredCitations.parse(row.citations), nextDueAt: due ? due.toISOString() : null };
   return json(body);
 });
 

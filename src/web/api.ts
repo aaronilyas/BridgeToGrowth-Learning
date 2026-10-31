@@ -4,7 +4,7 @@ import type { ErrorCode } from "../shared/api.ts";
 export type ApiError = Error & { status: number; code: ErrorCode };
 export type ApiInit = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown };
 
-const CODES: ReadonlySet<string> = new Set<ErrorCode>(["bad_request", "forbidden_origin", "not_found", "rate_limited", "quota_exceeded", "model_not_allowed", "unsupported_media", "too_large", "upstream", "llm_bad_output", "source_blocked", "source_unreadable", "internal"]);
+const CODES: ReadonlySet<string> = new Set<ErrorCode>(["bad_request", "forbidden_origin", "not_found", "rate_limited", "quota_exceeded", "model_not_allowed", "unsupported_media", "too_large", "upstream", "llm_bad_output", "source_blocked", "source_unreadable", "sandbox_unavailable", "internal"]);
 
 const MESSAGES: Record<ErrorCode, string> = {
   bad_request: "That request wasn't valid. Check the fields and try again.",
@@ -19,6 +19,7 @@ const MESSAGES: Record<ErrorCode, string> = {
   llm_bad_output: "The model returned something unusable. Try again.",
   source_blocked: "That link points to a local or private address, a non-standard port, or isn't http(s), so it can't be fetched.",
   source_unreadable: "One of your attachments or links couldn't be read. Check that the PDF isn't encrypted or damaged and the link is public.",
+  sandbox_unavailable: "Code can't run here: the server's sandbox (bubblewrap, prlimit and /usr/bin/python3) isn't available.",
   internal: "Something went wrong.",
 };
 

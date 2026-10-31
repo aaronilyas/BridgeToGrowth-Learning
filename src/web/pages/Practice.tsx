@@ -56,7 +56,7 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }): JSX.Elemen
           Topic
           <input className={FIELD} value={topic} maxLength={120} placeholder="e.g. Newton's laws" onChange={(e) => setTopic(e.currentTarget.value)} />
         </label>
-        <p className="text-sm text-muted">Each set has {PRACTICE_SET_SIZE} questions: one terminology, one conceptual, one multiple choice and one free response, modelled on standard homework and exam problems.</p>
+        <p className="text-sm text-muted">Each set has {PRACTICE_SET_SIZE} questions: one terminology, one conceptual, one multiple choice and one free response (a sandboxed Python exercise for programming and computational topics), modelled on standard homework and exam problems.</p>
         <label className="flex flex-col gap-1 text-sm text-muted">
           Style
           <select className={FIELD} value={styleId} onChange={(e) => setStyleId(e.currentTarget.value)}>
