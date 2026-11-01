@@ -46,7 +46,7 @@ const attempt = route({ entitled: true, body: AttemptRequest, rate: { key: "atte
   } else if (row.kind === "code") {
     // SEC: libraries and hidden tests come from the stored question; the client sends only its code
     if (!c.body.response?.trim() || !("tests" in stored)) throw new HttpError(400, "bad_request");
-    const r = await runInSandbox(CodeSpec.parse(row.code_spec).libraries, c.body.response, stored.tests);
+    const r = await runInSandbox(c.user.id, CodeSpec.parse(row.code_spec).libraries, c.body.response, stored.tests);
     tests = r.run.tests;
     score = scoreTests(tests);
     feedback = codeFeedback(r.run);

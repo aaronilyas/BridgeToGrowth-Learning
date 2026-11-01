@@ -9,7 +9,7 @@ const run = route({ entitled: true, body: CodeRunRequest, rate: { key: "code", c
   const row = await findQuestion(c.user.id, c.body.questionId);
   if (!row || row.kind !== "code") throw new HttpError(404, "not_found");
   const spec = CodeSpec.parse(row.code_spec);
-  return json(toRunResponse(await runInSandbox(spec.libraries, c.body.code, [])));
+  return json(toRunResponse(await runInSandbox(c.user.id, spec.libraries, c.body.code, [])));
 });
 
 export const codeRoutes = { "/api/code/run": { POST: run } };
