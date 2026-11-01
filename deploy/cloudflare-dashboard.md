@@ -40,6 +40,8 @@ Stripe Checkout and the billing portal are full-page redirects, so they need no 
 
 The app also rate-limits sign-up, sign-in and every AI route on its own.
 
+Add a WAF rule for `/api/stripe/webhook` that allows requests only from Stripe's currently published webhook IP ranges; keep the range list synchronized with Stripe's documentation.
+
 ## 5. Cache bypass for the API
 
 1. Zone `$HOST` → **Caching** → **Cache Rules** → **Create rule**.

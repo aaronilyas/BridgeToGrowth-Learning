@@ -12,6 +12,36 @@ export class HttpError extends Error {
   }
 }
 
+// O(n) in body size
+// SEC: read incrementally so chunked bodies cannot bypass the configured cap
+export async function readBodyCapped(req: Request, cap: number): Promise<Uint8Array> {
+  const reader = req.body?.getReader();
+  if (!reader) return new Uint8Array();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) break;
+      size += result.value.byteLength;
+      if (size > cap) {
+        await reader.cancel();
+        throw new HttpError(413, "too_large");
+      }
+      chunks.push(result.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
 export type Ctx<B, A extends boolean = false, E extends boolean = false> = {
   req: Request;
   ip: string;
@@ -89,8 +119,7 @@ export function route<B = undefined, A extends boolean = false, E extends boolea
       if (opts.rate && !takeToken(`${opts.rate.key}:${user ? `u:${user.id}` : `ip:${ip}`}`, opts.rate.cap, opts.rate.perMin)) throw new HttpError(429, "rate_limited");
       let body = undefined as B;
       if (opts.body && !opts.raw) {
-        const text = await req.text();
-        if (new TextEncoder().encode(text).length > maxBody) throw new HttpError(413, "too_large");
+        const text = new TextDecoder().decode(await readBodyCapped(req, maxBody));
         let raw: unknown;
         try {
           raw = JSON.parse(text);
