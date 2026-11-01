@@ -34,8 +34,9 @@ const signup = route({ body: SignupRequest, rate: { key: "signup", cap: 5, perMi
 });
 
 const login = route({ body: LoginRequest, rate: { key: "login", cap: 10, perMin: 10 } }, async (c) => {
-  if (!takeToken(`login-email:${c.body.email}`, 5, 5)) throw new HttpError(429, "rate_limited");
+  // SEC: Turnstile runs before the per-email bucket, so requests without a solved challenge cannot lock an email out; the token is spent before the password check so parallel guesses cannot overrun the bucket
   if (!(await verifyTurnstile(c.body.turnstile, c.ip))) throw new HttpError(400, "turnstile_failed");
+  if (!takeToken(`login-email:${c.body.email}`, 5, 5)) throw new HttpError(429, "rate_limited");
   const creds = await findUserCreds(c.body.email);
   // SEC: timing + enumeration parity
   const ok = await verifyPassword(c.body.password, creds?.pw_hash ?? null);

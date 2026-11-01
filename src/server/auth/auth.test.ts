@@ -1,4 +1,4 @@
-import { beforeAll, expect, test } from "bun:test";
+import { beforeAll, expect, mock, test } from "bun:test";
 import { bootTestServer, callRoute, createTestUser, type TestServer } from "../testkit.ts";
 
 let t: TestServer;
@@ -6,6 +6,7 @@ let r: typeof import("./routes.ts")["authRoutes"];
 
 beforeAll(async () => {
   t = await bootTestServer();
+  mock.module("./turnstile.ts", () => ({ verifyTurnstile: async (token: string) => token !== "bad" }));
   r = (await import("./routes.ts")).authRoutes;
 });
 
@@ -44,6 +45,32 @@ test("an expired session is unauthenticated", async () => {
   await t.sql`UPDATE sessions SET expires_at = now() - interval '1 minute' WHERE user_id = ${u.id}`;
   const res = await callRoute(r["/api/me"].GET, "GET", "/api/me", { cookie: u.cookie });
   expect(res.status).toBe(401);
+});
+
+test("failing turnstile tokens do not lock an email out of login", async () => {
+  await t.reset();
+  const email = "turnstile-lock@example.com";
+  const password = "correct horse battery";
+  await createTestUser({ email, password });
+  for (let i = 0; i < 20; i++) {
+    const res = await callRoute(r["/api/auth/login"].POST, "POST", "/api/auth/login", { body: { email, password, turnstile: "bad" }, ip: `203.0.121.${i + 1}` });
+    expect(res.status).toBe(400);
+  }
+  const ok = await callRoute(r["/api/auth/login"].POST, "POST", "/api/auth/login", { body: { email, password, turnstile: "pass" }, ip: "203.0.121.21" });
+  expect(ok.status).toBe(200);
+});
+
+test("six wrong passwords with a passing turnstile rate-limit the email", async () => {
+  await t.reset();
+  const email = "password-lock@example.com";
+  await createTestUser({ email, password: "correct horse battery" });
+  const ip = "192.0.2.10";
+  for (let i = 0; i < 5; i++) {
+    const res = await callRoute(r["/api/auth/login"].POST, "POST", "/api/auth/login", { body: { email, password: "wrong password!!", turnstile: "pass" }, ip });
+    expect(res.status).toBe(401);
+  }
+  const limited = await callRoute(r["/api/auth/login"].POST, "POST", "/api/auth/login", { body: { email, password: "wrong password!!", turnstile: "pass" }, ip });
+  expect(limited.status).toBe(429);
 });
 
 test("config exposes the plan terms from env and no secrets", async () => {

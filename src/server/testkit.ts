@@ -29,12 +29,12 @@ export const TEST_ENV: Record<string, string> = {
 };
 
 // O(1)
-// INV: sets env before any server module is imported; DATABASE_URL is TEST_DATABASE_URL; verifyTurnstile resolves true
+// INV: sets env before any server module is imported; DATABASE_URL is TEST_DATABASE_URL; verifyTurnstile rejects the token "bad" and accepts every other token
 export async function bootTestServer(): Promise<TestServer> {
   const testDb = process.env.TEST_DATABASE_URL;
   if (!testDb) throw new Error("TEST_DATABASE_URL is required");
   Object.assign(process.env, TEST_ENV, { DATABASE_URL: testDb });
-  mock.module("./auth/turnstile.ts", () => ({ verifyTurnstile: async () => true }));
+  mock.module("./auth/turnstile.ts", () => ({ verifyTurnstile: async (token: string) => token !== "bad" }));
   const { sql } = await import("./db.ts");
   const { env } = await import("./env.ts");
   const reset = async (): Promise<void> => {
