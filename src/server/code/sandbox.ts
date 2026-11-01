@@ -60,8 +60,8 @@ export function codeRuntime(): Promise<CodeRuntime> {
 }
 
 // O(code + output), one sandboxed process
-// SEC: caller supplies only code; libraries and tests come from stored question; each user gets one run and global runs are bounded
-export async function runInSandbox(uid: string, libs: readonly CodeLibrary[], code: string, tests: readonly CodeTest[]): Promise<CodeRun> {
+// SEC: the caller supplies only code and whether dunder definitions are banned; libraries and tests come from the stored question; each user gets one run and global runs are bounded
+export async function runInSandbox(uid: string, libs: readonly CodeLibrary[], code: string, tests: readonly CodeTest[], guardDefs: boolean = true): Promise<CodeRun> {
   const rt = await codeRuntime();
   const argv = rt.enabled ? locateSandbox() : null;
   if (!argv) throw new HttpError(503, "sandbox_unavailable");
@@ -69,7 +69,7 @@ export async function runInSandbox(uid: string, libs: readonly CodeLibrary[], co
   runningUsers.add(uid);
   try {
     const nonce = crypto.randomUUID();
-    const out = await spawnSandbox(argv, buildRunPayload(nonce, libs, code, tests));
+    const out = await spawnSandbox(argv, buildRunPayload(nonce, libs, code, tests, guardDefs));
     return settleRun(out, parseHarnessLine(out.stdout, nonce, HarnessRun), tests);
   } finally {
     runningUsers.delete(uid);

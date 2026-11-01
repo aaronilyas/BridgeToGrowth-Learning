@@ -39,7 +39,7 @@ class PolicyError(Exception):
 def _deny(line, what):
     raise PolicyError("line %d: %s is not allowed here. Available libraries: %s. Installing packages is disabled." % (line, what, AVAILABLE))
 
-def _check(src, fname):
+def _check(src, fname, guard=False):
     tree = ast.parse(src, fname)
     for n in ast.walk(tree):
         line = getattr(n, "lineno", 0)
@@ -66,6 +66,8 @@ def _check(src, fname):
                     _deny(line, "matching on '%s'" % k)
         elif isinstance(n, ast.alias) and n.asname and n.asname.startswith("__"):
             _deny(line, "the name '%s'" % n.asname)
+        elif guard and isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name.startswith("__"):
+            _deny(line, "the name '%s'" % n.name)
     return compile(tree, fname, "exec")
 
 _real_import = builtins.__import__
@@ -118,7 +120,7 @@ _results = []
 sys.stdout, sys.stderr = _so, _se
 try:
     try:
-        exec(_check(_p["code"], "<learner>"), _ns)
+        exec(_check(_p["code"], "<learner>", bool(_p.get("guardDefs", True))), _ns)
     except BaseException as e:
         _error = _describe(e, "<learner>")
     for t in _p["tests"]:
@@ -126,7 +128,7 @@ try:
             _results.append({"name": t["name"], "passed": False, "error": "not run: your code raised an error"})
             continue
         try:
-            exec(_check(t["code"], "<test>"), _ns)
+            exec(_check(t["code"], "<test>"), dict(_ns))
             _results.append({"name": t["name"], "passed": True, "error": None})
         except BaseException as e:
             _results.append({"name": t["name"], "passed": False, "error": _describe(e, "<test>")})

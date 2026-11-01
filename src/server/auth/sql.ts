@@ -124,6 +124,13 @@ export async function rotateUserPassword(uid: string, pwHash: string, sessionHas
   });
 }
 
+// O(1)
+// INV: runs only after the Stripe customer delete has succeeded, so a failed user delete cannot point at that customer
+// SEC: uid comes from the session; users.id is that account
+export async function clearUserStripe(uid: string): Promise<void> {
+  await sql`UPDATE users SET stripe_customer_id = NULL, sub_id = NULL, sub_status = 'canceled' WHERE id = ${uid}`;
+}
+
 // O(k) in the account's rows, via ON DELETE CASCADE
 // SEC: uid comes from the session
 export async function deleteUserAccount(uid: string): Promise<boolean> {
