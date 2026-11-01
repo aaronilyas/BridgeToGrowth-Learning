@@ -20,6 +20,13 @@ export async function claimCustomerId(uid: string, customer: string): Promise<st
 // INV: a non-pro snapshot of a different subscription never overwrites a pro one, so a stray duplicate checkout cannot cancel a paying user
 // INV: becoming pro clears the free-plan expiry on the user's lessons in the same transaction
 async function applySubscription(tx: SQL, s: SubSnapshot): Promise<BillingRow | null> {
+  if (isProStatus(s.status)) {
+    const current: { sub_id: string | null; sub_status: string }[] = await tx`
+      SELECT sub_id, sub_status FROM users WHERE stripe_customer_id = ${s.customer} LIMIT 1`;
+    if (current[0]?.sub_id && current[0].sub_id !== s.id && isProStatus(current[0].sub_status)) {
+      console.error("billing: duplicate active subscription for customer");
+    }
+  }
   const rows: (BillingRow & { id: string })[] = await tx`
     UPDATE users SET sub_id = ${s.id}, sub_status = ${s.status}, sub_cancel_at_period_end = ${s.cancelAtPeriodEnd}, sub_period_end = ${s.periodEnd}
     WHERE stripe_customer_id = ${s.customer}

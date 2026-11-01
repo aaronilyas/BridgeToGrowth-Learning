@@ -2,7 +2,7 @@ import { Stripe } from "stripe";
 import type { AuthUser } from "../auth/core.ts";
 import { env } from "../env.ts";
 import { HttpError, json, readBodyCapped, route } from "../http.ts";
-import { formatBilling } from "./core.ts";
+import { formatBilling, isProStatus } from "./core.ts";
 import { applyStripeEvent, claimCustomerId, saveUserSubscription } from "./sql.ts";
 import { createCheckoutUrl, createPortalUrl, createStripeCustomer, fetchSubscription, findCustomerSubscription, setStripeCancelAtPeriodEnd } from "./stripe.ts";
 
@@ -25,6 +25,13 @@ const billing = route({ auth: true }, async (c) => json(formatBilling(c.user)));
 
 const checkout = route({ auth: true, rate: { key: "checkout", cap: 10, perMin: 10 } }, async (c) => {
   if (c.plan === "pro") throw new HttpError(409, "already_subscribed");
+  if (c.user.stripe_customer_id) {
+    const sub = await findCustomerSubscription(c.user.stripe_customer_id);
+    if (sub && isProStatus(sub.status)) {
+      await saveUserSubscription(c.user.id, c.user.stripe_customer_id, sub);
+      throw new HttpError(409, "already_subscribed");
+    }
+  }
   return json({ url: await createCheckoutUrl(await ensureCustomer(c.user), c.user.id) });
 });
 
