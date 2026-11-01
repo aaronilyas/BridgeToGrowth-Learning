@@ -26,7 +26,7 @@ TESTS: bun test. Write only the tests listed in a prompt. No network: mock with 
 DONE: `bun run typecheck && bun test` is green and the prompt's VERIFY passes.
 MODULE MAP (append one line per module: path · purpose · key exports):
 - src/server/http.ts · route wrapper (session, plan gate, per-user rate limit), errors · route, HttpError, json, originAllowed
-- src/server/rate.ts · token bucket · takeToken, hasToken
+- src/server/rate.ts · token bucket · takeToken
 - src/server/env.ts · validated env · env
 - src/server/db.ts · shared Bun.sql pool · sql
 - scripts/migrate.ts · checksummed migration runner (`bun run migrate [url]`) · none

@@ -22,16 +22,6 @@ export function takeToken(key: string, cap: number, perMin: number, now: number 
   return true;
 }
 
-// O(1)
-// INV: does not insert a key and does not spend a token
-export function hasToken(key: string, cap: number, perMin: number, now: number = Date.now()): boolean {
-  const found = buckets.get(key);
-  if (!found && buckets.size >= MAX_KEYS) return false;
-  const b = found ? { ...found } : { tokens: cap, t: now, cap, perMin };
-  refill(b, now);
-  return b.tokens >= 1;
-}
-
 // O(n)
 // INV: only full buckets are deleted, so no rate state is lost
 export function sweepBuckets(now: number = Date.now()): number {
