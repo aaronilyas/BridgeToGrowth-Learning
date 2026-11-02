@@ -1,4 +1,4 @@
-// SEC: runs inside the bubblewrap sandbox as `python3 -I -B -c HARNESS_PY`; the sandbox is the security boundary, this policy layer only makes the allowed-import contract explicit and hard to sidestep
+// SEC: runs inside the bubblewrap sandbox as `python3 -I -B -c HARNESS_PY`; this import policy is a usability contract, not a boundary, and can be bypassed by design (e.g. typing.get_type_hints evaluating strings reaches os); the boundary is bwrap (namespaces, read-only /usr, no network) plus the per-run cgroup leaf (pids, memory, cpu) and prlimit
 // INV: reads one JSON payload from stdin and writes exactly one result line, prefixed by the per-run nonce, to the real stdout
 export const HARNESS_PY: string = String.raw`
 import ast, builtins, io, json, sys

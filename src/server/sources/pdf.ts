@@ -1,6 +1,8 @@
 import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runContained } from "../code/cgroup.ts";
+import { TOOL_MEMORY_BYTES } from "../code/core.ts";
 import { HttpError } from "../http.ts";
 import type { FilePart } from "../llm/core.ts";
 import { sniffMime } from "../styles/core.ts";
@@ -24,28 +26,17 @@ function locateTool(name: string): string {
 }
 
 // O(output) bounded by cap
-// SEC: always inside bubblewrap under prlimit (see buildPdfToolArgv); argv only, no shell; empty env; stdin closed; killed on timeout or oversized output
+// SEC: always inside bubblewrap under prlimit (see buildPdfToolArgv) and its own cgroup leaf (runContained); stdin closed
 // SEC: at most MAX_CONCURRENT_PDF_TOOLS run at once across all users; extra requests get 429
 async function runTool(tool: string, args: string[], dir: string, cap: number): Promise<{ ok: boolean; out: Uint8Array }> {
-  const argv = buildPdfToolArgv(locateTool("prlimit"), locateTool("bwrap"), locateTool(tool), args, dir);
+  const prlimit = locateTool("prlimit");
+  const bwrap = locateTool("bwrap");
+  const bin = locateTool(tool);
   if (running >= MAX_CONCURRENT_PDF_TOOLS) throw new HttpError(429, "rate_limited");
   running += 1;
   try {
-    const proc = Bun.spawn(argv, { env: {}, stdin: "ignore", stdout: "pipe", stderr: "ignore", timeout: TOOL_TIMEOUT_MS, killSignal: "SIGKILL" });
-    const chunks: Uint8Array[] = [];
-    let size = 0;
-    let over = false;
-    for await (const chunk of proc.stdout) {
-      size += chunk.length;
-      if (size > cap) {
-        over = true;
-        proc.kill("SIGKILL");
-        break;
-      }
-      chunks.push(chunk);
-    }
-    const code = await proc.exited;
-    return { ok: code === 0 && !over && proc.signalCode === null, out: Buffer.concat(chunks) };
+    const r = await runContained((join) => buildPdfToolArgv(prlimit, bwrap, bin, args, dir, join), { memoryBytes: TOOL_MEMORY_BYTES, stdin: null, cap, timeoutMs: TOOL_TIMEOUT_MS });
+    return { ok: r.exitCode === 0 && !r.over && !r.timedOut && !r.signaled, out: r.out };
   } finally {
     running -= 1;
   }

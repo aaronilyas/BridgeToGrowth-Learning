@@ -194,10 +194,11 @@ export function buildAttachmentBlock(sources: SourceText[], fileLabels: string[]
 // O(a) in argument count
 // SEC: bubblewrap gives fresh user, pid, net, ipc, uts and cgroup namespaces with no network, nested user namespaces disabled and all capabilities dropped;
 // SEC: the only filesystem is read-only /usr, a minimal /dev and the per-request temp dir read-write at /work; no /proc, /etc, /home or /run, so the server's environ and sockets are unreachable;
-// SEC: prlimit caps memory, CPU seconds, written file size and open files; the environment is cleared; the child dies with its parent and gets its own session
-export function buildPdfToolArgv(prlimit: string, bwrap: string, tool: string, args: readonly string[], dir: string): string[] {
+// SEC: prlimit caps memory, CPU seconds, written file size and open files; join (buildCgroupJoin) puts the run in its cgroup leaf; the environment is cleared; the child dies with its parent and gets its own session
+export function buildPdfToolArgv(prlimit: string, bwrap: string, tool: string, args: readonly string[], dir: string, join: readonly string[]): string[] {
   return [
     prlimit, ...PDF_TOOL_LIMITS, "--",
+    ...join,
     bwrap,
     "--unshare-all", "--unshare-user", "--disable-userns", "--die-with-parent", "--new-session", "--cap-drop", "ALL", "--uid", "65534", "--gid", "65534", "--hostname", "sandbox",
     "--ro-bind", "/usr", "/usr", "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib", "/lib64", "--symlink", "usr/bin", "/bin",

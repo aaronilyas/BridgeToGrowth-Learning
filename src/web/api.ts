@@ -26,7 +26,7 @@ const MESSAGES: Record<ErrorCode, string> = {
   llm_bad_output: "The model returned something unusable. Try again.",
   source_blocked: "That link points to a local or private address, a non-standard port, or isn't http(s), so it can't be fetched.",
   source_unreadable: "One of your attachments or links couldn't be read. Check that the PDF isn't encrypted or damaged and the link is public.",
-  sandbox_unavailable: "Code can't run here: the server's sandbox (bubblewrap, prlimit and /usr/bin/python3) isn't available.",
+  sandbox_unavailable: "The server's sandbox isn't available, so code can't run and PDF attachments can't be read right now.",
   internal: "Something went wrong.",
 };
 

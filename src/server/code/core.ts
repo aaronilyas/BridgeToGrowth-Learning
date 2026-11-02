@@ -5,8 +5,16 @@ export const SANDBOX_PYTHON = "/usr/bin/python3";
 export const RUN_TIMEOUT_MS = 10_000;
 export const STDOUT_CAP = 256 * 1024;
 export const MAX_CONCURRENT_RUNS = 4;
+export const CODE_MEMORY_BYTES = 512 * 1024 * 1024;
+export const TOOL_MEMORY_BYTES = 1024 * 1024 * 1024;
+export const CGROUP_ROOT = "/sys/fs/cgroup";
+export const CGROUP_CONTROLLERS = "+cpu +memory +pids";
+const RUN_PIDS_MAX = 64;
+const RUN_CPU_MAX = "100000 100000";
 const TMPFS_BYTES = 8 * 1024 * 1024;
-// INV: no --nproc: RLIMIT_NPROC counts every thread of the real uid, so any fixed value either breaks bwrap or bounds nothing; TasksMax and MemoryMax in btg.service cap a fork bomb
+// SEC: argv only, no shell: moves itself into the per-run leaf by writing its own pid, then execs the next argv entry with the same pid; a failed write exits before exec, so nothing runs uncontained
+const CGROUP_JOIN_PY = "import os, sys\nf = open(sys.argv[1], 'w')\nf.write(str(os.getpid()))\nf.close()\nos.execv(sys.argv[2], sys.argv[2:])\n";
+// INV: no --nproc: RLIMIT_NPROC counts every thread of the real uid, so any fixed value either breaks bwrap or bounds nothing; pids.max in the per-run cgroup caps a fork bomb
 const LIMITS = ["--as=1073741824", "--cpu=5", "--fsize=1048576", "--nofile=64", "--core=0"];
 const SANDBOX_ENV = ["--setenv", "PATH", "/usr/bin", "--setenv", "LANG", "C.UTF-8", "--setenv", "HOME", "/tmp", "--setenv", "OPENBLAS_NUM_THREADS", "1", "--setenv", "OMP_NUM_THREADS", "1", "--setenv", "MPLBACKEND", "Agg"];
 
@@ -18,16 +26,47 @@ export const HarnessProbe = z.strictObject({ available: z.array(z.string()) });
 export const StoredCodeAnswer = z.strictObject({ tests: z.array(CodeTest).min(1).max(CODE_MAX_TESTS), model: z.string() });
 export type StoredCodeAnswer = z.infer<typeof StoredCodeAnswer>;
 
+export type SandboxCgroups = { own: string; main: string; sandbox: string };
+export type RunCgroup = { dir: string; procs: string; kill: string; limits: [string, string][] };
 export type SandboxOutcome = { stdout: string; timedOut: boolean; durationMs: number };
 export type CodeRun = { run: HarnessRun; timedOut: boolean; durationMs: number };
+
+// O(n) in file size
+// INV: cgroup v2 only (the "0::" line); a server already inside its main leaf (in-place reload) resolves to the same layout; the root cgroup is never delegated, so it yields null
+export function planSandboxCgroups(selfCgroup: string, root: string = CGROUP_ROOT): SandboxCgroups | null {
+  const rel = selfCgroup.split("\n").find((l) => l.startsWith("0::"))?.slice(3).trim() ?? "";
+  if (!rel.startsWith("/") || rel.split("/").includes("..")) return null;
+  const own = rel.endsWith("/main") ? rel.slice(0, -"/main".length) : rel;
+  if (own === "" || own === "/") return null;
+  return { own: root + own, main: `${root}${own}/main`, sandbox: `${root}${own}/sandbox` };
+}
+
+// O(1)
+// INV: one leaf per run under sandbox/; limits are written before any process joins it; swap is off so memory.max is a hard ceiling; cpu.max is one core
+export function planRunCgroup(sandbox: string, runId: string, memoryBytes: number): RunCgroup {
+  const dir = `${sandbox}/${runId}`;
+  return {
+    dir,
+    procs: `${dir}/cgroup.procs`,
+    kill: `${dir}/cgroup.kill`,
+    limits: [[`${dir}/pids.max`, String(RUN_PIDS_MAX)], [`${dir}/memory.max`, String(memoryBytes)], [`${dir}/memory.swap.max`, "0"], [`${dir}/cpu.max`, RUN_CPU_MAX]],
+  };
+}
+
+// O(1)
+// SEC: inserted after prlimit's "--" so the chain is prlimit (rlimits) -> join helper (cgroup) -> bwrap (namespaces), all one pid
+export function buildCgroupJoin(procs: string): string[] {
+  return [SANDBOX_PYTHON, "-I", "-S", "-c", CGROUP_JOIN_PY, procs];
+}
 
 // O(1)
 // SEC: bubblewrap gives fresh user, pid, net, ipc, uts and cgroup namespaces with no network, nested user namespaces disabled and all capabilities dropped;
 // SEC: the only filesystem is read-only /usr (the interpreter and the system site-packages), a small private /tmp and a minimal /dev; no /home, /etc, /proc or /run;
-// SEC: prlimit caps memory, CPU seconds, written file size and open files; the environment is cleared; the child dies with its parent and gets its own session
-export function buildSandboxArgv(prlimit: string, bwrap: string, harness: string): string[] {
+// SEC: prlimit caps memory, CPU seconds, written file size and open files; join (buildCgroupJoin) puts the run in its cgroup leaf; the environment is cleared; the child dies with its parent and gets its own session
+export function buildSandboxArgv(prlimit: string, bwrap: string, harness: string, join: readonly string[]): string[] {
   return [
     prlimit, ...LIMITS, "--",
+    ...join,
     bwrap,
     "--unshare-all", "--unshare-user", "--disable-userns", "--die-with-parent", "--new-session", "--cap-drop", "ALL", "--uid", "65534", "--gid", "65534", "--hostname", "sandbox",
     "--ro-bind", "/usr", "/usr", "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib", "/lib64", "--symlink", "usr/bin", "/bin",
@@ -75,7 +114,7 @@ export function toAvailableLibraries(found: readonly string[]): CodeLibrary[] {
 // INV: a missing harness result means the sandbox was killed (time, memory or crash): every test fails with that reason
 export function settleRun(o: SandboxOutcome, parsed: HarnessRun | null, tests: readonly CodeTest[]): CodeRun {
   if (parsed) return { run: parsed, timedOut: false, durationMs: o.durationMs };
-  const error = o.timedOut ? `Time limit exceeded (${RUN_TIMEOUT_MS / 1000} s).` : "Your code was stopped: it used more than 5 s of CPU time or 1 GB of memory, or crashed the interpreter.";
+  const error = o.timedOut ? `Time limit exceeded (${RUN_TIMEOUT_MS / 1000} s).` : "Your code was stopped: it used more than 5 s of CPU time or 512 MB of memory, started too many processes, or crashed the interpreter.";
   return { run: { stdout: "", stderr: "", error, tests: tests.map((t) => ({ name: t.name, passed: false, error: "not run" })) }, timedOut: o.timedOut, durationMs: o.durationMs };
 }
 

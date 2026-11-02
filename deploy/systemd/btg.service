@@ -4,6 +4,8 @@
 # MemoryDenyWriteExecute must stay off: the JSC JIT needs writable and executable pages.
 # Size CPUQuota to about 80% of the host's cores.
 # Code exercises run in bubblewrap and need unprivileged user namespaces; do not add RestrictNamespaces= or PrivateUsers=. If the startup probe logs "sandbox failed to start", code exercises stay disabled.
+# Delegate=yes hands this unit's cgroup v2 subtree to the btg user. At boot the server moves itself into <unit cgroup>/main and creates <unit cgroup>/sandbox; every code run and PDF tool gets its own leaf there (pids.max=64, memory.max=1G or 512M for code, memory.swap.max=0, cpu.max one core) and is killed through cgroup.kill on timeout. Do not add ProtectControlGroups=. If the log says "cgroup setup failed", code exercises and PDF reading stay disabled.
+# MemoryMax and TasksMax still bound the whole subtree, the server and all sandboxes together.
 [Unit]
 Description=BridgeToGrowth Learning
 Wants=network-online.target
@@ -20,6 +22,7 @@ Restart=on-failure
 RestartSec=3
 MemoryMax=6G
 TasksMax=512
+Delegate=yes
 CPUQuota=300%
 
 NoNewPrivileges=yes

@@ -43,11 +43,24 @@ The app refuses to start in production with a non-https `APP_ORIGIN` or with Tur
 
 `deploy/setup-proxy.sh` installs Caddy when it is missing, renders `deploy/Caddyfile.tmpl`, and reloads Caddy. HTTP redirects to HTTPS. The certificate is a Let's Encrypt certificate for `$HOST`. Caddy reverse-proxies to `http://127.0.0.1:$PORT` and overwrites `X-Real-IP` with the TCP peer.
 
-## 6. Turnstile
+## 6. Sandbox
+
+Code exercises and PDF reading run in bubblewrap, under prlimit, inside a per-run cgroup. Install `bubblewrap`, `util-linux` (for `prlimit`), `python3`, `poppler-utils`, and `ghostscript`. The Droplet must use cgroup v2 (the Ubuntu default).
+
+`btg.service` sets `Delegate=yes`. At boot the server moves itself into `/sys/fs/cgroup/system.slice/btg.service/main` and creates `.../sandbox`. Each run gets a leaf under `sandbox/` with `pids.max=64`, `memory.max=1G` (512M for code), `memory.swap.max=0`, and `cpu.max` of one core. The leaf is killed through `cgroup.kill` on timeout and removed after exit.
+
+If the setup fails, the log says `sandbox: cgroup setup failed` and code exercises and PDF attachments are reported as unavailable. They never run without the cgroup.
+
+Check it after install:
+
+- `systemd-cgls -u btg.service` shows the server under `main/` and an empty `sandbox/`.
+- `systemctl status btg` shows the task count. It returns to its idle value after a run.
+
+## 7. Turnstile
 
 Create a managed Turnstile widget whose hostname is `$HOST`. The DNS zone is not a Cloudflare zone. Copy the site key into `TURNSTILE_SITE_KEY` and the secret into `TURNSTILE_SECRET`. Never commit them.
 
-## 7. Stripe
+## 8. Stripe
 
 Webhook endpoint `https://$HOST/api/stripe/webhook`. Events: `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`.
 
@@ -55,10 +68,10 @@ The customer portal return URL is `$HOST`.
 
 `bun --env-file=/etc/btg/btg.env scripts/stripe-setup.ts https://$HOST` creates or reuses the Pro price and that webhook. Put the printed `STRIPE_PRICE_ID` and `STRIPE_WEBHOOK_SECRET` in the env file. Stripe charges the `STRIPE_PRICE_ID` amount, so keep it equal to `PRO_PRICE_USD`. Restart with `sudo systemctl restart btg`.
 
-## 8. OpenRouter
+## 9. OpenRouter
 
 The app caps each account's monthly AI spend. Set a credit limit on the API key as a second guard: OpenRouter → Keys → your key → Credit limit.
 
-## 9. What the edge does not do
+## 10. What the edge does not do
 
 Login is limited to 10 requests a minute per IP, and signup to 5, inside the app. There is no second edge limiter. The app sets the response security headers. Do not put Cloudflare in front of the A record.

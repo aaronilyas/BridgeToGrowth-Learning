@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { buildPdfToolArgv } from "./core.ts";
 
-const argv = buildPdfToolArgv("/usr/bin/prlimit", "/usr/bin/bwrap", "/usr/bin/gs", ["-q", "in.pdf"], "/tmp/btg-pdf-abc");
+const argv = buildPdfToolArgv("/usr/bin/prlimit", "/usr/bin/bwrap", "/usr/bin/gs", ["-q", "in.pdf"], "/tmp/btg-pdf-abc", []);
 
 describe("buildPdfToolArgv", () => {
   test("unshares all namespaces and drops every capability", () => {
