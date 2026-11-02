@@ -2,22 +2,25 @@ import { AttemptRequest, QueueQuery, type AttemptResponse } from "../../shared/a
 import type { CodeTestResult } from "../../shared/code.ts";
 import { codeFeedback, sameTestNames, scoreTests } from "../../shared/codeGrade.ts";
 import { Settings, SettingsPatch, mergeSettings } from "../../shared/settings.ts";
-import { listModels } from "../llm/core.ts";
 import { HttpError, json, route } from "../http.ts";
+import { connectedProviderIds } from "../llm/providers/registry.ts";
 import { chatJson } from "../llm/gateway.ts";
 import { localProfile } from "../profile.ts";
 import { GradeOutput, CORRECT_AT, StoredAnswer, StoredCitations, buildGradePrompt, loadSettings, queueLimit, toAttemptAnswer, toQuestionPublic } from "./core.ts";
 import { countReviewsToday, findQuestion, listDueQuestions, recordAttempt, updateSettings } from "./sql.ts";
 
-const getSettings = route({}, async () => json(loadSettings(await localProfile())));
+const getSettings = route({}, async () => {
+  const connected = await connectedProviderIds();
+  const next = Settings.safeParse(mergeSettings(loadSettings(await localProfile()), {}, connected));
+  if (!next.success) throw new HttpError(500, "internal");
+  return json(next.data);
+});
 
 const putSettings = route({ body: SettingsPatch }, async (c) => {
   const user = await localProfile();
-  const next = Settings.safeParse(mergeSettings(loadSettings(user), c.body));
+  const connected = await connectedProviderIds();
+  const next = Settings.safeParse(mergeSettings(loadSettings(user), c.body, connected));
   if (!next.success) throw new HttpError(400, "bad_request");
-  // SEC: a newly chosen model must be one of the selectable models
-  const m = next.data.model;
-  if (c.body.model !== undefined && m !== null && !listModels().some((x) => x.id === m)) throw new HttpError(400, "model_not_allowed");
   await updateSettings(user.id, next.data);
   return json(next.data);
 });

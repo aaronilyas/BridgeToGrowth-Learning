@@ -13,7 +13,7 @@ export function readLaunchHeaders(): Record<string, string> {
   return typeof token === "string" && token.length > 0 ? { "x-btg-token": token } : {};
 }
 
-const CODES: ReadonlySet<string> = new Set<ErrorCode>(["bad_request", "forbidden_origin", "not_found", "rate_limited", "model_not_allowed", "unsupported_media", "too_large", "upstream", "llm_bad_output", "source_blocked", "source_unreadable", "internal"]);
+const CODES: ReadonlySet<string> = new Set<ErrorCode>(["bad_request", "forbidden_origin", "not_found", "rate_limited", "model_not_allowed", "unsupported_media", "too_large", "upstream", "llm_bad_output", "source_blocked", "source_unreadable", "not_connected", "auth_expired", "quota_exhausted", "model_unavailable", "bad_output", "timeout", "provider_error", "internal"]);
 
 const MESSAGES: Record<ErrorCode, string> = {
   bad_request: "That request wasn't valid. Check the fields and try again.",
@@ -27,6 +27,13 @@ const MESSAGES: Record<ErrorCode, string> = {
   llm_bad_output: "The model returned something unusable. Try again.",
   source_blocked: "That link points to a local or private address, a non-standard port, or isn't http(s), so it can't be fetched.",
   source_unreadable: "One of your attachments or links couldn't be read. Check that the PDF isn't encrypted or damaged and the link is public.",
+  not_connected: "Connect a provider before asking the model.",
+  auth_expired: "That provider key is no longer valid.",
+  quota_exhausted: "This month's provider budget is used up.",
+  model_unavailable: "That model isn't available.",
+  bad_output: "The model returned something unusable. Try again.",
+  timeout: "The model took too long. Try again.",
+  provider_error: "The provider failed. Try again.",
   internal: "Something went wrong.",
 };
 

@@ -1,13 +1,27 @@
 import { useEffect, useState, type JSX } from "react";
-import { UsageResponse } from "../../shared/api.ts";
+import { UsageResponse, type UsageModel } from "../../shared/api.ts";
 import { api, describeError } from "../api.ts";
 import { Panel } from "../components/Panel.tsx";
-import { UsageMeter } from "../components/UsageMeter.tsx";
+import { spentUsd, UsageMeter } from "../components/UsageMeter.tsx";
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
-function formatDollars(micros: number): string { return money.format(micros / 1e6); }
-function resetDate(period: string): string { const d = new Date(`${period}T00:00:00.000Z`); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toLocaleDateString(undefined, { timeZone: "UTC" }); }
-function formatCallCost(micros: number): string { return `$${(micros / 1e6).toFixed(4)}`; }
+
+function resetDate(month: string): string {
+  const [year, mon] = month.split("-");
+  const y = Number(year);
+  const m = Number(mon);
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return month;
+  return new Date(Date.UTC(y, m, 1)).toLocaleDateString(undefined, { timeZone: "UTC" });
+}
+
+function costLabel(cost: number | null): string {
+  return cost === null ? "—" : money.format(cost);
+}
+
+function ModelRows({ rows }: { rows: readonly UsageModel[] }): JSX.Element {
+  if (!rows.length) return <p className="text-sm text-muted">No calls.</p>;
+  return <div className="grid gap-2">{rows.map((row) => <div key={`${row.provider}:${row.model}`} className="flex justify-between gap-4 text-sm"><span className="break-all">{row.provider}/{row.model}</span><span>{row.inputTokens} in · {row.outputTokens} out · {costLabel(row.costUsd)}</span></div>)}</div>;
+}
 
 // O(n) in the returned usage rows
 export function UsagePage(): JSX.Element {
@@ -16,9 +30,9 @@ export function UsagePage(): JSX.Element {
   useEffect(() => { void api("/api/usage", UsageResponse).then(setUsage).catch((e) => setError(describeError(e))); }, []);
   if (error) return <Panel className="text-danger">{error}</Panel>;
   if (!usage) return <Panel>Loading usage…</Panel>;
-  return <div className="mx-auto grid max-w-4xl gap-5"><header><h1 className="text-2xl font-semibold">Usage</h1><p className="mt-1 text-sm text-muted">This month's usage resets {resetDate(usage.period)}.</p></header>
-    <UsageMeter usedMicros={usage.usedMicros} reservedMicros={usage.reservedMicros} />
-    <Panel><h2 className="mb-3 text-lg font-semibold">Cost by model</h2>{usage.byModel.length ? <div className="grid gap-2">{usage.byModel.map((item) => <div key={item.model} className="flex justify-between gap-4 text-sm"><span className="break-all">{item.model}</span><span>{formatDollars(item.costMicros)}</span></div>)}</div> : <p className="text-sm text-muted">No calls this month.</p>}</Panel>
-    <Panel><h2 className="mb-3 text-lg font-semibold">Recent calls</h2><div className="overflow-x-auto"><table className="w-full min-w-[36rem] text-left text-sm"><thead className="text-muted"><tr><th className="pb-2">Kind</th><th>Model</th><th>Cost</th><th>Time</th></tr></thead><tbody>{usage.recent.slice(0, 20).map((call, index) => <tr key={`${call.createdAt}-${index}`} className="border-t border-border"><td className="py-2">{call.kind}</td><td className="max-w-64 truncate">{call.model}</td><td>{formatCallCost(call.costMicros)}</td><td>{new Date(call.createdAt).toLocaleString()}</td></tr>)}</tbody></table>{!usage.recent.length && <p className="text-sm text-muted">No recent calls.</p>}</div></Panel>
+  return <div className="mx-auto grid max-w-4xl gap-5"><header><h1 className="text-2xl font-semibold">Usage</h1><p className="mt-1 text-sm text-muted">This month's usage resets {resetDate(usage.month)}.</p></header>
+    <UsageMeter spent={spentUsd(usage.current)} />
+    <Panel><h2 className="mb-3 text-lg font-semibold">This month</h2><ModelRows rows={usage.current} /></Panel>
+    <Panel><h2 className="mb-3 text-lg font-semibold">Recent months</h2>{usage.recent.length ? usage.recent.map((month) => <div key={month.period} className="mb-4"><p className="mb-2 text-sm text-muted">{month.period}</p><ModelRows rows={month.models} /></div>) : <p className="text-sm text-muted">No earlier months.</p>}</Panel>
   </div>;
 }

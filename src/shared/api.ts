@@ -1,27 +1,17 @@
 import { z } from "zod";
 import { CODE_MAX_TESTS, CodeAttempt, CodeSpec, CodeTest, CodeTestResult } from "./code.ts";
+import { ModelRef } from "./providers.ts";
 
-export type ErrorCode = "bad_request"|"forbidden_origin"|"not_found"|"rate_limited"|"model_not_allowed"|"unsupported_media"|"too_large"|"upstream"|"llm_bad_output"|"source_blocked"|"source_unreadable"|"internal";
+export { UsageResponse } from "./providers.ts";
+export type { UsageModel } from "./providers.ts";
+
+export type ErrorCode = "bad_request"|"forbidden_origin"|"not_found"|"rate_limited"|"model_not_allowed"|"unsupported_media"|"too_large"|"upstream"|"llm_bad_output"|"source_blocked"|"source_unreadable"|"not_connected"|"auth_expired"|"quota_exhausted"|"model_unavailable"|"bad_output"|"timeout"|"provider_error"|"internal";
 
 export const ConfigResponse = z.strictObject({});
 export type ConfigResponse = z.infer<typeof ConfigResponse>;
 
-export const ModelsResponse = z.array(z.strictObject({ id: z.string(), label: z.string() }));
+export const ModelsResponse = z.array(ModelRef);
 export type ModelsResponse = z.infer<typeof ModelsResponse>;
-
-const Micros = z.number().int().nonnegative();
-
-export const LlmCallResponse = z.strictObject({ kind: z.string(), model: z.string(), promptTokens: z.number().int().nullable(), completionTokens: z.number().int().nullable(), costMicros: Micros, createdAt: z.iso.datetime() });
-export type LlmCallResponse = z.infer<typeof LlmCallResponse>;
-
-export const UsageResponse = z.strictObject({
-  period: z.iso.date(),
-  usedMicros: Micros,
-  reservedMicros: Micros,
-  byModel: z.array(z.strictObject({ model: z.string(), costMicros: Micros })),
-  recent: z.array(LlmCallResponse),
-});
-export type UsageResponse = z.infer<typeof UsageResponse>;
 
 export const Citation = z.strictObject({ n: z.int().min(1), paperId: z.string(), doi: z.string().nullable(), title: z.string(), year: z.int().nullable() });
 export type Citation = z.infer<typeof Citation>;

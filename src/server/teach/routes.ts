@@ -165,7 +165,7 @@ const chat = route({ body: ChatRequest, rate: { key: "chat", cap: 20, perMin: 20
   const model = pickLessonModel(lesson.model, settings);
   const [papers, convId, recent] = await Promise.all([listPapers(lesson.paper_ids), ensureConversation(uid, lesson.id), listMessages(uid, lesson.id, null, 12)]);
   const system = buildTutorSystem(settings, plan, papers);
-  const stream = chatStream({
+  const stream = await chatStream({
     who: { uid },
     model,
     kind: "chat",

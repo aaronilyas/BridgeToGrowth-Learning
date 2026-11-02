@@ -25,7 +25,6 @@ beforeAll(async () => {
       return { data: stepMock, costMicros: 0n };
     },
     chatStream: never,
-    startPricingRefresh: () => {},
   }));
   upsertTopics = (await import("../topics/sql.ts")).upsertTopics;
   topicsReleasedByLesson = (await import("../topics/core.ts")).topicsReleasedByLesson;

@@ -3,8 +3,7 @@ import { Citation, type AttemptAnswer, type QuestionCategory, type QuestionPubli
 import { CodeSpec, type CodeTestResult } from "../../shared/code.ts";
 import { StoredCodeAnswer } from "../../shared/codeGrade.ts";
 import { Settings } from "../../shared/settings.ts";
-import { HttpError } from "../http.ts";
-import { listModels } from "../llm/core.ts";
+
 
 export type Card = { ef: number; intervalD: number; reps: number; lapses: number; dueAt: Date };
 export type Quality = 0 | 1 | 2 | 3 | 4 | 5;
@@ -92,17 +91,10 @@ export function loadSettings(user: { settings: Record<string, unknown> }): Setti
 }
 
 // O(1)
-// SEC: a client-supplied id must be one of the selectable models
+// INV: the id is stored on the lesson row; provider calls use settings.models for the task
 export function resolveModel(settings: Settings, requested?: string): string {
-  const allowed = listModels();
-  const first = allowed[0];
-  if (!first) throw new HttpError(400, "model_not_allowed");
-  if (requested) {
-    if (!allowed.some((m) => m.id === requested)) throw new HttpError(400, "model_not_allowed");
-    return requested;
-  }
-  const own = settings.model;
-  return own !== null && allowed.some((m) => m.id === own) ? own : first.id;
+  if (requested !== undefined && requested.length > 0) return requested;
+  return settings.models.lesson?.id ?? settings.model ?? "local";
 }
 
 // O(1)

@@ -4,7 +4,7 @@ import { MATH_DELIM_RULE, wrapBareMath } from "../../shared/math.ts";
 import { SETTINGS_LIMITS, type Settings } from "../../shared/settings.ts";
 import { HttpError } from "../http.ts";
 import { toQuestionPublic, resolveModel, type QuestionRow } from "../learn/core.ts";
-import { listModels, wrapUserData, type Turn } from "../llm/core.ts";
+import { wrapUserData, type Turn } from "../llm/core.ts";
 import { ATTACHMENT_RULES, MAX_NOTE_CHARS } from "../sources/core.ts";
 import { slugOf } from "../topics/core.ts";
 import { GROUNDING_RULES, buildSourcesBlock, filterCitations, toCitations, type Paper } from "../lit/core.ts";
@@ -200,8 +200,9 @@ export function toStepPublic(idx: number, c: StepContent, q: QuestionRow): StepP
 }
 
 // O(1)
+// INV: later steps and chat read settings.models; this string is only the lesson's recorded id
 export function pickLessonModel(stored: string, settings: Settings): string {
-  return listModels().some((m) => m.id === stored) ? stored : resolveModel(settings);
+  return stored.length > 0 ? stored : resolveModel(settings);
 }
 
 // O(k)

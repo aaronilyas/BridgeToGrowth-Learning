@@ -84,7 +84,7 @@ export function AskBar(): JSX.Element {
         />
         <select className="rounded-xl border border-border bg-panel-2 px-3 py-3 text-sm outline-none focus:border-accent" aria-label="Model" value={chosen} disabled={busy !== null} onChange={(e) => setModel(e.currentTarget.value)}>
           {models.map((m) => (
-            <option key={m.id} value={m.id}>
+            <option key={`${m.provider}:${m.id}`} value={m.id}>
               {m.label}
             </option>
           ))}

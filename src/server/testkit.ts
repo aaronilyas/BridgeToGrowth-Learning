@@ -3,6 +3,7 @@ import type { env as Env } from "./env.ts";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { deleteAppRows } from "./data/sql.ts";
 import { LOCAL_EMAIL, LOCAL_USER_ID } from "./profile.ts";
 
 export const TEST_ORIGIN = "https://app.test";
@@ -16,33 +17,14 @@ export type Handler = (req: Request) => Promise<Response>;
 // INV: every variable env.ts requires; test-only values
 export const TEST_ENV: Record<string, string> = {
   NODE_ENV: "test",
-  OPENROUTER_API_KEY: "k",
   OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1",
-  OPENROUTER_MODEL: "openrouter/free",
 };
 
 // O(tables)
 // INV: app rows go away and the seeded local profile comes back; the migration ledger stays
 async function clearAppRows(db: typeof Sql): Promise<void> {
   await db.begin(async (tx) => {
-    await tx`DELETE FROM messages`;
-    await tx`DELETE FROM lesson_steps`;
-    await tx`DELETE FROM conversations`;
-    await tx`DELETE FROM attempts`;
-    await tx`DELETE FROM cards`;
-    await tx`DELETE FROM questions`;
-    await tx`DELETE FROM lessons`;
-    await tx`DELETE FROM topic_edges`;
-    await tx`DELETE FROM topics`;
-    await tx`DELETE FROM styles`;
-    await tx`DELETE FROM daily_activity`;
-    await tx`DELETE FROM insights`;
-    await tx`DELETE FROM llm_calls`;
-    await tx`DELETE FROM usage_periods`;
-    await tx`DELETE FROM papers`;
-    await tx`DELETE FROM retrieval_cache`;
-    await tx`DELETE FROM users`;
-    await tx`INSERT INTO users (id, email, settings, created_at) VALUES (${LOCAL_USER_ID}, ${LOCAL_EMAIL}, '{}', 0)`;
+    await deleteAppRows(tx);
   });
 }
 

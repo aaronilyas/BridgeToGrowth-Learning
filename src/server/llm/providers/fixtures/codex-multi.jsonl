@@ -1,0 +1,3 @@
+{"type":"item.completed","item":{"id":"item_a","type":"agent_message","text":"one"}}
+{"type":"item.completed","item":{"id":"item_b","type":"agent_message","text":"two"}}
+{"type":"turn.completed","usage":{"input_tokens":3,"output_tokens":4}}
