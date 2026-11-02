@@ -1,168 +1,172 @@
 import { z } from "zod";
-import type { Citation, ErrorCode, Plan } from "../../shared/api.ts";
-import { parseSseChunk } from "../../shared/sse.ts";
-import { env } from "../env.ts";
+import type { Citation, ErrorCode } from "../../shared/api.ts";
+import type { Settings } from "../../shared/settings.ts";
 import { HttpError } from "../http.ts";
-import { takeToken } from "../rate.ts";
-import { assertModelAllowed, buildMessages, completionBudget, countPromptChars, estimateMicros, parseJsonOutput, parsePricing, periodOf, readCompletion, readDelta, reasoningPayload, toSchemaName, type ChatMessage, type FilePart, type Turn, type Usage } from "./core.ts";
-import { FREE_PRICE, MODELS, SYSTEM_MODELS, isModelListed, priceOf, setPricing, type SystemModelKey } from "./models.ts";
-import { findUsage, reserveQuota, settleQuota } from "./sql.ts";
+import { loadSettings } from "../learn/core.ts";
+import { localProfile } from "../profile.ts";
+import { buildMessages, completionBudget, parseJsonOutput, type ContentPart, type FilePart, type Turn } from "./core.ts";
+import { providerAdapter, resolveModelRef } from "./providers/registry.ts";
+import type { ChatMessage as ProviderMessage, ImagePart, LlmErrorCode, LlmRequest, ReasoningLevel } from "./providers/types.ts";
+import { insertLlmUsage, openRouterMonthMicros } from "./sql.ts";
 import { JSON_TIMEOUT_MS, STREAM_TIMEOUT_MS } from "./timeouts.ts";
 
-export type Who = { uid: string; plan: Plan; capMicros: bigint };
+export type Who = { uid: string };
+export type SystemModelKey = "grade" | "extract" | "insight";
 export type ModelChoice = string | { system: SystemModelKey };
+export type ModelTask = "lesson" | "chat" | "practice" | "system";
 export type JsonCall<T> = { who: Who; model: ModelChoice; kind: string; system: string; user: string; schema: z.ZodType<T>; maxTokens: number; files?: FilePart[]; signal?: AbortSignal };
 export type StreamCall = { who: Who; model: ModelChoice; kind: string; system: string; messages: Turn[]; maxTokens: number; signal: AbortSignal; onDone: (text: string) => Promise<{ citations?: Citation[] } | void> };
 
-type Prepared = { uid: string; model: string; kind: string; period: string; est: bigint; cap: bigint; maxTokens: number; reasons: boolean; messages: ChatMessage[] };
-
-const DAY_MS = 86_400_000;
-const RETRY_MS = 60_000;
+const REASONING: ReasoningLevel = "high";
 const enc = new TextEncoder();
+const HTTP: Record<LlmErrorCode, { status: number; code: ErrorCode }> = {
+  not_connected: { status: 409, code: "not_connected" },
+  auth_expired: { status: 401, code: "auth_expired" },
+  rate_limited: { status: 429, code: "rate_limited" },
+  quota_exhausted: { status: 402, code: "quota_exhausted" },
+  model_unavailable: { status: 404, code: "model_unavailable" },
+  bad_output: { status: 502, code: "bad_output" },
+  timeout: { status: 504, code: "timeout" },
+  provider_error: { status: 502, code: "provider_error" },
+};
+
+type CoreMessage = { role: "system" | "user" | "assistant"; content: string | ContentPart[] };
+type UsageSeen = { inputTokens: number; outputTokens: number; costUsd: number | null };
 
 // O(1)
-function isFreeModelId(id: string): boolean {
-  return id === "openrouter/free" || id.endsWith(":free");
-}
-
-// O(n) in the /models payload
-// INV: failure keeps the previous pricing; a missing OPENROUTER_MODEL is priced at $0 only when its id is openrouter/free or ends with :free
-export async function refreshPricing(fetchFn: typeof fetch = fetch): Promise<boolean> {
-  try {
-    const res = await fetchFn(`${env.OPENROUTER_BASE_URL}/models`, { signal: AbortSignal.timeout(15_000) });
-    if (!res.ok) throw new Error(`status ${res.status}`);
-    const wanted = new Set([...MODELS.map((m) => m.id), ...Object.values(SYSTEM_MODELS)]);
-    const map = parsePricing(await res.json(), wanted);
-    if (!map.has(env.OPENROUTER_MODEL)) {
-      if (isFreeModelId(env.OPENROUTER_MODEL)) map.set(env.OPENROUTER_MODEL, FREE_PRICE);
-      else console.error("llm: system model unlisted");
-    }
-    if (map.size === 0) throw new Error("no allowlisted models listed");
-    const dropped = [...wanted].filter((id) => !map.has(id));
-    if (dropped.length > 0) console.error(`llm: dropping unlisted models: ${dropped.join(", ")}`);
-    setPricing(map);
-    return true;
-  } catch {
-    console.error("llm: /models refresh failed");
-    return false;
-  }
+// INV: no reasoning setting exists, so every call uses the constant high effort
+function taskForKind(kind: string, model: ModelChoice): ModelTask {
+  if (typeof model !== "string") return "system";
+  if (kind === "chat") return "chat";
+  if (kind === "gen") return "practice";
+  return "lesson";
 }
 
 // O(1)
-// INV: pricing stays unloaded (model calls answer 502 upstream) until the first successful refresh, so a dollar cap is never checked against a $0 guess; retries every minute until then, daily after
-export function startPricingRefresh(): void {
-  const tick = (): void => {
-    void refreshPricing().then((ok) => setTimeout(tick, ok ? DAY_MS : RETRY_MS).unref());
-  };
-  tick();
+function mapLlmError(code: LlmErrorCode): HttpError {
+  const mapped = HTTP[code];
+  return new HttpError(mapped.status, mapped.code);
 }
 
-// O(log n)
-// SEC: short-circuits callers before unmetered pre-work when the user has no quota left
-export async function assertQuotaHeadroom(who: Who): Promise<void> {
-  const u = await findUsage(who.uid, periodOf(new Date()));
-  if (u.usedMicros + u.reservedMicros >= who.capMicros) throw new HttpError(429, "quota_exceeded");
-}
-
-// O(1)
-// SEC: a string model is client-chosen and must be in MODELS; system models are server-chosen
-function chooseModel(choice: ModelChoice): string {
-  if (typeof choice !== "string") return SYSTEM_MODELS[choice.system];
-  assertModelAllowed(choice);
-  if (!isModelListed(choice)) throw new HttpError(400, "model_not_allowed");
-  return choice;
-}
-
-// O(n) in message size
-// SEC: both per-token prices at 0 skip the dollar cap, so each user is limited to 200 of those calls per day
-export function prepareCall(who: Who, choice: ModelChoice, kind: string, messages: ChatMessage[], maxTokens: number): Prepared {
-  const model = chooseModel(choice);
-  const { loaded, price } = priceOf(model);
-  if (!price) throw loaded ? new HttpError(400, "model_not_allowed") : new HttpError(502, "upstream");
-  if (price.promptPerTok === 0 && price.completionPerTok === 0 && !takeToken(`free-llm:${who.uid}`, 200, 200 / 1440)) throw new HttpError(429, "rate_limited");
-  const reasons = MODELS.some((m) => m.id === model);
-  const budget = completionBudget(maxTokens, reasons ? env.OPENROUTER_REASONING_LEVEL : null);
-  const est = estimateMicros(price, countPromptChars(messages), budget);
-  if (est > who.capMicros) throw new HttpError(429, "quota_exceeded");
-  return { uid: who.uid, model, kind, period: periodOf(new Date()), est, cap: who.capMicros, maxTokens: budget, reasons, messages };
-}
-
-// O(1)
-async function reserveOrThrow(p: Prepared): Promise<void> {
-  if (!(await reserveQuota(p.uid, p.period, p.est, p.cap))) throw new HttpError(429, "quota_exceeded");
-}
-
-// O(1)
-// SEC: fixed headers; no tools, no function calling; the API key never leaves this function
-function postCompletion(p: Prepared, extra: Record<string, unknown>, signal: AbortSignal): Promise<Response> {
-  return fetch(`${env.OPENROUTER_BASE_URL}/chat/completions`, {
-    method: "POST",
-    signal,
-    headers: { authorization: `Bearer ${env.OPENROUTER_API_KEY}`, "content-type": "application/json", "HTTP-Referer": env.APP_ORIGIN, "X-Title": "BridgeToGrowth Learning" },
-    body: JSON.stringify({ model: p.model, messages: p.messages, max_tokens: p.maxTokens, usage: { include: true }, ...extra, ...(p.reasons ? reasoningPayload(env.OPENROUTER_REASONING_LEVEL) : {}) }),
+// O(n) in attached files
+function imagesOf(files: readonly FilePart[]): ImagePart[] {
+  return files.map((part) => {
+    const url = part.type === "image_url" ? part.image_url.url : part.file.file_data;
+    const end = url.indexOf(";");
+    const mime = url.startsWith("data:") && end > 5 ? url.slice(5, end) : "application/octet-stream";
+    return { mime, dataUrl: url };
   });
 }
 
-// O(1)
-// SEC: logs only the model id and HTTP status, never the body or headers, so an expired key or provider outage is diagnosable without leaking secrets
-function logUpstreamFailure(model: string, res: Response | null): void {
-  console.error(`llm: ${model} failed with ${res ? `HTTP ${res.status}` : "network error or timeout"}`);
-}
-
-// O(1)
-function finalUsage(p: Prepared, u: Usage | null, conservative: boolean): Usage & { costMicros: bigint } {
-  const cost = conservative || !u || u.costMicros === null ? p.est : u.costMicros;
-  return { costMicros: cost, promptTokens: u?.promptTokens ?? null, completionTokens: u?.completionTokens ?? null };
-}
-
-// O(n) in response size
-// SEC: upstream bodies are never forwarded; any failure is 502 upstream
-async function runJsonAttempt(p: Prepared, format: Record<string, unknown>, signal: AbortSignal | undefined): Promise<{ content: string | null; costMicros: bigint }> {
-  await reserveOrThrow(p);
-  let usage: Usage | null = null;
-  try {
-    const timeout = AbortSignal.timeout(JSON_TIMEOUT_MS);
-    const res = await postCompletion(p, format, signal ? AbortSignal.any([signal, timeout]) : timeout).catch(() => null);
-    if (!res || !res.ok) {
-      logUpstreamFailure(p.model, res);
-      await res?.body?.cancel();
-      throw new HttpError(502, "upstream");
+// O(n) in the transcript
+// SEC: buildMessages already wraps user turns as data and appends the data-not-instructions notice
+function providerMessages(built: CoreMessage[]): { system: string; messages: ProviderMessage[] } {
+  let system = "";
+  const messages: ProviderMessage[] = [];
+  for (const message of built) {
+    if (message.role === "system") {
+      system = typeof message.content === "string" ? message.content : "";
+      continue;
     }
-    const out = readCompletion(await res.json().catch(() => null));
-    usage = out.usage;
-    return { content: out.content, costMicros: finalUsage(p, usage, false).costMicros };
-  } finally {
-    await settleQuota(p.uid, p.period, p.kind, p.model, p.est, finalUsage(p, usage, false));
+    if (typeof message.content === "string") {
+      messages.push({ role: message.role, text: message.content });
+      continue;
+    }
+    const texts: string[] = [];
+    const files: FilePart[] = [];
+    for (const part of message.content) {
+      if (part.type === "text") texts.push(part.text);
+      else files.push(part);
+    }
+    const images = imagesOf(files);
+    if (images.length > 0) messages.push({ role: message.role, text: texts.join("\n"), images });
+    else messages.push({ role: message.role, text: texts.join("\n") });
   }
+  return { system, messages };
 }
 
-// O(n) in prompt and response size
-// INV: each attempt reserves and settles on its own; one retry on unparseable output, then 502 llm_bad_output
+// O(1)
+// SEC: the optional budget applies only to OpenRouter, using this month's settled cost
+async function assertOpenRouterBudget(settings: Settings, provider: string): Promise<void> {
+  if (provider !== "openrouter" || settings.budgetUsd === null) return;
+  const now = new Date();
+  const spent = await openRouterMonthMicros(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1), Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  if (spent >= BigInt(Math.floor(settings.budgetUsd * 1_000_000))) throw new HttpError(402, "quota_exhausted");
+}
+
+// O(n) in the prompt
+async function prepare(task: ModelTask, system: string, turns: Turn[], files: FilePart[], maxTokens: number, schema: Record<string, unknown> | null, signal: AbortSignal): Promise<{ req: LlmRequest; provider: string; modelId: string }> {
+  const settings = loadSettings(await localProfile());
+  const choice = settings.models[task];
+  if (choice === null) throw new HttpError(409, "not_connected");
+  const model = await resolveModelRef(choice);
+  await assertOpenRouterBudget(settings, model.provider);
+  const built = providerMessages(buildMessages(system, turns, files));
+  const native = schema !== null && model.structured === "native";
+  const req: LlmRequest = {
+    model,
+    system: native || schema === null ? built.system : `${built.system}\n\nRespond with JSON only, matching this JSON Schema:\n${JSON.stringify(schema)}`,
+    messages: built.messages,
+    reasoning: REASONING,
+    maxOutputTokens: completionBudget(maxTokens, model.reasoning.length > 0 ? REASONING : null),
+    signal,
+    ...(native && schema !== null ? { jsonSchema: schema } : {}),
+  };
+  return { req, provider: model.provider, modelId: model.id };
+}
+
+// O(n) in the event stream
+// SEC: provider failures become error codes; response bodies are not forwarded
+async function collect(req: LlmRequest): Promise<{ text: string; usage: UsageSeen | null; error: LlmErrorCode | null }> {
+  let text = "";
+  let usage: UsageSeen | null = null;
+  try {
+    for await (const event of providerAdapter(req.model.provider).stream(req)) {
+      if (event.type === "text") text += event.delta;
+      else if (event.type === "usage") usage = { inputTokens: event.inputTokens, outputTokens: event.outputTokens, costUsd: event.costUsd };
+      else if (event.type === "error") return { text, usage, error: event.code };
+    }
+  } catch {
+    return { text, usage, error: "provider_error" };
+  }
+  return { text, usage, error: null };
+}
+
+// O(1)
+async function record(kind: string, provider: string, model: string, usage: UsageSeen | null): Promise<bigint> {
+  if (usage === null) return 0n;
+  const costMicros = usage.costUsd === null || !Number.isFinite(usage.costUsd) || usage.costUsd < 0 ? null : BigInt(Math.ceil(usage.costUsd * 1_000_000));
+  await insertLlmUsage({ provider, model, kind, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, costMicros });
+  return costMicros ?? 0n;
+}
+
+// O(n) in the prompt and response
+// INV: one retry after bad JSON, then bad_output; other provider errors are not retried
 export async function chatJson<T>(o: JsonCall<T>): Promise<{ data: T; costMicros: bigint }> {
-  const messages = buildMessages(o.system, [{ role: "user", content: o.user }], o.files);
-  const p = prepareCall(o.who, o.model, o.kind, messages, o.maxTokens);
-  const format = { response_format: { type: "json_schema", json_schema: { name: toSchemaName(o.kind), strict: true, schema: z.toJSONSchema(o.schema) } } };
+  const schema = z.toJSONSchema(o.schema) as unknown as Record<string, unknown>;
+  const timeout = AbortSignal.timeout(JSON_TIMEOUT_MS);
+  const prepared = await prepare(taskForKind(o.kind, o.model), o.system, [{ role: "user", content: o.user }], o.files ?? [], o.maxTokens, schema, o.signal ? AbortSignal.any([o.signal, timeout]) : timeout);
   let total = 0n;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const r = await runJsonAttempt(p, format, o.signal);
-    total += r.costMicros;
-    const data = parseJsonOutput(r.content, o.schema);
+    const result = await collect(prepared.req);
+    total += await record(o.kind, prepared.provider, prepared.modelId, result.usage);
+    if (result.error !== null && result.error !== "bad_output") throw mapLlmError(result.error);
+    const data = result.error === null ? parseJsonOutput(result.text, o.schema) : null;
     if (data !== null) return { data, costMicros: total };
   }
-  throw new HttpError(502, "llm_bad_output");
+  throw mapLlmError("bad_output");
 }
 
 // O(1)
-function frameEvent(e: { t: "d"; v: string } | { t: "end"; citations?: Citation[] } | { t: "err"; code: ErrorCode }): Uint8Array {
-  return enc.encode(`data:${JSON.stringify(e)}\n\n`);
+function frameEvent(event: { t: "d"; v: string } | { t: "end"; citations?: Citation[] } | { t: "err"; code: ErrorCode }): Uint8Array {
+  return enc.encode(`data:${JSON.stringify(event)}\n\n`);
 }
 
-// O(n) in streamed size
-// INV: model/plan/pricing/cap errors throw synchronously so the route answers with a status; later errors arrive as an err event
-// INV: a client abort aborts upstream and settles at est
-export function chatStream(o: StreamCall): ReadableStream<Uint8Array> {
-  const p = prepareCall(o.who, o.model, o.kind, buildMessages(o.system, o.messages), o.maxTokens);
+// O(n) in the streamed text
+// INV: a missing or disconnected model throws before the stream starts, so the route can answer with a status
+export async function chatStream(o: StreamCall): Promise<ReadableStream<Uint8Array>> {
   const upstream = new AbortController();
+  const prepared = await prepare(taskForKind(o.kind, o.model), o.system, o.messages, [], o.maxTokens, null, AbortSignal.any([upstream.signal, o.signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)]));
   let closed = false;
   const send = (ctrl: ReadableStreamDefaultController<Uint8Array>, chunk: Uint8Array): void => {
     if (closed) return;
@@ -173,44 +177,26 @@ export function chatStream(o: StreamCall): ReadableStream<Uint8Array> {
     }
   };
   const run = async (ctrl: ReadableStreamDefaultController<Uint8Array>): Promise<void> => {
-    let usage: Usage | null = null;
-    let reserved = false;
+    let usage: UsageSeen | null = null;
+    let text = "";
     try {
-      await reserveOrThrow(p);
-      reserved = true;
-      const res = await postCompletion(p, { stream: true }, AbortSignal.any([upstream.signal, o.signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)])).catch(() => null);
-      if (!res || !res.ok || !res.body) {
-        logUpstreamFailure(p.model, res);
-        await res?.body?.cancel();
-        throw new HttpError(502, "upstream");
-      }
-      const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
-      let buf = "";
-      let text = "";
-      for (;;) {
-        const chunk = await reader.read().catch(() => null);
-        if (!chunk) throw new HttpError(502, "upstream");
-        if (chunk.done) break;
-        const parsed = parseSseChunk(buf + chunk.value);
-        buf = parsed.rest;
-        for (const ev of parsed.events) {
-          const d = readDelta(ev);
-          if (d.failed) throw new HttpError(502, "upstream");
-          if (d.usage) usage = d.usage;
-          if (d.text) {
-            text += d.text;
-            send(ctrl, frameEvent({ t: "d", v: d.text }));
-          }
-        }
+      for await (const event of providerAdapter(prepared.req.model.provider).stream(prepared.req)) {
+        if (event.type === "text") {
+          text += event.delta;
+          send(ctrl, frameEvent({ t: "d", v: event.delta }));
+        } else if (event.type === "usage") usage = { inputTokens: event.inputTokens, outputTokens: event.outputTokens, costUsd: event.costUsd };
+        else if (event.type === "error") throw mapLlmError(event.code);
       }
       const extra = await o.onDone(text);
       send(ctrl, frameEvent(extra?.citations ? { t: "end", citations: extra.citations } : { t: "end" }));
-    } catch (e) {
-      const code: ErrorCode = e instanceof HttpError ? e.code : "internal";
-      if (!(e instanceof HttpError)) console.error("llm: stream failed");
-      send(ctrl, frameEvent({ t: "err", code }));
+    } catch (error) {
+      if (!o.signal.aborted) {
+        const code: ErrorCode = error instanceof HttpError ? error.code : "internal";
+        if (!(error instanceof HttpError)) console.error("llm: stream failed");
+        send(ctrl, frameEvent({ t: "err", code }));
+      }
     } finally {
-      if (reserved) await settleQuota(p.uid, p.period, p.kind, p.model, p.est, finalUsage(p, usage, o.signal.aborted || upstream.signal.aborted)).catch(() => console.error("llm: quota settlement failed"));
+      await record(o.kind, prepared.provider, prepared.modelId, usage).catch(() => console.error("llm: usage record failed"));
       if (!closed) {
         closed = true;
         try {

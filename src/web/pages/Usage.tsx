@@ -1,30 +1,119 @@
 import { useEffect, useState, type JSX } from "react";
-import { Link } from "wouter";
-import { UsageResponse } from "../../shared/api.ts";
+import { UsageResponse, type UsageModel } from "../../shared/api.ts";
+import type { ProviderId } from "../../shared/providers.ts";
 import { api, describeError } from "../api.ts";
-import { Button } from "../components/Button.tsx";
+import { StatTile } from "../charts/StatTile.tsx";
 import { Panel } from "../components/Panel.tsx";
-import { UsageMeter } from "../components/UsageMeter.tsx";
-import { formatMicros } from "../money.ts";
-import { usePlanTerms } from "../session.tsx";
+import { summarizeReportedCost, sumOpenRouterUsd, UsageMeter } from "../components/UsageMeter.tsx";
+import { titleOfProvider } from "../providerCopy.ts";
+import { useSettings } from "../session.tsx";
 
-const money = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" });
-function formatDollars(micros: number): string { return money.format(micros / 1e6); }
-function resetDate(period: string): string { const d = new Date(`${period}T00:00:00.000Z`); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toLocaleDateString(undefined, { timeZone: "UTC" }); }
-function formatCallCost(micros: number): string { return `$${(micros / 1e6).toFixed(4)}`; }
+const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+const tokens = new Intl.NumberFormat("en-US");
+const PROVIDER_ORDER: readonly ProviderId[] = ["openrouter", "codex", "spacexai"];
+
+// O(1)
+function monthPeriodLabel(period: string): string {
+  const [year, mon] = period.split("-");
+  const y = Number(year);
+  const m = Number(mon);
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return period;
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
+// O(1)
+function usageUntilLabel(period: string): string {
+  const [year, mon] = period.split("-");
+  const y = Number(year);
+  const m = Number(mon);
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return period;
+  return new Date(Date.UTC(y, m, 1)).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+// O(1)
+function listPeriods(usage: UsageResponse): string[] {
+  return [...new Set([usage.month, ...usage.recent.map((month) => month.period)])].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+}
+
+// O(n)
+function rowsOfPeriod(usage: UsageResponse, period: string): UsageModel[] {
+  if (period === usage.month) return usage.current;
+  return usage.recent.find((month) => month.period === period)?.models ?? [];
+}
+
+// O(n)
+function sumTokenField(rows: readonly UsageModel[], key: "inputTokens" | "outputTokens"): number {
+  return rows.reduce((sum, row) => sum + row[key], 0);
+}
+
+// O(n)
+function UsageRows({ rows }: { rows: readonly UsageModel[] }): JSX.Element {
+  if (rows.length === 0) return <p className="text-sm text-muted">No calls.</p>;
+  const max = Math.max(1, ...rows.map((row) => row.inputTokens + row.outputTokens));
+  return (
+    <div className="grid gap-3">
+      {rows.map((row) => {
+        const width = Math.round(((row.inputTokens + row.outputTokens) / max) * 100);
+        return (
+          <div key={`${row.provider}:${row.model}`} className="grid gap-1 text-sm">
+            <div className="flex justify-between gap-4">
+              <span className="break-all">{titleOfProvider(row.provider)} · {row.model}</span>
+              <span className="shrink-0 text-muted">{tokens.format(row.inputTokens)} in · {tokens.format(row.outputTokens)} out{row.costUsd === null ? "" : ` · ${money.format(row.costUsd)}`}</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-border" aria-hidden="true">
+              <div className="h-full rounded-full bg-accent" style={{ width: `${width}%` }} />
+            </div>
+            {row.costUsd === null && <p className="text-xs text-muted">Cost not reported</p>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // O(n) in the returned usage rows
 export function UsagePage(): JSX.Element {
-  const terms = usePlanTerms();
+  const { settings } = useSettings();
   const [usage, setUsage] = useState<UsageResponse | null>(null);
+  const [period, setPeriod] = useState<string | null>(null);
   const [error, setError] = useState("");
-  useEffect(() => { void api("/api/usage", UsageResponse).then(setUsage).catch((e) => setError(describeError(e))); }, []);
+  useEffect(() => {
+    void api("/api/usage", UsageResponse).then(setUsage).catch((cause) => setError(describeError(cause)));
+  }, []);
   if (error) return <Panel className="text-danger">{error}</Panel>;
   if (!usage) return <Panel>Loading usage…</Panel>;
-  return <div className="mx-auto grid max-w-4xl gap-5"><header><h1 className="text-2xl font-semibold">Usage</h1><p className="mt-1 text-sm text-muted">Your {usage.plan === "pro" ? "Pro" : "Free"} plan usage resets {resetDate(usage.period)}.</p></header>
-    <UsageMeter usedMicros={usage.usedMicros} reservedMicros={usage.reservedMicros} capMicros={usage.capMicros} plan={usage.plan} />
-    {usage.plan === "free" && <Panel className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="font-semibold">Need more room?</h2><p className="text-sm text-muted">{terms ? `Pro raises your monthly AI allowance to ${formatMicros(terms.pro.capMicros)}.` : "Pro raises your monthly AI allowance."}</p></div><Link href="/billing"><Button>Upgrade to Pro</Button></Link></Panel>}
-    <Panel><h2 className="mb-3 text-lg font-semibold">Cost by model</h2>{usage.byModel.length ? <div className="grid gap-2">{usage.byModel.map((item) => <div key={item.model} className="flex justify-between gap-4 text-sm"><span className="break-all">{item.model}</span><span>{formatDollars(item.costMicros)}</span></div>)}</div> : <p className="text-sm text-muted">No calls this month.</p>}</Panel>
-    <Panel><h2 className="mb-3 text-lg font-semibold">Recent calls</h2><div className="overflow-x-auto"><table className="w-full min-w-[36rem] text-left text-sm"><thead className="text-muted"><tr><th className="pb-2">Kind</th><th>Model</th><th>Cost</th><th>Time</th></tr></thead><tbody>{usage.recent.slice(0, 20).map((call, index) => <tr key={`${call.createdAt}-${index}`} className="border-t border-border"><td className="py-2">{call.kind}</td><td className="max-w-64 truncate">{call.model}</td><td>{formatCallCost(call.costMicros)}</td><td>{new Date(call.createdAt).toLocaleString()}</td></tr>)}</tbody></table>{!usage.recent.length && <p className="text-sm text-muted">No recent calls.</p>}</div></Panel>
-  </div>;
+  const selected = period ?? usage.month;
+  const rows = rowsOfPeriod(usage, selected);
+  const periods = listPeriods(usage);
+  const reported = summarizeReportedCost(rows);
+  const openRouterSpent = sumOpenRouterUsd(rows);
+  const showMeter = selected === usage.month && (settings.budgetUsd !== null || (openRouterSpent !== null && openRouterSpent > 0));
+  const groups = PROVIDER_ORDER.map((provider) => ({ provider, rows: rows.filter((row) => row.provider === provider) })).filter((group) => group.rows.length > 0);
+  return (
+    <div className="mx-auto grid max-w-4xl gap-5">
+      <header>
+        <h1 className="text-2xl font-semibold">Usage</h1>
+        <p className="mt-1 text-sm text-muted">Tokens for {monthPeriodLabel(selected)}. {selected === usage.month ? `This month runs until ${usageUntilLabel(usage.month)}.` : ""} USD is shown only when a provider reports it.</p>
+      </header>
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Month">
+        {periods.map((item) => (
+          <button key={item} type="button" aria-pressed={item === selected} className={`rounded-full border px-3 py-1.5 text-sm ${item === selected ? "border-accent/40 bg-accent-soft text-accent" : "border-border text-muted hover:text-text"}`} onClick={() => setPeriod(item)}>
+            {monthPeriodLabel(item)}
+          </button>
+        ))}
+      </div>
+      {showMeter && <UsageMeter spent={openRouterSpent} budget={selected === usage.month ? settings.budgetUsd : null} />}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <StatTile label="Input tokens" value={tokens.format(sumTokenField(rows, "inputTokens"))} />
+        <StatTile label="Output tokens" value={tokens.format(sumTokenField(rows, "outputTokens"))} />
+        <StatTile label="Reported cost" value={reported.amount === null ? "—" : money.format(reported.amount)} hint={reported.amount === null ? "Not reported" : reported.partial ? "Some calls did not report a cost" : "Reported by the provider"} />
+      </div>
+      {groups.length === 0 ? <Panel><p className="text-sm text-muted">No calls.</p></Panel> : groups.map((group) => (
+        <Panel key={group.provider}>
+          <h2 className="mb-3 text-lg font-semibold">{titleOfProvider(group.provider)}</h2>
+          <UsageRows rows={group.rows} />
+        </Panel>
+      ))}
+    </div>
+  );
 }

@@ -1,10 +1,9 @@
 import { z } from "zod";
-import { Citation, type AttemptAnswer, type Plan, type QuestionCategory, type QuestionPublic } from "../../shared/api.ts";
+import { Citation, type AttemptAnswer, type QuestionCategory, type QuestionPublic } from "../../shared/api.ts";
 import { CodeSpec, type CodeTestResult } from "../../shared/code.ts";
+import { StoredCodeAnswer } from "../../shared/codeGrade.ts";
 import { Settings } from "../../shared/settings.ts";
-import { StoredCodeAnswer } from "../code/core.ts";
-import { HttpError } from "../http.ts";
-import { listModelsForPlan } from "../llm/core.ts";
+
 
 export type Card = { ef: number; intervalD: number; reps: number; lapses: number; dueAt: Date };
 export type Quality = 0 | 1 | 2 | 3 | 4 | 5;
@@ -92,24 +91,19 @@ export function loadSettings(user: { settings: Record<string, unknown> }): Setti
 }
 
 // O(1)
-// INV: null or an id outside the plan's models resolves to the plan's first model; an explicit pro request is passed through for the gateway to check
-// SEC: the free plan cannot pick a model; any request other than its default is 402 pro_required
-export function resolveModel(settings: Settings, plan: Plan, requested?: string): string {
-  const allowed = listModelsForPlan(plan);
-  const first = allowed[0];
-  if (!first) throw new HttpError(400, "model_not_allowed");
-  if (requested && plan !== "pro" && requested !== first.id) throw new HttpError(402, "pro_required");
-  if (requested) return requested;
-  const own = settings.model;
-  return own !== null && allowed.some((m) => m.id === own) ? own : first.id;
+// INV: the id is stored on the lesson row; provider calls use settings.models for the task
+export function resolveModel(settings: Settings, requested?: string): string {
+  if (requested !== undefined && requested.length > 0) return requested;
+  return settings.models.lesson?.id ?? settings.model ?? "local";
 }
 
 // O(1)
-// INV: only id, topic, kind, category, stem, choices, the public code spec and lesson leave the server before an attempt
+// INV: the model answer and rubric stay stored. A code question also includes its hidden test source so the learner's machine can run it.
 export function toQuestionPublic(row: QuestionRow): QuestionPublic {
   const choices = row.choices === null ? null : StoredChoices.parse(row.choices);
   const code = row.code_spec === null ? null : CodeSpec.parse(row.code_spec);
-  return { id: row.id, topicId: row.topic_id, kind: row.kind, category: row.category, stem: row.stem, choices, code, lessonId: row.lesson_id };
+  const codeTests = row.kind === "code" ? StoredCodeAnswer.parse(row.answer).tests : null;
+  return { id: row.id, topicId: row.topic_id, kind: row.kind, category: row.category, stem: row.stem, choices, code, codeTests, lessonId: row.lesson_id };
 }
 
 // O(1)
@@ -138,7 +132,7 @@ export function buildGradePrompt(stem: string, a: { rubric: string; model: strin
 }
 
 // O(1)
-// SEC: called only after grading; the rubric and hidden test code never leave the server, only each test's name and outcome
+// SEC: called only after grading. A code attempt returns the reference solution and the reported outcomes. The test source was already on the question.
 export function toAttemptAnswer(kind: "mcq" | "free" | "code", a: StoredAnswer, tests: CodeTestResult[] = []): AttemptAnswer {
   if (kind === "mcq" && "index" in a) return { kind: "mcq", index: a.index };
   if (kind === "free" && "rubric" in a) return { kind: "free", model: a.model };

@@ -2,3 +2,11 @@
 !.env.example
 node_modules
 dist
+
+# Electrobun build state, package output, and the verified AppImage tool
+desktop/.hutch/
+desktop/build/
+desktop/artifacts/
+scripts/cache/
+/artifacts
+.cache/

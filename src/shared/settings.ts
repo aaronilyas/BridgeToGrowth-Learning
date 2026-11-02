@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ProviderId } from "./providers.ts";
 
 const int = (min: number, max: number) => z.int().min(min).max(max);
 
@@ -12,6 +13,14 @@ export const SETTINGS_LIMITS = {
 const level = z.enum(["undergrad", "grad"]);
 const season = z.enum(["auto", "spring", "summer", "fall", "winter"]);
 const model = z.string().min(1).max(100).nullable();
+const modelTask = z.enum(["lesson", "chat", "practice", "system"]);
+const modelChoice = z.strictObject({ provider: ProviderId, id: z.string().min(1).max(200) }).nullable();
+const taskModels = {
+  lesson: modelChoice.default(null),
+  chat: modelChoice.default(null),
+  practice: modelChoice.default(null),
+  system: modelChoice.default(null),
+};
 const srs = { enabled: z.boolean(), newPerDay: int(SETTINGS_LIMITS.srs.newPerDay.min, SETTINGS_LIMITS.srs.newPerDay.max), maxReviewsPerDay: int(SETTINGS_LIMITS.srs.maxReviewsPerDay.min, SETTINGS_LIMITS.srs.maxReviewsPerDay.max) };
 const recall = { freeResponseRatio: z.number().min(SETTINGS_LIMITS.recall.freeResponseRatio.min).max(SETTINGS_LIMITS.recall.freeResponseRatio.max), confidencePrompt: z.boolean() };
 const bite = { stepsPerLesson: int(SETTINGS_LIMITS.bite.stepsPerLesson.min, SETTINGS_LIMITS.bite.stepsPerLesson.max), maxWordsPerStep: int(SETTINGS_LIMITS.bite.maxWordsPerStep.min, SETTINGS_LIMITS.bite.maxWordsPerStep.max), questionsPerSession: int(SETTINGS_LIMITS.bite.questionsPerSession.min, SETTINGS_LIMITS.bite.questionsPerSession.max) };
@@ -21,7 +30,11 @@ const practice = { dailyGoal: int(SETTINGS_LIMITS.practice.dailyGoal.min, SETTIN
 export const Settings = z.strictObject({
   level: level.default("undergrad"),
   model: model.default(null),
+  models: z.strictObject(taskModels).prefault({}),
+  budgetUsd: z.number().min(0).max(1_000_000).nullable().default(null),
+  staleModels: z.array(modelTask).default([]),
   season: season.default("auto"),
+  openalexMailto: z.string().max(254).default(""),
   srs: z.strictObject({ enabled: srs.enabled.default(true), newPerDay: srs.newPerDay.default(10), maxReviewsPerDay: srs.maxReviewsPerDay.default(50) }).prefault({}),
   recall: z.strictObject({ freeResponseRatio: recall.freeResponseRatio.default(0.3), confidencePrompt: recall.confidencePrompt.default(true) }).prefault({}),
   bite: z.strictObject({ stepsPerLesson: bite.stepsPerLesson.default(4), maxWordsPerStep: bite.maxWordsPerStep.default(180), questionsPerSession: bite.questionsPerSession.default(8) }).prefault({}),
@@ -32,7 +45,10 @@ export type Settings = z.infer<typeof Settings>;
 export const SettingsPatch = z.strictObject({
   level: level.optional(),
   model: model.optional(),
+  models: z.strictObject({ lesson: modelChoice.optional(), chat: modelChoice.optional(), practice: modelChoice.optional(), system: modelChoice.optional() }).optional(),
+  budgetUsd: z.number().min(0).max(1_000_000).nullable().optional(),
   season: season.optional(),
+  openalexMailto: z.string().max(254).optional(),
   srs: z.strictObject({ enabled: srs.enabled.optional(), newPerDay: srs.newPerDay.optional(), maxReviewsPerDay: srs.maxReviewsPerDay.optional() }).optional(),
   recall: z.strictObject({ freeResponseRatio: recall.freeResponseRatio.optional(), confidencePrompt: recall.confidencePrompt.optional() }).optional(),
   bite: z.strictObject({ stepsPerLesson: bite.stepsPerLesson.optional(), maxWordsPerStep: bite.maxWordsPerStep.optional(), questionsPerSession: bite.questionsPerSession.optional() }).optional(),
@@ -40,14 +56,30 @@ export const SettingsPatch = z.strictObject({
 });
 export type SettingsPatch = z.infer<typeof SettingsPatch>;
 
+const MODEL_TASKS = ["lesson", "chat", "practice", "system"] as const;
+
 // O(1)
 // INV: the result is unvalidated; callers must run it through Settings.parse before storing
-export function mergeSettings(current: Settings, patch: SettingsPatch): Record<string, unknown> {
+// INV: a model whose provider is absent from `connected` becomes null and its task is listed in staleModels
+export function mergeSettings(current: Settings, patch: SettingsPatch, connected?: ReadonlySet<string>): Record<string, unknown> {
   const out: Record<string, unknown> = { ...current };
   for (const [k, v] of Object.entries(patch)) {
     if (v === undefined) continue;
     const prev = out[k];
     out[k] = typeof v === "object" && v !== null && typeof prev === "object" && prev !== null ? { ...prev, ...Object.fromEntries(Object.entries(v).filter(([, x]) => x !== undefined)) } : v;
+  }
+  if (connected !== undefined) {
+    const models = { ...(out.models as Settings["models"]) };
+    const stale: string[] = [];
+    for (const task of MODEL_TASKS) {
+      const choice = models[task];
+      if (choice !== null && !connected.has(choice.provider)) {
+        models[task] = null;
+        stale.push(task);
+      }
+    }
+    out.models = models;
+    out.staleModels = stale;
   }
   return out;
 }

@@ -5,8 +5,8 @@ import { SERVER_IDLE_TIMEOUT_S } from "./timeouts.ts";
 const PAST_DEFAULT_IDLE_MS = 15_000;
 
 test("the server keeps a quiet model call open past Bun's 10s idle timeout", async () => {
-  const index = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
-  expect(index).toContain("idleTimeout: SERVER_IDLE_TIMEOUT_S");
+  const listener = readFileSync(new URL("../listener.ts", import.meta.url), "utf8");
+  expect(listener).toContain("idleTimeout: SERVER_IDLE_TIMEOUT_S");
   expect(SERVER_IDLE_TIMEOUT_S).toBeGreaterThanOrEqual(150);
 
   const server = Bun.serve({

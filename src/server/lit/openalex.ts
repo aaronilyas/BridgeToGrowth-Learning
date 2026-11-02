@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { env } from "../env.ts";
+import { Settings } from "../../shared/settings.ts";
+import { localProfile } from "../profile.ts";
 import { abstractFromInverted, normalizeQuery, type Paper } from "./core.ts";
 import { findCached, storePapers } from "./sql.ts";
 
@@ -13,12 +14,20 @@ const Work = z.object({
 });
 const Resp = z.object({ results: z.array(Work) });
 
+// O(1)
+// INV: an empty mailto omits the param
+async function mailtoQuery(): Promise<string> {
+  const parsed = Settings.safeParse((await localProfile()).settings);
+  const mailto = parsed.success ? parsed.data.openalexMailto : "";
+  return mailto === "" ? "" : `&mailto=${encodeURIComponent(mailto)}`;
+}
+
 // O(k) per request
 // SEC: only the normalized, URL-encoded query leaves the server
 async function fetchWorks(q: string, k: number): Promise<Paper[]> {
   const filter = "type:article,has_abstract:true,is_retracted:false,primary_location.source.type:journal";
   const select = "id,doi,title,publication_year,primary_location,abstract_inverted_index";
-  const url = `https://api.openalex.org/works?search=${encodeURIComponent(q)}&filter=${filter}&per_page=${k}&select=${select}&mailto=${encodeURIComponent(env.OPENALEX_MAILTO)}`;
+  const url = `https://api.openalex.org/works?search=${encodeURIComponent(q)}&filter=${filter}&per_page=${k}&select=${select}${await mailtoQuery()}`;
   const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
   if (!res.ok) return [];
   const parsed = Resp.safeParse(await res.json());

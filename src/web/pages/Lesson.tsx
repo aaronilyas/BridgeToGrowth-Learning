@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
-import { Link, useLocation, useParams } from "wouter";
+import { useLocation, useParams } from "wouter";
 import { LessonDetail, StepPublic } from "../../shared/api.ts";
 import { api } from "../api.ts";
 import { ChatPanel } from "../components/ChatPanel.tsx";
@@ -9,7 +9,6 @@ import { Spinner } from "../components/Spinner.tsx";
 import { Button } from "../components/Button.tsx";
 import { DeleteLessonButton } from "../components/DeleteLessonButton.tsx";
 import { StepSkeleton, StepView } from "../components/StepView.tsx";
-import { formatExpiry, useMinuteClock } from "../expiry.ts";
 
 type StepStatus = "done" | "current" | "todo";
 
@@ -25,7 +24,6 @@ export function LessonPage(): JSX.Element {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const inflight = useRef<number | null>(null);
-  const now = useMinuteClock();
 
   const openStep = useCallback(async (idx: number): Promise<void> => {
     if (inflight.current === idx) return;
@@ -107,15 +105,6 @@ export function LessonPage(): JSX.Element {
       </Panel>
 
       <Panel className="min-w-0">
-        {lesson.expiresAt && (
-          <p className="mb-4 rounded-xl border border-accent-2/40 bg-panel-2 px-4 py-2.5 text-sm text-muted">
-            Free plan: {formatExpiry(lesson.expiresAt, now)}. Deletes {new Date(lesson.expiresAt).toLocaleString()}.{" "}
-            <Link href="/billing" className="font-medium text-accent hover:underline">
-              Upgrade to keep it
-            </Link>
-            .
-          </p>
-        )}
         <div className="mb-4 flex justify-end">
           <DeleteLessonButton lessonId={lesson.id} lessonTitle={lesson.title} onDeleted={() => navigate("/teach")} />
         </div>

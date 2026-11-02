@@ -1,8 +1,9 @@
 import type { Server } from "bun";
-import { decorateDocument, stripDocumentConditionals } from "./ads/routes.ts";
 import { env } from "./env.ts";
 import { json, secureResponse } from "./http.ts";
 import { SERVER_IDLE_TIMEOUT_S } from "./llm/timeouts.ts";
+import { guardOrigin, localGuard, originAllowed } from "./localGuard.ts";
+import { readPyodideAsset } from "./pyodideAssets.ts";
 
 export const MAX_REQUEST_BYTES = 80 * 2 ** 20;
 
@@ -41,39 +42,66 @@ function cacheHashedAsset(path: string, res: Response): Response {
 }
 
 // O(1) plus the upstream round trip
-// INV: only paths outside `api` reach here (HTML bundle, hashed assets, dev HMR); every response leaves through decorateDocument or secureResponse
+// INV: only paths outside `api` reach here (HTML bundle, hashed assets, dev HMR); every response leaves through secureResponse
 async function proxyDocument(req: Request, upstream: URL): Promise<Response> {
   try {
     const url = new URL(req.url);
     const headers = forwardedHeaders(req.headers);
-    stripDocumentConditionals(req, headers);
     const init: RequestInit & { proxy: false; duplex?: "half" } = { method: req.method, headers, redirect: "manual", proxy: false };
     if (req.method !== "GET" && req.method !== "HEAD") {
       init.body = req.body;
       init.duplex = "half";
     }
     const res = await fetch(new URL(url.pathname + url.search, upstream), init);
-    return await decorateDocument(req, cacheHashedAsset(url.pathname, res));
+    return secureResponse(cacheHashedAsset(url.pathname, res));
   } catch {
     return secureResponse(json({ error: "internal" }, 500));
   }
 }
 
+const API_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
+
+// O(n) in route count
+// SEC: every API handler and the document fallback share one guard
+function guardRoutes(api: ApiRoutes, token: string, portOf: () => number): ApiRoutes {
+  const guard = (handler: ApiHandler): ApiHandler => async (req) => {
+    const blocked = localGuard(req, `127.0.0.1:${portOf()}`, token);
+    if (blocked) return secureResponse(blocked);
+    return handler(req);
+  };
+  const guarded: ApiRoutes = {};
+  for (const [path, entry] of Object.entries(api)) {
+    if (typeof entry === "function") {
+      guarded[path] = guard(entry);
+      continue;
+    }
+    const methods: Partial<Record<(typeof API_METHODS)[number], ApiHandler>> = {};
+    for (const method of API_METHODS) {
+      const handler = entry[method];
+      if (handler) methods[method] = guard(handler);
+    }
+    guarded[path] = methods;
+  }
+  return guarded;
+}
+
 // O(1) per request plus the handler
 // INV: `api` handlers are built with route(), which wraps every response (including errors) in secureResponse, so they are mounted directly with no loopback hop
-// INV: `api` must not contain "/*"; the HTML bundle stays on the upstream so its responses pass through decorateDocument (ads nonce CSP) and secureResponse
+// INV: `api` must not contain "/*"; the HTML bundle stays on the upstream so its responses pass through secureResponse
 // INV: maxRequestBodySize caps every body at the socket; route maxBody still caps each route below that
 // INV: idleTimeout stays above the model budgets in llm/timeouts.ts. Bun's default of 10s resets the socket before a lesson step or chat reply is written.
-// SEC: binds 127.0.0.1 only; Caddy is the only ingress
-export function servePublic(o: { port: number; api: ApiRoutes; upstream: URL }): Server<UpstreamSocket> {
+// SEC: binds 127.0.0.1 only. The launch token makes localGuard reject any other Host, a missing API token, and a foreign mutation Origin.
+export function servePublic(o: { port: number; api: ApiRoutes; upstream: URL; token: string }): Server<UpstreamSocket> {
   if ("/*" in o.api) throw new Error("the document route belongs on the upstream");
-  return Bun.serve<UpstreamSocket>({
+  const bound = { port: 0 };
+  const guardedApi = guardRoutes(o.api, o.token, () => bound.port);
+  const server = Bun.serve<UpstreamSocket>({
     id: "btg",
     hostname: "127.0.0.1",
     port: o.port,
     maxRequestBodySize: MAX_REQUEST_BYTES,
     idleTimeout: SERVER_IDLE_TIMEOUT_S,
-    routes: o.api,
+    routes: guardedApi,
     websocket: {
       open(ws) {
         const client = new WebSocket(ws.data.url);
@@ -103,16 +131,27 @@ export function servePublic(o: { port: number; api: ApiRoutes; upstream: URL }):
       },
     },
     async fetch(req, server) {
+      const blocked = localGuard(req, `127.0.0.1:${server.port}`, o.token);
+      if (blocked) return secureResponse(blocked);
       if ((req.headers.get("upgrade") ?? "").toLowerCase() === "websocket") {
+        // SEC: a WebSocket handshake is a GET and carries no launch token, so a foreign page could open one; require the exact app Origin
+        if (!originAllowed(req.headers.get("origin"), guardOrigin())) return secureResponse(new Response(null, { status: 403 }));
         const url = new URL(req.url);
         const target = new URL(url.pathname + url.search, o.upstream).href.replace(/^http/, "ws");
         if (server.upgrade(req, { data: { url: target, inner: null, pending: [] } })) return;
         return secureResponse(new Response(null, { status: 400 }));
       }
+      const url = new URL(req.url);
+      const asset = await readPyodideAsset(url.pathname, req.method);
+      if (asset) return secureResponse(asset);
       return proxyDocument(req, o.upstream);
     },
     error() {
       return secureResponse(json({ error: "internal" }, 500));
     },
   });
+  const port = server.port ?? 0;
+  if (port === 0) throw new Error("listener did not bind");
+  bound.port = port;
+  return server;
 }

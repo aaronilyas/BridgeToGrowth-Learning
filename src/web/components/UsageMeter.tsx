@@ -1,88 +1,67 @@
 import { useEffect, useState, type JSX } from "react";
 import { Link, useLocation } from "wouter";
-import { UsageResponse, type Plan } from "../../shared/api.ts";
+import { UsageResponse } from "../../shared/api.ts";
 import { api } from "../api.ts";
-import { formatMicros } from "../money.ts";
-import { Panel } from "./Panel.tsx";
+import { useSettings } from "../session.tsx";
 
-// O(1)
-// INV: the percent is used plus reserved over the plan cap; a cap of 0 is 100% once any usage exists
-export function usagePercent(usedMicros: number, reservedMicros: number, capMicros: number): number {
-  const consumed = usedMicros + reservedMicros;
-  if (capMicros <= 0) return consumed > 0 ? 100 : 0;
-  return Math.round((consumed / capMicros) * 100);
+const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+
+// O(n)
+// INV: null costs are skipped; an empty known set returns null rather than a guessed zero
+export function summarizeReportedCost(rows: readonly { costUsd: number | null }[]): { amount: number | null; partial: boolean } {
+  let amount = 0;
+  let known = 0;
+  for (const row of rows) {
+    if (row.costUsd === null) continue;
+    amount += row.costUsd;
+    known += 1;
+  }
+  if (known === 0) return { amount: null, partial: false };
+  return { amount, partial: known !== rows.length };
+}
+
+// O(n)
+// INV: zero means OpenRouter has no rows; null means rows exist but none reported a cost
+export function sumOpenRouterUsd(rows: readonly { provider: string; costUsd: number | null }[]): number | null {
+  const own = rows.filter((row) => row.provider === "openrouter");
+  if (own.length === 0) return 0;
+  return summarizeReportedCost(own).amount;
 }
 
 // O(1)
-function usageFill(usedMicros: number, capMicros: number): number {
-  if (capMicros <= 0) return usedMicros > 0 ? 100 : 0;
-  return Math.min(100, (usedMicros / capMicros) * 100);
-}
-
-// O(1)
-function usageTone(pct: number): string {
-  return pct >= 100 ? "bg-danger" : pct >= 80 ? "bg-accent-2" : "bg-accent";
-}
-
-// O(1)
-function usageTextTone(pct: number): string {
-  return pct >= 100 ? "text-danger" : pct >= 80 ? "text-accent-2" : "text-accent";
-}
-
-// O(1)
-function planName(plan: Plan): string {
-  return plan === "pro" ? "Pro" : "Free";
-}
-
-// O(1)
-function UsageBar({ usedMicros, reservedMicros, capMicros, label }: { usedMicros: number; reservedMicros: number; capMicros: number; label: string }): JSX.Element {
-  const pct = usagePercent(usedMicros, reservedMicros, capMicros);
-  const usedWidth = usageFill(usedMicros, capMicros);
-  const reservedWidth = Math.min(100 - usedWidth, usageFill(reservedMicros, capMicros));
+export function UsageMeter({ spent, budget = null }: { spent: number | null; budget?: number | null }): JSX.Element {
+  const headline = spent === null ? "No provider cost reported" : `${money.format(spent)} used`;
+  const showBar = budget !== null && spent !== null;
+  const pct = showBar && budget !== null && spent !== null ? Math.min(100, budget === 0 ? (spent > 0 ? 100 : 0) : Math.round((spent / budget) * 100)) : 0;
   return (
-    <div className="flex items-center gap-2">
-      <div
-        className="flex h-3 min-w-0 flex-1 overflow-hidden rounded-full bg-panel-2"
-        role="meter"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.min(100, pct)}
-        aria-valuetext={`${pct}%`}
-        aria-label={label}
-      >
-        <div className={`h-full ${usageTone(pct)}`} style={{ width: `${usedWidth}%` }} />
-        <div className="h-full border-x border-dashed border-text/50" style={{ width: `${reservedWidth}%`, backgroundImage: "repeating-linear-gradient(135deg, var(--accent-soft) 0 4px, transparent 4px 8px)" }} />
-      </div>
-      <span className={`w-12 shrink-0 text-right text-sm font-semibold tabular-nums ${usageTextTone(pct)}`}>{pct}%</span>
+    <div className="rounded-2xl border border-border bg-panel p-5">
+      <h2 className="text-lg font-semibold">Monthly usage</h2>
+      <p className="mt-2 text-sm text-muted">{headline}</p>
+      {showBar && budget !== null && spent !== null && (
+        <>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-border" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label="OpenRouter budget">
+            <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${pct}%` }} />
+          </div>
+          <p className="mt-2 text-xs text-muted">{money.format(spent)} of {money.format(budget)} · applies to OpenRouter only</p>
+        </>
+      )}
+      {budget !== null && spent === null && <p className="mt-2 text-xs text-muted">OpenRouter budget is {money.format(budget)}. No cost has been reported yet.</p>}
     </div>
   );
 }
 
 // O(1)
-export function UsageMeter({ usedMicros, reservedMicros, capMicros, plan }: { usedMicros: number; reservedMicros: number; capMicros: number; plan: Plan }): JSX.Element {
-  const pct = usagePercent(usedMicros, reservedMicros, capMicros);
-  return (
-    <Panel>
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-lg font-semibold">Monthly usage · {planName(plan)}</h2>
-        <span className="text-sm text-muted">{formatMicros(usedMicros)} used of {formatMicros(capMicros)}</span>
-      </div>
-      <div className="mt-4">
-        <UsageBar usedMicros={usedMicros} reservedMicros={reservedMicros} capMicros={capMicros} label={`${planName(plan)} monthly AI usage`} />
-      </div>
-      {capMicros <= 0 ? (
-        <p className="mt-2 text-sm text-muted">Your plan has no AI allowance this month.</p>
-      ) : (
-        <p className="mt-2 text-sm text-muted">{formatMicros(reservedMicros)} reserved · {pct}% of this month's cap</p>
-      )}
-    </Panel>
-  );
+function openRouterCardLabel(spent: number | null, budget: number | null): string {
+  if (spent === null) return "No OpenRouter cost reported";
+  if (budget !== null) return `${money.format(spent)} of ${money.format(budget)} OpenRouter`;
+  if (spent === 0) return "No OpenRouter usage this month";
+  return `${money.format(spent)} OpenRouter this month`;
 }
 
 // O(1)
-// INV: both plans share this card; the cap comes from /api/usage, which already applies the plan
 export function UsageCard(): JSX.Element | null {
   const [location] = useLocation();
+  const { settings } = useSettings();
   const [usage, setUsage] = useState<UsageResponse | null>(null);
   useEffect(() => {
     let live = true;
@@ -92,14 +71,11 @@ export function UsageCard(): JSX.Element | null {
     };
   }, [location]);
   if (!usage) return null;
-  const pct = usagePercent(usage.usedMicros, usage.reservedMicros, usage.capMicros);
+  const label = openRouterCardLabel(sumOpenRouterUsd(usage.current), settings.budgetUsd);
   return (
     <Link href="/usage" className="block rounded-xl border border-border bg-panel-2 p-4 transition hover:border-accent/40">
-      <p className="text-sm text-muted">{planName(usage.plan)} AI usage</p>
-      <div className="mt-2">
-        <UsageBar usedMicros={usage.usedMicros} reservedMicros={usage.reservedMicros} capMicros={usage.capMicros} label={`${planName(usage.plan)} monthly AI usage, ${pct}%`} />
-      </div>
-      <p className="mt-2 text-xs text-muted">{formatMicros(usage.usedMicros)} of {formatMicros(usage.capMicros)}</p>
+      <p className="text-sm text-muted">AI usage</p>
+      <p className="mt-2 text-xs text-muted">{label}</p>
     </Link>
   );
 }
