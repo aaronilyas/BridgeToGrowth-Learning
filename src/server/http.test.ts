@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { z } from "zod";
 import { TEST_ENV } from "./testkit.ts";
 
-Object.assign(process.env, TEST_ENV, { DATABASE_URL: process.env.TEST_DATABASE_URL ?? "postgres://x" });
+Object.assign(process.env, TEST_ENV);
 
 test("route rejects foreign origin and unknown body keys", async () => {
   const { route, json, originAllowed } = await import("./http.ts");

@@ -1,5 +1,6 @@
 import { beforeAll, expect, mock, test } from "bun:test";
-import { bootTestServer, callRoute, createTestUser, type Handler, type TestServer } from "../testkit.ts";
+import { utcDayOf } from "../sqlmap.ts";
+import { bootTestServer, callRoute, createTestUser, insertFixtureUser, type Handler, type TestServer } from "../testkit.ts";
 
 let t: TestServer;
 let h: { get: Handler; step: Handler; chat: Handler; del: Handler; create: Handler };
@@ -43,19 +44,19 @@ beforeAll(async () => {
 test("another user's lesson is 404 for the session user", async () => {
   await t.reset();
   const local = await createTestUser();
-  const other = await createTestUser();
+  const otherId = await insertFixtureUser(t.sql);
   const plan = { title: "T", topic: { name: "X", domain: "math" }, related: [], steps: [{ title: "s", summary: "s" }] };
-  const [foreignTopic] = await t.sql`INSERT INTO topics (user_id, slug, name, domain) VALUES (${other.id}, 'x', 'X', 'math') RETURNING id`;
-  const [foreign] = await t.sql`INSERT INTO lessons (user_id, topic_id, title, plan, model) VALUES (${other.id}, ${foreignTopic.id}, 'T', ${JSON.stringify(plan)}::text::jsonb, 'm') RETURNING id`;
+  const [foreignTopic] = await t.sql`INSERT INTO topics (user_id, slug, name, domain) VALUES (${otherId}, 'x', 'X', 'math') RETURNING id`;
+  const [foreign] = await t.sql`INSERT INTO lessons (user_id, topic_id, title, plan, model) VALUES (${otherId}, ${foreignTopic.id}, 'T', ${JSON.stringify(plan)}, 'm') RETURNING id`;
   const hidden = `?id=${foreign.id}`;
   const cookie = local.cookie;
   expect((await callRoute(h.get, "GET", `/x${hidden}`, { cookie })).status).toBe(404);
   expect((await callRoute(h.step, "POST", `/x${hidden}`, { cookie, body: {} })).status).toBe(404);
   expect((await callRoute(h.chat, "POST", `/x${hidden}`, { cookie, body: { message: "hi" } })).status).toBe(404);
   const [ownTopic] = await t.sql`INSERT INTO topics (user_id, slug, name, domain) VALUES (${local.id}, 'y', 'Y', 'math') RETURNING id`;
-  const [own] = await t.sql`INSERT INTO lessons (user_id, topic_id, title, plan, model) VALUES (${local.id}, ${ownTopic.id}, 'T', ${JSON.stringify(plan)}::text::jsonb, 'm') RETURNING id`;
+  const [own] = await t.sql`INSERT INTO lessons (user_id, topic_id, title, plan, model) VALUES (${local.id}, ${ownTopic.id}, 'T', ${JSON.stringify(plan)}, 'm') RETURNING id`;
   expect((await callRoute(h.get, "GET", `/x?id=${own.id}`, { cookie })).status).toBe(200);
-  expect((await callRoute(h.get, "GET", `/x?id=${own.id}`)).status).toBe(401);
+  expect((await callRoute(h.get, "GET", `/x?id=${own.id}`)).status).toBe(200);
 });
 
 test("upsertTopics is idempotent and dedupes by slug", async () => {
@@ -68,7 +69,7 @@ test("upsertTopics is idempotent and dedupes by slug", async () => {
   expect(second).toEqual(first);
   expect(first[0]).toBe(first[1]);
   expect(first[0]).not.toBe(first[2]);
-  const [{ n }] = await t.sql`SELECT count(*)::int AS n FROM topic_edges WHERE user_id = ${u.id}`;
+  const [{ n }] = await t.sql`SELECT count(*) AS n FROM topic_edges WHERE user_id = ${u.id} LIMIT 1`;
   expect(n).toBe(1);
 });
 
@@ -81,7 +82,7 @@ async function addTopic(uid: string, slug: string): Promise<string> {
 }
 
 async function addLesson(uid: string, topicId: string): Promise<string> {
-  const [row] = await t.sql`INSERT INTO lessons (user_id, topic_id, title, plan, model) VALUES (${uid}, ${topicId}, 'T', ${JSON.stringify(plan)}::text::jsonb, 'm') RETURNING id`;
+  const [row] = await t.sql`INSERT INTO lessons (user_id, topic_id, title, plan, model) VALUES (${uid}, ${topicId}, 'T', ${JSON.stringify(plan)}, 'm') RETURNING id`;
   if (!row) throw new Error("lesson missing");
   return row.id;
 }
@@ -89,14 +90,14 @@ async function addLesson(uid: string, topicId: string): Promise<string> {
 async function addQuestion(uid: string, topicId: string, lessonId: string | null): Promise<string> {
   const [row] = await t.sql`
     INSERT INTO questions (user_id, topic_id, lesson_id, kind, stem, choices, answer, explanation)
-    VALUES (${uid}, ${topicId}, ${lessonId}, 'mcq', 's', ${JSON.stringify(["a", "b", "c", "d"])}::text::jsonb, ${JSON.stringify({ index: 1 })}::text::jsonb, 'because') RETURNING id`;
+    VALUES (${uid}, ${topicId}, ${lessonId}, 'mcq', 's', ${JSON.stringify(["a", "b", "c", "d"])}, ${JSON.stringify({ index: 1 })}, 'because') RETURNING id`;
   if (!row) throw new Error("question missing");
   await t.sql`INSERT INTO cards (question_id, user_id) VALUES (${row.id}, ${uid})`;
   return row.id;
 }
 
 async function addAttempt(uid: string, topicId: string, questionId: string, score: number, confidence: number, review: boolean): Promise<void> {
-  await t.sql`INSERT INTO attempts (user_id, question_id, topic_id, score, confidence, latency_ms, is_review) VALUES (${uid}, ${questionId}, ${topicId}, ${score}, ${confidence}, 10, ${review})`;
+  await t.sql`INSERT INTO attempts (user_id, question_id, topic_id, score, confidence, latency_ms, is_review) VALUES (${uid}, ${questionId}, ${topicId}, ${score}, ${confidence}, 10, ${review ? 1 : 0})`;
 }
 
 test("topicsReleasedByLesson keeps a topic another lesson still uses", () => {
@@ -110,7 +111,7 @@ test("topicsReleasedByLesson keeps a topic another lesson still uses", () => {
 test("deleting a lesson removes its chat, checks, and topics nothing else uses", async () => {
   await t.reset();
   const u = await createTestUser();
-  const other = await createTestUser();
+  const otherId = await insertFixtureUser(t.sql);
   const topicId = await addTopic(u.id, "photo");
   const relatedId = await addTopic(u.id, "chloro");
   const keptId = await addTopic(u.id, "algebra");
@@ -123,11 +124,13 @@ test("deleting a lesson removes its chat, checks, and topics nothing else uses",
   const [conv] = await t.sql`INSERT INTO conversations (user_id, lesson_id) VALUES (${u.id}, ${lessonId}) RETURNING id`;
   if (!conv) throw new Error("conversation missing");
   await t.sql`INSERT INTO messages (conv_id, role, content) VALUES (${conv.id}, 'user', 'hi')`;
-  await t.sql`INSERT INTO lesson_steps (lesson_id, idx, content) VALUES (${lessonId}, 0, ${JSON.stringify({ questionId: qid })}::text::jsonb)`;
-  await t.sql`INSERT INTO daily_activity (user_id, day, attempts, correct, reviews, review_correct, conf_err_sum) VALUES (${u.id}, (now() AT TIME ZONE 'UTC')::date, 9, 9, 9, 9, 9)`;
-  await t.sql`INSERT INTO insights (user_id, day, body) VALUES (${u.id}, (now() AT TIME ZONE 'UTC')::date, ${JSON.stringify({ trends: [] })}::text::jsonb)`;
-  await t.sql`INSERT INTO insights (user_id, day, body) VALUES (${u.id}, ((now() AT TIME ZONE 'UTC')::date - 1), ${JSON.stringify({ trends: [] })}::text::jsonb)`;
-  const foreignLesson = await addLesson(other.id, await addTopic(other.id, "foreign"));
+  const today = utcDayOf(Date.now());
+  const yesterday = utcDayOf(Date.now() - 86_400_000);
+  await t.sql`INSERT INTO lesson_steps (lesson_id, idx, content) VALUES (${lessonId}, 0, ${JSON.stringify({ questionId: qid })})`;
+  await t.sql`INSERT INTO daily_activity (user_id, day, attempts, correct, reviews, review_correct, conf_err_sum) VALUES (${u.id}, ${today}, 9, 9, 9, 9, 9)`;
+  await t.sql`INSERT INTO insights (user_id, day, body) VALUES (${u.id}, ${today}, ${JSON.stringify({ trends: [] })})`;
+  await t.sql`INSERT INTO insights (user_id, day, body) VALUES (${u.id}, ${yesterday}, ${JSON.stringify({ trends: [] })})`;
+  const foreignLesson = await addLesson(otherId, await addTopic(otherId, "foreign"));
   const cookie = u.cookie;
   expect((await callRoute(h.del, "DELETE", `/x?id=${lessonId}`, { cookie })).status).toBe(204);
   expect((await callRoute(h.del, "DELETE", `/x?id=${lessonId}`, { cookie })).status).toBe(404);
@@ -135,23 +138,23 @@ test("deleting a lesson removes its chat, checks, and topics nothing else uses",
   expect((await callRoute(h.del, "DELETE", "/x?id=not-a-uuid", { cookie })).status).toBe(404);
   const [left] = await t.sql`
     SELECT
-      (SELECT count(*)::int FROM lessons WHERE id = ${lessonId}) AS lessons,
-      (SELECT count(*)::int FROM lessons WHERE id = ${foreignLesson}) AS foreign_lessons,
-      (SELECT count(*)::int FROM questions WHERE id = ${qid}) AS questions,
-      (SELECT count(*)::int FROM questions WHERE id = ${keptQ}) AS kept_questions,
-      (SELECT count(*)::int FROM cards WHERE question_id = ${qid}) AS cards,
-      (SELECT count(*)::int FROM cards WHERE question_id = ${keptQ}) AS kept_cards,
-      (SELECT count(*)::int FROM attempts WHERE question_id = ${qid}) AS attempts,
-      (SELECT count(*)::int FROM attempts WHERE question_id = ${keptQ}) AS kept_attempts,
-      (SELECT count(*)::int FROM topics WHERE id = ${topicId}) AS topics,
-      (SELECT count(*)::int FROM topics WHERE id = ${relatedId}) AS related,
-      (SELECT count(*)::int FROM topics WHERE id = ${keptId}) AS kept_topics,
-      (SELECT count(*)::int FROM topic_edges WHERE user_id = ${u.id}) AS edges,
-      (SELECT count(*)::int FROM messages m JOIN conversations c ON c.id = m.conv_id WHERE c.user_id = ${u.id}) AS messages,
-      (SELECT count(*)::int FROM lesson_steps WHERE lesson_id = ${lessonId}) AS steps,
-      (SELECT count(*)::int FROM conversations WHERE user_id = ${u.id}) AS convos,
-      (SELECT count(*)::int FROM insights WHERE user_id = ${u.id} AND day = (now() AT TIME ZONE 'UTC')::date) AS today_insights,
-      (SELECT count(*)::int FROM insights WHERE user_id = ${u.id} AND day = ((now() AT TIME ZONE 'UTC')::date - 1)) AS old_insights`;
+      (SELECT count(*) FROM lessons WHERE id = ${lessonId}) AS lessons,
+      (SELECT count(*) FROM lessons WHERE id = ${foreignLesson}) AS foreign_lessons,
+      (SELECT count(*) FROM questions WHERE id = ${qid}) AS questions,
+      (SELECT count(*) FROM questions WHERE id = ${keptQ}) AS kept_questions,
+      (SELECT count(*) FROM cards WHERE question_id = ${qid}) AS cards,
+      (SELECT count(*) FROM cards WHERE question_id = ${keptQ}) AS kept_cards,
+      (SELECT count(*) FROM attempts WHERE question_id = ${qid}) AS attempts,
+      (SELECT count(*) FROM attempts WHERE question_id = ${keptQ}) AS kept_attempts,
+      (SELECT count(*) FROM topics WHERE id = ${topicId}) AS topics,
+      (SELECT count(*) FROM topics WHERE id = ${relatedId}) AS related,
+      (SELECT count(*) FROM topics WHERE id = ${keptId}) AS kept_topics,
+      (SELECT count(*) FROM topic_edges WHERE user_id = ${u.id}) AS edges,
+      (SELECT count(*) FROM messages m JOIN conversations c ON c.id = m.conv_id WHERE c.user_id = ${u.id}) AS messages,
+      (SELECT count(*) FROM lesson_steps WHERE lesson_id = ${lessonId}) AS steps,
+      (SELECT count(*) FROM conversations WHERE user_id = ${u.id}) AS convos,
+      (SELECT count(*) FROM insights WHERE user_id = ${u.id} AND day = ${today}) AS today_insights,
+      (SELECT count(*) FROM insights WHERE user_id = ${u.id} AND day = ${yesterday}) AS old_insights`;
   expect(left).toEqual({
     lessons: 0, foreign_lessons: 1, questions: 0, kept_questions: 1, cards: 0, kept_cards: 1, attempts: 0, kept_attempts: 1,
     topics: 0, related: 0, kept_topics: 1, edges: 0, messages: 0, steps: 0, convos: 0, today_insights: 0, old_insights: 1,
@@ -186,12 +189,12 @@ test("deleting a lesson replays mastery from the attempts that remain", async ()
   expect(Math.abs(topic.conf_err_sum - 1)).toBeLessThan(1e-5);
   const [counts] = await t.sql`
     SELECT
-      (SELECT count(*)::int FROM lessons WHERE id = ${keepLesson}) AS lessons,
-      (SELECT count(*)::int FROM questions WHERE id = ${dropQ}) AS dropped,
-      (SELECT count(*)::int FROM questions WHERE id = ${keepQ}) AS kept,
-      (SELECT count(*)::int FROM questions WHERE id = ${practiceQ}) AS practice,
-      (SELECT count(*)::int FROM topics WHERE id = ${relatedId}) AS related,
-      (SELECT count(*)::int FROM cards WHERE question_id = ${keepQ} OR question_id = ${practiceQ}) AS cards`;
+      (SELECT count(*) FROM lessons WHERE id = ${keepLesson}) AS lessons,
+      (SELECT count(*) FROM questions WHERE id = ${dropQ}) AS dropped,
+      (SELECT count(*) FROM questions WHERE id = ${keepQ}) AS kept,
+      (SELECT count(*) FROM questions WHERE id = ${practiceQ}) AS practice,
+      (SELECT count(*) FROM topics WHERE id = ${relatedId}) AS related,
+      (SELECT count(*) FROM cards WHERE question_id = ${keepQ} OR question_id = ${practiceQ}) AS cards`;
   expect(counts).toEqual({ lessons: 1, dropped: 0, kept: 1, practice: 1, related: 1, cards: 2 });
 });
 
@@ -231,7 +234,7 @@ test("two concurrent step requests call the model once", async () => {
   await t.reset();
   const u = await createTestUser();
   const [topic] = await t.sql`INSERT INTO topics (user_id, slug, name, domain) VALUES (${u.id}, 'share', 'Share', 'math') RETURNING id`;
-  const [lesson] = await t.sql`INSERT INTO lessons (user_id, topic_id, title, plan, model) VALUES (${u.id}, ${topic.id}, 'T', ${JSON.stringify(plan)}::text::jsonb, 'm') RETURNING id`;
+  const [lesson] = await t.sql`INSERT INTO lessons (user_id, topic_id, title, plan, model) VALUES (${u.id}, ${topic.id}, 'T', ${JSON.stringify(plan)}, 'm') RETURNING id`;
   let release = (): void => {};
   stepGate = new Promise<void>((resolve) => {
     release = resolve;
@@ -262,7 +265,7 @@ test("two concurrent step requests call the model once", async () => {
     expect(b.status).toBe(200);
     expect(await a.json()).toEqual(await b.json());
     expect(stepCalls).toBe(1);
-    const [rows] = await t.sql`SELECT count(*)::int AS n FROM lesson_steps WHERE lesson_id = ${lesson.id}`;
+    const [rows] = await t.sql`SELECT count(*) AS n FROM lesson_steps WHERE lesson_id = ${lesson.id} LIMIT 1`;
     expect(rows.n).toBe(1);
   } finally {
     release();

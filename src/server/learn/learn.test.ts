@@ -1,5 +1,5 @@
 import { beforeAll, expect, mock, test } from "bun:test";
-import { bootTestServer, callRoute, createTestUser, type Handler, type TestServer } from "../testkit.ts";
+import { bootTestServer, callRoute, createTestUser, insertFixtureUser, type Handler, type TestServer } from "../testkit.ts";
 
 let t: TestServer;
 let core: typeof import("./core.ts");
@@ -18,10 +18,10 @@ beforeAll(async () => {
 async function seed(uid: string, kind: "mcq" | "free"): Promise<{ topicId: string; qid: string }> {
   const [topic] = await t.sql`INSERT INTO topics (user_id, slug, name, domain) VALUES (${uid}, ${`t-${crypto.randomUUID()}`}, 'T', 'math') RETURNING id`;
   const answer = kind === "mcq" ? { index: 1 } : { rubric: "secret rubric", model: "model answer" };
-  const choices = kind === "mcq" ? ["a", "b", "c", "d"] : null;
+  const choices = kind === "mcq" ? JSON.stringify(["a", "b", "c", "d"]) : null;
   const [q] = await t.sql`
     INSERT INTO questions (user_id, topic_id, kind, stem, choices, answer, explanation)
-    VALUES (${uid}, ${topic.id}, ${kind}, 's', ${JSON.stringify(choices)}::text::jsonb, ${JSON.stringify(answer)}::text::jsonb, 'because') RETURNING id`;
+    VALUES (${uid}, ${topic.id}, ${kind}, 's', ${choices}, ${JSON.stringify(answer)}, 'because') RETURNING id`;
   await insertCards(t.sql, uid, [q.id]);
   return { topicId: topic.id, qid: q.id };
 }
@@ -69,8 +69,8 @@ test("queue never exposes answer fields; attempt does, after grading", async () 
   expect(a.answer).toEqual({ kind: "free", model: "model answer" });
   expect(a).toMatchObject({ score: 0.5, correct: false, feedback: "ok", explanation: "because" });
   expect(JSON.stringify(a)).not.toContain("secret rubric");
-  const other = await createTestUser();
-  const foreign = await seed(other.id, "mcq");
+  const otherId = await insertFixtureUser(t.sql);
+  const foreign = await seed(otherId, "mcq");
   const miss = await callRoute(handlers.attempt, "POST", "/api/practice/attempt", { cookie: u.cookie, body: { questionId: foreign.qid, choice: 1, confidence: 50, latencyMs: 5 } });
   expect(miss.status).toBe(404);
 });

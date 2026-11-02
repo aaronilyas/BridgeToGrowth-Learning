@@ -23,8 +23,8 @@ test("20 concurrent reservations book every estimate", async () => {
   const period = core.periodOf(new Date());
   const est = 1_000n;
   await Promise.all(Array.from({ length: 20 }, () => reserveQuota(u.id, period, est)));
-  const [row] = await t.sql`SELECT reserved_micros::text AS r FROM usage_periods WHERE user_id = ${u.id}` as { r: string }[];
-  const saved = row?.r;
+  const rows = await t.sql`SELECT reserved_micros AS r FROM usage_periods WHERE user_id = ${u.id} LIMIT 1` as { r: number | bigint }[];
+  const saved = rows[0]?.r;
   if (saved === undefined) throw new Error("missing reservation row");
   expect(BigInt(saved)).toBe(20n * est);
 });
