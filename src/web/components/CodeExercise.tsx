@@ -1,6 +1,6 @@
 import { useState, type JSX, type KeyboardEvent } from "react";
-import { CODE_MAX_CHARS, CodeRunResponse, type CodeSpec, type CodeTestResult } from "../../shared/code.ts";
-import { api } from "../api.ts";
+import { CODE_MAX_CHARS, type CodeRunResponse, type CodeSpec, type CodeTestResult } from "../../shared/code.ts";
+import { runPython } from "../pyodide/runner.ts";
 import { Button } from "./Button.tsx";
 import { ErrorBanner } from "./ErrorBanner.tsx";
 
@@ -18,7 +18,7 @@ function indentOnTab(e: KeyboardEvent<HTMLTextAreaElement>, onChange: (v: string
 }
 
 // O(1)
-// SEC: libraries are shown from the question and cannot be changed here; the server runs code only with the question's own libraries
+// SEC: libraries are shown from the question and cannot be changed here. Python runs on this computer, so the checks are self-assessment.
 function LibraryList({ spec }: { spec: CodeSpec }): JSX.Element {
   return (
     <div className="mt-3 rounded-xl border border-border bg-panel-2 px-3 py-2 text-xs">
@@ -26,14 +26,14 @@ function LibraryList({ spec }: { spec: CodeSpec }): JSX.Element {
         <span className="text-muted">Python libraries available:</span>
         {spec.libraries.length === 0 ? <span className="text-muted">built-ins only</span> : spec.libraries.map((l) => <code key={l} className="rounded-md bg-accent-soft px-1.5 py-0.5 font-mono text-accent">{l}</code>)}
       </p>
-      <p className="mt-1 text-muted">Installing packages and importing anything else is disabled. Code runs in an offline sandbox with no file access.</p>
+      <p className="mt-1 text-muted">Installing packages and importing anything else is disabled. Your code runs on this computer, offline, with no file or network access. Results are for self-assessment: they are not checked again on a server, and a modified app could skip them.</p>
     </div>
   );
 }
 
 // O(n) in code length
 // INV: Run executes the learner's code without the hidden tests; submitting is the parent card's job
-export function CodeExercise({ questionId, spec, value, onChange, disabled }: { questionId: string; spec: CodeSpec; value: string; onChange: (v: string) => void; disabled: boolean }): JSX.Element {
+export function CodeExercise({ spec, value, onChange, disabled }: { spec: CodeSpec; value: string; onChange: (v: string) => void; disabled: boolean }): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [out, setOut] = useState<CodeRunResponse | null>(null);
@@ -43,7 +43,8 @@ export function CodeExercise({ questionId, spec, value, onChange, disabled }: { 
     setBusy(true);
     setError(null);
     try {
-      setOut(await api("/api/code/run", CodeRunResponse, { method: "POST", body: { questionId, code: value } }));
+      const r = await runPython(spec, value, { tests: [] });
+      setOut({ stdout: r.stdout, stderr: r.stderr, error: r.error, timedOut: r.timedOut, durationMs: r.durationMs });
     } catch (e) {
       setError(e);
     } finally {
@@ -76,7 +77,7 @@ export function CodeExercise({ questionId, spec, value, onChange, disabled }: { 
           <Button variant="soft" busy={busy} disabled={value.trim() === ""} onClick={() => void run()}>
             ▶ Run
           </Button>
-          <span className="text-xs text-muted">Ctrl+Enter runs your code. Hidden tests run when you submit.</span>
+          <span className="text-xs text-muted">Ctrl+Enter runs your code. Hidden tests run on your computer when you submit.</span>
         </div>
       )}
       <ErrorBanner error={error} />
@@ -86,7 +87,7 @@ export function CodeExercise({ questionId, spec, value, onChange, disabled }: { 
 }
 
 // O(n) in output size
-// SEC: sandbox output is untrusted text and is rendered only as text
+// SEC: program output is untrusted text and is rendered only as text
 function RunOutput({ out }: { out: CodeRunResponse }): JSX.Element {
   const empty = out.stdout === "" && out.stderr === "" && out.error === null;
   return (

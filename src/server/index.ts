@@ -2,8 +2,6 @@ import index from "../web/index.html";
 import { env } from "./env.ts";
 import { json, route } from "./http.ts";
 import { MAX_REQUEST_BYTES, servePublic, type ApiRoutes } from "./listener.ts";
-import { codeRoutes } from "./code/routes.ts";
-import { codeRuntime } from "./code/sandbox.ts";
 import { genRoutes } from "./gen/routes.ts";
 import { learnRoutes } from "./learn/routes.ts";
 import { startPricingRefresh } from "./llm/gateway.ts";
@@ -19,7 +17,6 @@ const apiRoutes: ApiRoutes = {
   ...llmRoutes,
   ...learnRoutes,
   ...genRoutes,
-  ...codeRoutes,
   ...styleRoutes,
   ...teachRoutes,
   ...statsRoutes,
@@ -30,7 +27,6 @@ const apiRoutes: ApiRoutes = {
 
 await resetReservations();
 startPricingRefresh();
-void codeRuntime();
 
 const upstream = Bun.serve({ id: "btg-upstream", hostname: "127.0.0.1", port: 0, maxRequestBodySize: MAX_REQUEST_BYTES, idleTimeout: SERVER_IDLE_TIMEOUT_S, routes: { "/*": index } });
 servePublic({ port: env.PORT, api: apiRoutes, upstream: upstream.url });

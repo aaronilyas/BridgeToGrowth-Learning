@@ -2,6 +2,7 @@ import type { Server } from "bun";
 import { env } from "./env.ts";
 import { json, secureResponse } from "./http.ts";
 import { SERVER_IDLE_TIMEOUT_S } from "./llm/timeouts.ts";
+import { readPyodideAsset } from "./pyodideAssets.ts";
 
 export const MAX_REQUEST_BYTES = 80 * 2 ** 20;
 
@@ -107,6 +108,9 @@ export function servePublic(o: { port: number; api: ApiRoutes; upstream: URL }):
         if (server.upgrade(req, { data: { url: target, inner: null, pending: [] } })) return;
         return secureResponse(new Response(null, { status: 400 }));
       }
+      const url = new URL(req.url);
+      const asset = await readPyodideAsset(url.pathname, req.method);
+      if (asset) return secureResponse(asset);
       return proxyDocument(req, o.upstream);
     },
     error() {

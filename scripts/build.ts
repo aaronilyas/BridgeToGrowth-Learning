@@ -1,11 +1,11 @@
 import type { BunPlugin } from "bun";
 import tailwind from "bun-plugin-tailwind";
 import { join } from "node:path";
+import { copyPyodideAssets } from "./fetch-pyodide.ts";
 
 const OUT_DIR = "dist";
 const SERVER_ENTRY = join(OUT_DIR, "index.js");
 const CHUNK_IMPORT = /(\bfrom\s*"|\bimport\(\s*")\/(chunk-[a-z0-9]+\.js)"/g;
-const HAS_CHUNK_IMPORT = new RegExp(CHUNK_IMPORT.source);
 const KATEX_CSS = /^katex\/dist\/katex\.min\.css$/;
 const FONT_FACE = /@font-face\{[^}]*\}/g;
 const INLINED_FONT = "url(data:font";
@@ -28,19 +28,21 @@ async function findInlinedFonts(paths: string[]): Promise<string[]> {
   return css.filter((_, i) => texts[i]?.includes(INLINED_FONT));
 }
 
-// O(n) in server entry size
-// INV: splitting shares Bun's runtime-helper chunk between the server and the browser, and publicPath "/" makes the server's import of it a filesystem-absolute path; only the server entry's own chunk imports become "./", so the browser output and the embedded asset manifest stay exactly as Bun wrote them
-// INV: a chunk the server imports must not import further chunks, since those imports would stay "/"-absolute; the build fails instead of shipping a server that cannot boot
+// O(n) in the server chunk graph
+// INV: splitting shares runtime chunks between the server and the browser, and publicPath "/" makes every chunk import a filesystem-absolute path. Those imports are rewritten to "./" through the whole graph the server loads. A browser module at /chunk-*.js resolves "./" to the same URL, and the embedded asset manifest is left untouched.
 async function relinkServerChunks(): Promise<number> {
-  const text = await Bun.file(SERVER_ENTRY).text();
-  const linked = [...text.matchAll(CHUNK_IMPORT)].map((m) => m[2] ?? "");
-  for (const name of linked) {
-    if (HAS_CHUNK_IMPORT.test(await Bun.file(join(OUT_DIR, name)).text())) {
-      console.error(`server chunk ${name} imports another chunk`);
-      return 1;
-    }
+  const seen = new Set<string>();
+  const queue = [SERVER_ENTRY];
+  while (queue.length > 0) {
+    const path = queue.pop();
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    const text = await Bun.file(path).text();
+    const re = new RegExp(CHUNK_IMPORT.source, "g");
+    const linked = [...text.matchAll(re)].map((m) => m[2] ?? "");
+    for (const name of linked) queue.push(join(OUT_DIR, name));
+    if (linked.length > 0) await Bun.write(path, text.replace(new RegExp(CHUNK_IMPORT.source, "g"), "$1./$2\""));
   }
-  await Bun.write(SERVER_ENTRY, text.replace(CHUNK_IMPORT, "$1./$2\""));
   return 0;
 }
 
@@ -57,6 +59,7 @@ async function buildApp(): Promise<number> {
     return 1;
   }
   if ((await relinkServerChunks()) !== 0) return 1;
+  await copyPyodideAssets(join(OUT_DIR, "pyodide"));
   console.log(`built ${out.outputs.length} files into ${OUT_DIR}/`);
   return 0;
 }

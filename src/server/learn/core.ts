@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { Citation, type AttemptAnswer, type QuestionCategory, type QuestionPublic } from "../../shared/api.ts";
 import { CodeSpec, type CodeTestResult } from "../../shared/code.ts";
+import { StoredCodeAnswer } from "../../shared/codeGrade.ts";
 import { Settings } from "../../shared/settings.ts";
-import { StoredCodeAnswer } from "../code/core.ts";
 import { HttpError } from "../http.ts";
 import { listModels } from "../llm/core.ts";
 
@@ -106,11 +106,12 @@ export function resolveModel(settings: Settings, requested?: string): string {
 }
 
 // O(1)
-// INV: only id, topic, kind, category, stem, choices, the public code spec and lesson leave the server before an attempt
+// INV: the model answer and rubric stay stored. A code question also includes its hidden test source so the learner's machine can run it.
 export function toQuestionPublic(row: QuestionRow): QuestionPublic {
   const choices = row.choices === null ? null : StoredChoices.parse(row.choices);
   const code = row.code_spec === null ? null : CodeSpec.parse(row.code_spec);
-  return { id: row.id, topicId: row.topic_id, kind: row.kind, category: row.category, stem: row.stem, choices, code, lessonId: row.lesson_id };
+  const codeTests = row.kind === "code" ? StoredCodeAnswer.parse(row.answer).tests : null;
+  return { id: row.id, topicId: row.topic_id, kind: row.kind, category: row.category, stem: row.stem, choices, code, codeTests, lessonId: row.lesson_id };
 }
 
 // O(1)
@@ -139,7 +140,7 @@ export function buildGradePrompt(stem: string, a: { rubric: string; model: strin
 }
 
 // O(1)
-// SEC: called only after grading; the rubric and hidden test code never leave the server, only each test's name and outcome
+// SEC: called only after grading. A code attempt returns the reference solution and the reported outcomes. The test source was already on the question.
 export function toAttemptAnswer(kind: "mcq" | "free" | "code", a: StoredAnswer, tests: CodeTestResult[] = []): AttemptAnswer {
   if (kind === "mcq" && "index" in a) return { kind: "mcq", index: a.index };
   if (kind === "free" && "rubric" in a) return { kind: "free", model: a.model };

@@ -1,45 +1,21 @@
 import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runContained } from "../code/cgroup.ts";
-import { TOOL_MEMORY_BYTES } from "../code/core.ts";
 import { HttpError } from "../http.ts";
 import type { FilePart } from "../llm/core.ts";
 import { sniffMime } from "../styles/core.ts";
-import { MAX_CONCURRENT_PDF_TOOLS, MAX_PDF_BYTES, MAX_SCAN_PAGES, MAX_SENT_PDF_BYTES, MAX_TEXT_PAGES, MIN_TEXT_CHARS, buildPdfToolArgv, tidyText } from "./core.ts";
+import { MAX_PDF_BYTES, MAX_SCAN_PAGES, MAX_SENT_PDF_BYTES, MAX_TEXT_PAGES, MIN_TEXT_CHARS, tidyText } from "./core.ts";
 
 export type PdfRead = { kind: "text"; text: string } | { kind: "file"; part: FilePart };
 
-const TOOL_TIMEOUT_MS = 30_000;
 const TEXT_OUT_CAP = 4 * 1024 * 1024;
 const GS_OUT_CAP = 256 * 1024;
-const TOOL_PATH = "/usr/bin:/bin";
 const COMPRESS_PRESETS = ["/ebook", "/screen"] as const;
-let running = 0;
 
 // O(1)
-// SEC: tools resolve only from system directories; a missing tool, bwrap or prlimit means the PDF cannot be read safely, so the request fails rather than running unsandboxed or sending the raw file
-function locateTool(name: string): string {
-  const path = Bun.which(name, { PATH: TOOL_PATH });
-  if (!path) throw new HttpError(422, "source_unreadable");
-  return path;
-}
-
-// O(output) bounded by cap
-// SEC: always inside bubblewrap under prlimit (see buildPdfToolArgv) and its own cgroup leaf (runContained); stdin closed
-// SEC: at most MAX_CONCURRENT_PDF_TOOLS run at once across all users; extra requests get 429
-async function runTool(tool: string, args: string[], dir: string, cap: number): Promise<{ ok: boolean; out: Uint8Array }> {
-  const prlimit = locateTool("prlimit");
-  const bwrap = locateTool("bwrap");
-  const bin = locateTool(tool);
-  if (running >= MAX_CONCURRENT_PDF_TOOLS) throw new HttpError(429, "rate_limited");
-  running += 1;
-  try {
-    const r = await runContained((join) => buildPdfToolArgv(prlimit, bwrap, bin, args, dir, join), { memoryBytes: TOOL_MEMORY_BYTES, stdin: null, cap, timeoutMs: TOOL_TIMEOUT_MS });
-    return { ok: r.exitCode === 0 && !r.over && !r.timedOut && !r.signaled, out: r.out };
-  } finally {
-    running -= 1;
-  }
+// SEC: host document tools are not run. A PDF that needs one is refused, and the raw file is never sent on.
+async function runTool(_tool: string, _args: string[], _dir: string, _cap: number): Promise<{ ok: boolean; out: Uint8Array }> {
+  throw new HttpError(422, "source_unreadable");
 }
 
 // O(n) in text length

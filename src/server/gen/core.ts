@@ -6,7 +6,7 @@ import type { Settings } from "../../shared/settings.ts";
 import { GROUNDING_RULES, buildSourcesBlock, filterCitations, toCitations, type Paper } from "../lit/core.ts";
 import { wrapUserData } from "../llm/core.ts";
 import type { StoredAnswer } from "../learn/core.ts";
-import { toCodeParts, type LineTest } from "../code/core.ts";
+import { toCodeParts, type LineTest } from "../../shared/codeGrade.ts";
 
 const CODE_LINE_CHARS = 300;
 
@@ -69,7 +69,7 @@ export const FREE_RULES: string = [
 ].join("\n");
 
 // O(n) in libraries
-// SEC: the model may bake in only libraries this host's sandbox reported as installed
+// SEC: the model may bake in only libraries from the catalog
 function buildCodeRules(libs: readonly CodeLibrary[]): string {
   return [
     "Code exercise rules: if the learner's topic is about programming, algorithms, data structures, numerical methods or computational statistics, write the free question as kind \"code\" instead of kind \"free\". Otherwise never use kind \"code\".",
@@ -85,7 +85,7 @@ function buildCodeRules(libs: readonly CodeLibrary[]): string {
 
 // O(n) in prompt parts
 // SEC: the learner's topic and the style profile (derived from an untrusted upload) are wrapped as data
-// INV: codeLibs null means the sandbox is unavailable, so code questions are not offered
+// INV: codeLibs null means code questions are not offered
 export function buildGenPrompt(settings: Settings, papers: Paper[], style: StyleProfile | null, codeLibs: readonly CodeLibrary[] | null = null): string {
   const parts = [
     `You write a STEM practice set for a learner at the ${settings.level} level. Return JSON {topic, questions}.`,
@@ -111,7 +111,7 @@ export function buildGenPrompt(settings: Settings, papers: Paper[], style: Style
 
 // O(n) in text length
 // INV: returns null unless the kind is allowed for the category and the kind's fields are complete; math is wrapped (never inside code) and citations are limited to the k sources
-// INV: a code question needs codeLibs (the sandbox's installed libraries) and may bake in only those
+// INV: a code question needs codeLibs and may bake in only those libraries
 export function toNewQuestion(q: RawQuestion, category: QuestionCategory, papers: Paper[], codeLibs: readonly CodeLibrary[] | null = null): NewQuestion | null {
   if (!CATEGORY_KINDS[category].includes(q.kind)) return null;
   const stem = q.stem.trim();
