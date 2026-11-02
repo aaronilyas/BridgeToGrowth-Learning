@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { CodeSpec, CodeTestResult } from "./code.ts";
+import { CODE_MAX_TESTS, CodeAttempt, CodeSpec, CodeTest, CodeTestResult } from "./code.ts";
 
-export type ErrorCode = "bad_request"|"forbidden_origin"|"not_found"|"rate_limited"|"model_not_allowed"|"unsupported_media"|"too_large"|"upstream"|"llm_bad_output"|"source_blocked"|"source_unreadable"|"sandbox_unavailable"|"internal";
+export type ErrorCode = "bad_request"|"forbidden_origin"|"not_found"|"rate_limited"|"model_not_allowed"|"unsupported_media"|"too_large"|"upstream"|"llm_bad_output"|"source_blocked"|"source_unreadable"|"internal";
 
 export const ConfigResponse = z.strictObject({});
 export type ConfigResponse = z.infer<typeof ConfigResponse>;
@@ -43,8 +43,8 @@ export type QuestionCategory = z.infer<typeof QuestionCategory>;
 export const QUESTION_CATEGORIES: readonly QuestionCategory[] = QuestionCategory.options;
 export const PRACTICE_SET_SIZE = 4;
 
-// INV: the only shape in which a question leaves the server before it is answered; no answer, explanation or rubric
-export const QuestionPublic = z.strictObject({ id: z.uuid(), topicId: z.uuid(), kind: QuestionKind, category: QuestionCategory.nullable(), stem: z.string(), choices: z.array(z.string()).nullable(), code: CodeSpec.nullable(), lessonId: z.uuid().nullable() });
+// INV: the model answer, rubric and explanation stay on the server. A code question includes its hidden test source so the learner's machine can run it.
+export const QuestionPublic = z.strictObject({ id: z.uuid(), topicId: z.uuid(), kind: QuestionKind, category: QuestionCategory.nullable(), stem: z.string(), choices: z.array(z.string()).nullable(), code: CodeSpec.nullable(), codeTests: z.array(CodeTest).max(CODE_MAX_TESTS).nullable(), lessonId: z.uuid().nullable() });
 export type QuestionPublic = z.infer<typeof QuestionPublic>;
 
 export const AttemptRequest = z.strictObject({
@@ -53,6 +53,7 @@ export const AttemptRequest = z.strictObject({
   response: z.string().max(5000).optional(),
   confidence: z.int().min(0).max(100),
   latencyMs: z.int().min(0).max(3_600_000),
+  codeRun: CodeAttempt.optional(),
 });
 export type AttemptRequest = z.infer<typeof AttemptRequest>;
 

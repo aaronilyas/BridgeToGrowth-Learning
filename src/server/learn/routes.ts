@@ -1,7 +1,6 @@
 import { AttemptRequest, QueueQuery, type AttemptResponse } from "../../shared/api.ts";
-import { CodeSpec, type CodeTestResult } from "../../shared/code.ts";
-import { codeFeedback, scoreTests } from "../code/core.ts";
-import { runInSandbox } from "../code/sandbox.ts";
+import type { CodeTestResult } from "../../shared/code.ts";
+import { codeFeedback, sameTestNames, scoreTests } from "../../shared/codeGrade.ts";
 import { Settings, SettingsPatch, mergeSettings } from "../../shared/settings.ts";
 import { listModels } from "../llm/core.ts";
 import { HttpError, json, route } from "../http.ts";
@@ -47,12 +46,12 @@ const attempt = route({ body: AttemptRequest, rate: { key: "attempt", cap: 60, p
     if (c.body.choice === undefined || !("index" in stored)) throw new HttpError(400, "bad_request");
     score = c.body.choice === stored.index ? 1 : 0;
   } else if (row.kind === "code") {
-    // SEC: libraries and hidden tests come from the stored question; the client sends only its code
-    if (!c.body.response?.trim() || !("tests" in stored)) throw new HttpError(400, "bad_request");
-    const r = await runInSandbox(uid, CodeSpec.parse(row.code_spec).libraries, c.body.response, stored.tests);
-    tests = r.run.tests;
+    // SEC: the learner's machine ran these tests. The names must match the stored tests. The server records the reported outcomes and does not run Python. A client can forge a pass; the result is self-assessment.
+    if (!c.body.response?.trim() || !("tests" in stored) || !c.body.codeRun) throw new HttpError(400, "bad_request");
+    if (!sameTestNames(stored.tests, c.body.codeRun.tests)) throw new HttpError(400, "bad_request");
+    tests = [...c.body.codeRun.tests];
     score = scoreTests(tests);
-    feedback = codeFeedback(r.run);
+    feedback = codeFeedback({ stdout: "", stderr: "", error: c.body.codeRun.error, tests });
   } else {
     if (!c.body.response?.trim() || !("rubric" in stored)) throw new HttpError(400, "bad_request");
     const p = buildGradePrompt(row.stem, stored, c.body.response);

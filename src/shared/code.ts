@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// SEC: the closed set of Python modules a code question may bake in; nothing that reaches the OS, the import system, introspection or the network
+// SEC: the closed set of Python modules a code question may bake in. Each name ships in Pyodide 314.0.7 (the standard library, or a wheel staged by scripts/fetch-pyodide.ts). Nothing here reaches the OS, the import system, introspection or the network.
 export const CODE_LIBRARIES = [
   "math",
   "cmath",
@@ -44,3 +44,12 @@ export type CodeRunResponse = z.infer<typeof CodeRunResponse>;
 
 export const CodeTestResult = z.strictObject({ name: z.string(), passed: z.boolean(), error: z.string().nullable() });
 export type CodeTestResult = z.infer<typeof CodeTestResult>;
+
+// INV: the learner's machine reports these after it runs the hidden tests. The server stores them and does not run Python.
+export const CodeAttempt = z.strictObject({ tests: z.array(CodeTestResult).max(CODE_MAX_TESTS), error: z.string().max(2000).nullable() });
+export type CodeAttempt = z.infer<typeof CodeAttempt>;
+
+export const RUN_TIMEOUT_MS = 10_000;
+export const CODE_MEMORY_BYTES = 512 * 1024 * 1024;
+// INV: wheels Pyodide 314.0.7 publishes for the catalog. Standard-library names above are not wheels and are not loaded at runtime.
+export const PYODIDE_WHEELS = ["numpy", "sympy", "scipy", "mpmath"] as const;

@@ -3,8 +3,6 @@ import { json, route } from "./http.ts";
 import { MAX_REQUEST_BYTES, servePublic, type ApiRoutes } from "./listener.ts";
 import { setRuntimeOrigin } from "./localGuard.ts";
 import { appDataDir } from "./paths.ts";
-import { codeRoutes } from "./code/routes.ts";
-import { codeRuntime } from "./code/sandbox.ts";
 import { genRoutes } from "./gen/routes.ts";
 import { learnRoutes } from "./learn/routes.ts";
 import { startPricingRefresh } from "./llm/gateway.ts";
@@ -20,7 +18,6 @@ const apiRoutes: ApiRoutes = {
   ...llmRoutes,
   ...learnRoutes,
   ...genRoutes,
-  ...codeRoutes,
   ...styleRoutes,
   ...teachRoutes,
   ...statsRoutes,
@@ -36,7 +33,6 @@ export async function startServer(opts: { token: string; port?: number }): Promi
   appDataDir();
   await resetReservations();
   startPricingRefresh();
-  void codeRuntime();
   // SEC: API is served on the random public loopback socket; the upstream handles documents and assets only
   const upstream = Bun.serve({ id: "btg-upstream", hostname: "127.0.0.1", port: 0, maxRequestBodySize: MAX_REQUEST_BYTES, idleTimeout: SERVER_IDLE_TIMEOUT_S, routes: { "/*": index } });
   const server = servePublic({ port: opts.port ?? 0, api: apiRoutes, upstream: upstream.url, token: opts.token });

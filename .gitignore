@@ -9,3 +9,4 @@ desktop/build/
 desktop/artifacts/
 scripts/cache/
 /artifacts
+.cache/

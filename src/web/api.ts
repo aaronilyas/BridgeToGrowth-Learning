@@ -13,7 +13,7 @@ export function readLaunchHeaders(): Record<string, string> {
   return typeof token === "string" && token.length > 0 ? { "x-btg-token": token } : {};
 }
 
-const CODES: ReadonlySet<string> = new Set<ErrorCode>(["bad_request", "forbidden_origin", "not_found", "rate_limited", "model_not_allowed", "unsupported_media", "too_large", "upstream", "llm_bad_output", "source_blocked", "source_unreadable", "sandbox_unavailable", "internal"]);
+const CODES: ReadonlySet<string> = new Set<ErrorCode>(["bad_request", "forbidden_origin", "not_found", "rate_limited", "model_not_allowed", "unsupported_media", "too_large", "upstream", "llm_bad_output", "source_blocked", "source_unreadable", "internal"]);
 
 const MESSAGES: Record<ErrorCode, string> = {
   bad_request: "That request wasn't valid. Check the fields and try again.",
@@ -27,7 +27,6 @@ const MESSAGES: Record<ErrorCode, string> = {
   llm_bad_output: "The model returned something unusable. Try again.",
   source_blocked: "That link points to a local or private address, a non-standard port, or isn't http(s), so it can't be fetched.",
   source_unreadable: "One of your attachments or links couldn't be read. Check that the PDF isn't encrypted or damaged and the link is public.",
-  sandbox_unavailable: "The server's sandbox isn't available, so code can't run and PDF attachments can't be read right now.",
   internal: "Something went wrong.",
 };
 

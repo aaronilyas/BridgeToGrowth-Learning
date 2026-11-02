@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type JSX } from "react";
 import { AttemptResponse, type QuestionCategory, type QuestionPublic } from "../../shared/api.ts";
+import type { CodeAttempt } from "../../shared/code.ts";
 import { api } from "../api.ts";
+import { runPython } from "../pyodide/runner.ts";
 import { useSettings } from "../session.tsx";
 import { Button } from "./Button.tsx";
 import { CodeExercise, TestResults } from "./CodeExercise.tsx";
@@ -33,6 +35,7 @@ export function QuestionCard({ question, onResult, label = "Quick Check" }: { qu
   const [confidence, setConfidence] = useState(50);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [result, setResult] = useState<AttemptResponse | null>(null);
   const isMcq = question.kind === "mcq" && question.choices !== null;
   const code = question.kind === "code" ? question.code : null;
@@ -42,14 +45,25 @@ export function QuestionCard({ question, onResult, label = "Quick Check" }: { qu
     if (busy || result || !ready) return;
     setBusy(true);
     setError(null);
+    setNote(null);
     const response = isMcq ? thinking.trim() : code ? text : text.trim();
     try {
+      let codeRun: CodeAttempt | null = null;
+      if (code) {
+        const ran = await runPython(code, text, { tests: question.codeTests ?? [] });
+        if (!ran.started) {
+          setNote(ran.error ?? "Python failed to start.");
+          return;
+        }
+        codeRun = { tests: ran.tests, error: ran.error };
+      }
       const r = await api("/api/practice/attempt", AttemptResponse, {
         method: "POST",
         body: {
           questionId: question.id,
           ...(isMcq && choice !== null ? { choice } : {}),
           ...(response === "" ? {} : { response }),
+          ...(codeRun ? { codeRun } : {}),
           confidence,
           latencyMs: Math.min(3_600_000, Math.round(performance.now() - started.current)),
         },
@@ -105,7 +119,7 @@ export function QuestionCard({ question, onResult, label = "Quick Check" }: { qu
           })}
         </fieldset>
       ) : code ? (
-        <CodeExercise questionId={question.id} spec={code} value={text} onChange={setText} disabled={result !== null} />
+        <CodeExercise spec={code} value={text} onChange={setText} disabled={result !== null} />
       ) : (
         <textarea
           className="mt-3 min-h-28 w-full rounded-xl border border-border bg-panel-2 p-3 text-sm outline-none focus:border-accent"
@@ -148,6 +162,7 @@ export function QuestionCard({ question, onResult, label = "Quick Check" }: { qu
           </div>
         </div>
       )}
+      {note && <div role="alert" className="mt-3 rounded-xl border border-danger/50 bg-panel-2 px-4 py-3 text-sm text-danger">{note}</div>}
       <div className="mt-3">
         <ErrorBanner error={error} onRetry={() => void submit()} />
       </div>
