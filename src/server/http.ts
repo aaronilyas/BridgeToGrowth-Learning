@@ -1,9 +1,6 @@
 import type { z } from "zod";
-import type { ErrorCode, Plan } from "../shared/api.ts";
+import type { ErrorCode } from "../shared/api.ts";
 import { env } from "./env.ts";
-import { hashToken, readSessionToken, type AuthUser } from "./auth/core.ts";
-import { findSession } from "./auth/sql.ts";
-import { entitlementOf } from "./billing/core.ts";
 import { takeToken } from "./rate.ts";
 
 export class HttpError extends Error {
@@ -42,20 +39,17 @@ export async function readBodyCapped(req: Request, cap: number): Promise<Uint8Ar
   return body;
 }
 
-export type Ctx<B, A extends boolean = false, E extends boolean = false> = {
+export type Ctx<B> = {
   req: Request;
   ip: string;
   params: Record<string, string>;
   body: B;
-  user: true extends A | E ? AuthUser : undefined;
-  plan: true extends A | E ? Plan : undefined;
-  capMicros: true extends A | E ? bigint : undefined;
 };
-export type RouteOpts<B, A extends boolean = false, E extends boolean = false> = { auth?: A; entitled?: E; pro?: boolean; body?: z.ZodType<B>; rate?: { key: string; cap: number; perMin: number }; csrf?: boolean; maxBody?: number; raw?: boolean };
+export type RouteOpts<B> = { body?: z.ZodType<B>; rate?: { key: string; cap: number; perMin: number }; csrf?: boolean; maxBody?: number; raw?: boolean };
 
 const JSON_HEADERS = { "content-type": "application/json", "cache-control": "no-store" };
 const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "::1"]);
-const STRICT_CSP = "default-src 'self'; script-src 'self' style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+const STRICT_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 const SECURITY_HEADERS: ReadonlyArray<readonly [string, string]> = [
   ["x-content-type-options", "nosniff"],
   ["referrer-policy", "strict-origin-when-cross-origin"],
@@ -73,7 +67,7 @@ function applySecurityHeaders(headers: Headers, csp: string): void {
 
 // O(1)
 // INV: 204, 205 and 304 stay bodyless so the Fetch API accepts them
-// SEC: csp defaults to the strict policy; only an ad-serving document passes its nonce policy
+// SEC: csp defaults to the strict policy
 export function secureResponse(res: Response, csp: string = STRICT_CSP): Response {
   const headers = new Headers();
   for (const [name, value] of res.headers) {
@@ -111,23 +105,16 @@ export function json(data: unknown, status: number = 200): Response {
 }
 
 // O(1)
-// SEC: X-Real-IP is trustworthy only because the server binds to 127.0.0.1 and Caddy overwrites that header; a missing header shares the "local" bucket
+// SEC: the server binds to 127.0.0.1; a missing X-Real-IP shares the local bucket
 function readIp(req: Request): string {
   return req.headers.get("x-real-ip") ?? "local";
 }
 
-// O(1)
-// INV: free-plan settings are not configurable, so a free user is served the defaults; the stored settings return on upgrade
-function applyPlanSettings(u: AuthUser, plan: Plan): AuthUser {
-  return plan === "pro" ? u : { ...u, settings: {} };
-}
-
 // O(n) in body size
-// INV: check order is size, csrf, session, pro gate, rate limit, body parse, handler
+// INV: check order is size, origin, rate limit, body parse, handler
 // INV: raw skips body parsing so the handler reads the stream itself (multipart); size is capped by content-length here and by the handler
-// INV: auth, entitled and pro all require a session; every account has an entitlement, pro also requires the pro plan (402 pro_required)
-// INV: rate buckets are per user on authenticated routes and per client IP otherwise
-export function route<B = undefined, A extends boolean = false, E extends boolean = false>(opts: RouteOpts<B, A, E>, fn: (c: Ctx<B, A, E>) => Promise<Response>): (req: Request & { params?: Record<string, string> }) => Promise<Response> {
+// INV: rate buckets are keyed by the route key
+export function route<B = undefined>(opts: RouteOpts<B>, fn: (c: Ctx<B>) => Promise<Response>): (req: Request & { params?: Record<string, string> }) => Promise<Response> {
   const maxBody = opts.maxBody ?? 64 * 1024;
   return async (req) => {
     try {
@@ -136,17 +123,7 @@ export function route<B = undefined, A extends boolean = false, E extends boolea
       const csrf = opts.csrf ?? (req.method !== "GET" && req.method !== "HEAD");
       if (csrf && !originAllowed(req.headers.get("origin"), env.APP_ORIGIN)) throw new HttpError(403, "forbidden_origin");
       const ip = readIp(req);
-      let user: AuthUser | undefined;
-      let ent: { plan: Plan; capMicros: bigint } | undefined;
-      if (opts.auth || opts.entitled || opts.pro) {
-        const token = readSessionToken(req.headers.get("cookie"));
-        const found = token ? await findSession(hashToken(token)) : null;
-        if (!found) throw new HttpError(401, "unauthenticated");
-        ent = entitlementOf(found);
-        if (opts.pro && ent.plan !== "pro") throw new HttpError(402, "pro_required");
-        user = applyPlanSettings(found, ent.plan);
-      }
-      if (opts.rate && !takeToken(`${opts.rate.key}:${user ? `u:${user.id}` : `ip:${ip}`}`, opts.rate.cap, opts.rate.perMin)) throw new HttpError(429, "rate_limited");
+      if (opts.rate && !takeToken(opts.rate.key, opts.rate.cap, opts.rate.perMin)) throw new HttpError(429, "rate_limited");
       let body = undefined as B;
       if (opts.body && !opts.raw) {
         const text = new TextDecoder().decode(await readBodyCapped(req, maxBody));
@@ -160,7 +137,7 @@ export function route<B = undefined, A extends boolean = false, E extends boolea
         if (!r.success) throw new HttpError(400, "bad_request");
         body = r.data;
       }
-      return secureResponse(await fn({ req, ip, params: req.params ?? {}, body, user: user as Ctx<B, A, E>["user"], plan: ent?.plan as Ctx<B, A, E>["plan"], capMicros: ent?.capMicros as Ctx<B, A, E>["capMicros"] }));
+      return secureResponse(await fn({ req, ip, params: req.params ?? {}, body }));
     } catch (e) {
       if (e instanceof HttpError) return secureResponse(json({ error: e.code }, e.status));
       console.error("request failed");

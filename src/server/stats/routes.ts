@@ -2,6 +2,7 @@ import { InsightsResponse, StatsQuery, type GraphResponse, type StatsResponse } 
 import { HttpError, json, route } from "../http.ts";
 import { chatJson } from "../llm/gateway.ts";
 import { loadSettings } from "../learn/core.ts";
+import { localProfile } from "../profile.ts";
 import { INSIGHT_SYSTEM, InsightOut, buildInsightPrompt, computeMetrics, normalizeTrends, streakOf, toDayString } from "./core.ts";
 import { countDue, findInsight, insertInsight, listDaily, listDomains, listGraph, listTopStats } from "./sql.ts";
 
@@ -21,21 +22,21 @@ async function loadStats(user: { id: string; settings: Record<string, unknown> }
   };
 }
 
-const graph = route({ auth: true }, async (c) => {
-  const g = await listGraph(c.user.id);
+const graph = route({}, async () => {
+  const g = await listGraph((await localProfile()).id);
   const body: GraphResponse = g;
   return json(body);
 });
 
-// INV: personal stats and insights are a pro feature; the free plan gets 402 pro_required
-const stats = route({ auth: true, pro: true }, async (c) => {
+const stats = route({}, async (c) => {
   const q = StatsQuery.safeParse(Object.fromEntries(new URL(c.req.url).searchParams));
   if (!q.success) throw new HttpError(400, "bad_request");
-  return json(await loadStats(c.user, q.data.days));
+  return json(await loadStats(await localProfile(), q.data.days));
 });
 
-const insights = route({ entitled: true, pro: true }, async (c) => {
-  const uid = c.user.id;
+const insights = route({}, async () => {
+  const user = await localProfile();
+  const uid = user.id;
   const day = toDayString(new Date());
   const stored = await findInsight(uid, day);
   if (stored !== null) {
@@ -46,8 +47,8 @@ const insights = route({ entitled: true, pro: true }, async (c) => {
   const running = inflight.get(uid);
   if (running) return json(await running);
   const job = (async (): Promise<InsightsResponse> => {
-    const s = await loadStats(c.user, 30);
-    const r = await chatJson({ who: { uid, plan: c.plan, capMicros: c.capMicros }, model: { system: "insight" }, kind: "insight", system: INSIGHT_SYSTEM, user: buildInsightPrompt(s), schema: InsightOut, maxTokens: 600 });
+    const s = await loadStats(user, 30);
+    const r = await chatJson({ who: { uid }, model: { system: "insight" }, kind: "insight", system: INSIGHT_SYSTEM, user: buildInsightPrompt(s), schema: InsightOut, maxTokens: 600 });
     const body = { trends: normalizeTrends(r.data) };
     await insertInsight(uid, day, body);
     return { day, ...body };

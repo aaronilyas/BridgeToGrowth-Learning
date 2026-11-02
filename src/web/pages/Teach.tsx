@@ -10,7 +10,6 @@ import { ErrorBanner } from "../components/ErrorBanner.tsx";
 import { Panel } from "../components/Panel.tsx";
 import { Spinner } from "../components/Spinner.tsx";
 import { formatExpiry, useMinuteClock } from "../expiry.ts";
-import { useIsPro, usePlanTerms } from "../session.tsx";
 
 // O(1)
 export function GeneratingLesson({ prompt }: { prompt: string }): JSX.Element {
@@ -28,8 +27,6 @@ export function TeachPage(): JSX.Element {
   const [lessons, setLessons] = useState<LessonSummary[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const generating = generatingLessonPrompt(useAskJob());
-  const pro = useIsPro();
-  const terms = usePlanTerms();
   const now = useMinuteClock();
   useEffect(() => {
     let live = true;
@@ -44,15 +41,6 @@ export function TeachPage(): JSX.Element {
         <h1 className="text-3xl font-semibold">What do you want to learn?</h1>
         <p className="text-muted">Ask for any topic. You'll get a short, source-grounded lesson with a check after every step.</p>
         <AskBar />
-        {!pro && terms && (
-          <p className="text-sm text-muted">
-            On the Free plan, lessons are deleted {terms.free.lessonTtlDays} days after you create them.{" "}
-            <Link href="/billing" className="font-medium text-accent hover:underline">
-              Go Pro to keep them
-            </Link>
-            .
-          </p>
-        )}
       </Panel>
       <Panel>
         <h2 className="mb-3 text-lg font-semibold">Recent lessons</h2>

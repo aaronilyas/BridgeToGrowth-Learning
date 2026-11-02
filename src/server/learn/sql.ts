@@ -77,6 +77,14 @@ export async function recordAttempt(a: AttemptIn, now: Date): Promise<Date | nul
 }
 
 // O(1)
+export async function findUserSettings(uid: string): Promise<Record<string, unknown>> {
+  const rows = await sql`SELECT settings FROM users WHERE id = ${uid} LIMIT 1` as { settings: unknown }[];
+  const raw = rows[0]?.settings;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
+  return Object.fromEntries(Object.entries(raw));
+}
+
+// O(1)
 // INV: Bun.sql double-encodes a string cast straight to jsonb; always write JSON via ${JSON.stringify(x)}::text::jsonb
 export async function updateSettings(uid: string, s: Settings): Promise<void> {
   await sql`UPDATE users SET settings = ${JSON.stringify(s)}::text::jsonb WHERE id = ${uid}`;

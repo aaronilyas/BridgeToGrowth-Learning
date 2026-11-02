@@ -1,20 +1,19 @@
 import { z } from "zod";
-import type { Citation, ErrorCode, Plan } from "../../shared/api.ts";
+import type { Citation, ErrorCode } from "../../shared/api.ts";
 import { parseSseChunk } from "../../shared/sse.ts";
 import { env } from "../env.ts";
 import { HttpError } from "../http.ts";
 import { takeToken } from "../rate.ts";
 import { assertModelAllowed, buildMessages, completionBudget, countPromptChars, estimateMicros, parseJsonOutput, parsePricing, periodOf, readCompletion, readDelta, reasoningPayload, toSchemaName, type ChatMessage, type FilePart, type Turn, type Usage } from "./core.ts";
 import { FREE_PRICE, MODELS, SYSTEM_MODELS, isModelListed, priceOf, setPricing, type SystemModelKey } from "./models.ts";
-import { findUsage, reserveQuota, settleQuota } from "./sql.ts";
 import { JSON_TIMEOUT_MS, STREAM_TIMEOUT_MS } from "./timeouts.ts";
 
-export type Who = { uid: string; plan: Plan; capMicros: bigint };
+export type Who = { uid: string };
 export type ModelChoice = string | { system: SystemModelKey };
 export type JsonCall<T> = { who: Who; model: ModelChoice; kind: string; system: string; user: string; schema: z.ZodType<T>; maxTokens: number; files?: FilePart[]; signal?: AbortSignal };
 export type StreamCall = { who: Who; model: ModelChoice; kind: string; system: string; messages: Turn[]; maxTokens: number; signal: AbortSignal; onDone: (text: string) => Promise<{ citations?: Citation[] } | void> };
 
-type Prepared = { uid: string; model: string; kind: string; period: string; est: bigint; cap: bigint; maxTokens: number; reasons: boolean; messages: ChatMessage[] };
+type Prepared = { uid: string; model: string; kind: string; period: string; est: bigint; maxTokens: number; reasons: boolean; messages: ChatMessage[] };
 
 const DAY_MS = 86_400_000;
 const RETRY_MS = 60_000;
@@ -49,19 +48,12 @@ export async function refreshPricing(fetchFn: typeof fetch = fetch): Promise<boo
 }
 
 // O(1)
-// INV: pricing stays unloaded (model calls answer 502 upstream) until the first successful refresh, so a dollar cap is never checked against a $0 guess; retries every minute until then, daily after
+// INV: pricing stays unloaded (model calls answer 502 upstream) until the first successful refresh; retries every minute until then, daily after
 export function startPricingRefresh(): void {
   const tick = (): void => {
     void refreshPricing().then((ok) => setTimeout(tick, ok ? DAY_MS : RETRY_MS).unref());
   };
   tick();
-}
-
-// O(log n)
-// SEC: short-circuits callers before unmetered pre-work when the user has no quota left
-export async function assertQuotaHeadroom(who: Who): Promise<void> {
-  const u = await findUsage(who.uid, periodOf(new Date()));
-  if (u.usedMicros + u.reservedMicros >= who.capMicros) throw new HttpError(429, "quota_exceeded");
 }
 
 // O(1)
@@ -74,7 +66,7 @@ function chooseModel(choice: ModelChoice): string {
 }
 
 // O(n) in message size
-// SEC: both per-token prices at 0 skip the dollar cap, so each user is limited to 200 of those calls per day
+// SEC: both per-token prices at 0 are limited to 200 calls per user per day
 export function prepareCall(who: Who, choice: ModelChoice, kind: string, messages: ChatMessage[], maxTokens: number): Prepared {
   const model = chooseModel(choice);
   const { loaded, price } = priceOf(model);
@@ -83,13 +75,19 @@ export function prepareCall(who: Who, choice: ModelChoice, kind: string, message
   const reasons = MODELS.some((m) => m.id === model);
   const budget = completionBudget(maxTokens, reasons ? env.OPENROUTER_REASONING_LEVEL : null);
   const est = estimateMicros(price, countPromptChars(messages), budget);
-  if (est > who.capMicros) throw new HttpError(429, "quota_exceeded");
-  return { uid: who.uid, model, kind, period: periodOf(new Date()), est, cap: who.capMicros, maxTokens: budget, reasons, messages };
+  return { uid: who.uid, model, kind, period: periodOf(new Date()), est, maxTokens: budget, reasons, messages };
 }
 
 // O(1)
 async function reserveOrThrow(p: Prepared): Promise<void> {
-  if (!(await reserveQuota(p.uid, p.period, p.est, p.cap))) throw new HttpError(429, "quota_exceeded");
+  const { reserveQuota } = await import("./sql.ts");
+  await reserveQuota(p.uid, p.period, p.est);
+}
+
+// O(1)
+async function settle(p: Prepared, usage: Usage | null, conservative: boolean): Promise<void> {
+  const { settleQuota } = await import("./sql.ts");
+  await settleQuota(p.uid, p.period, p.kind, p.model, p.est, finalUsage(p, usage, conservative));
 }
 
 // O(1)
@@ -132,7 +130,7 @@ async function runJsonAttempt(p: Prepared, format: Record<string, unknown>, sign
     usage = out.usage;
     return { content: out.content, costMicros: finalUsage(p, usage, false).costMicros };
   } finally {
-    await settleQuota(p.uid, p.period, p.kind, p.model, p.est, finalUsage(p, usage, false));
+    await settle(p, usage, false);
   }
 }
 
@@ -158,7 +156,7 @@ function frameEvent(e: { t: "d"; v: string } | { t: "end"; citations?: Citation[
 }
 
 // O(n) in streamed size
-// INV: model/plan/pricing/cap errors throw synchronously so the route answers with a status; later errors arrive as an err event
+// INV: model and pricing errors throw synchronously so the route answers with a status; later errors arrive as an err event
 // INV: a client abort aborts upstream and settles at est
 export function chatStream(o: StreamCall): ReadableStream<Uint8Array> {
   const p = prepareCall(o.who, o.model, o.kind, buildMessages(o.system, o.messages), o.maxTokens);
@@ -210,7 +208,7 @@ export function chatStream(o: StreamCall): ReadableStream<Uint8Array> {
       if (!(e instanceof HttpError)) console.error("llm: stream failed");
       send(ctrl, frameEvent({ t: "err", code }));
     } finally {
-      if (reserved) await settleQuota(p.uid, p.period, p.kind, p.model, p.est, finalUsage(p, usage, o.signal.aborted || upstream.signal.aborted)).catch(() => console.error("llm: quota settlement failed"));
+      if (reserved) await settle(p, usage, o.signal.aborted || upstream.signal.aborted).catch(() => console.error("llm: quota settlement failed"));
       if (!closed) {
         closed = true;
         try {

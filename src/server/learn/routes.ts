@@ -6,34 +6,37 @@ import { Settings, SettingsPatch, mergeSettings } from "../../shared/settings.ts
 import { listModels } from "../llm/core.ts";
 import { HttpError, json, route } from "../http.ts";
 import { chatJson } from "../llm/gateway.ts";
+import { localProfile } from "../profile.ts";
 import { GradeOutput, CORRECT_AT, StoredAnswer, StoredCitations, buildGradePrompt, loadSettings, queueLimit, toAttemptAnswer, toQuestionPublic } from "./core.ts";
 import { countReviewsToday, findQuestion, listDueQuestions, recordAttempt, updateSettings } from "./sql.ts";
 
-const getSettings = route({ auth: true }, async (c) => json(loadSettings(c.user)));
+const getSettings = route({}, async () => json(loadSettings(await localProfile())));
 
-// INV: settings are a pro feature; the free plan reads the defaults from GET and gets 402 pro_required here
-const putSettings = route({ auth: true, pro: true, body: SettingsPatch }, async (c) => {
-  const next = Settings.safeParse(mergeSettings(loadSettings(c.user), c.body));
+const putSettings = route({ body: SettingsPatch }, async (c) => {
+  const user = await localProfile();
+  const next = Settings.safeParse(mergeSettings(loadSettings(user), c.body));
   if (!next.success) throw new HttpError(400, "bad_request");
   // SEC: a newly chosen model must be one of the selectable models
   const m = next.data.model;
   if (c.body.model !== undefined && m !== null && !listModels().some((x) => x.id === m)) throw new HttpError(400, "model_not_allowed");
-  await updateSettings(c.user.id, next.data);
+  await updateSettings(user.id, next.data);
   return json(next.data);
 });
 
-const queue = route({ entitled: true }, async (c) => {
+const queue = route({}, async (c) => {
+  const user = await localProfile();
   const q = QueueQuery.safeParse(Object.fromEntries(new URL(c.req.url).searchParams));
   if (!q.success) throw new HttpError(400, "bad_request");
-  const settings = loadSettings(c.user);
+  const settings = loadSettings(user);
   if (!settings.srs.enabled) return json([]);
-  const limit = queueLimit(settings, await countReviewsToday(c.user.id), q.data.limit);
+  const limit = queueLimit(settings, await countReviewsToday(user.id), q.data.limit);
   if (limit === 0) return json([]);
-  return json((await listDueQuestions(c.user.id, limit)).map(toQuestionPublic));
+  return json((await listDueQuestions(user.id, limit)).map(toQuestionPublic));
 });
 
-const attempt = route({ entitled: true, body: AttemptRequest, rate: { key: "attempt", cap: 60, perMin: 60 } }, async (c) => {
-  const uid = c.user.id;
+const attempt = route({ body: AttemptRequest, rate: { key: "attempt", cap: 60, perMin: 60 } }, async (c) => {
+  const user = await localProfile();
+  const uid = user.id;
   const row = await findQuestion(uid, c.body.questionId);
   if (!row) throw new HttpError(404, "not_found");
   const stored = StoredAnswer.parse(row.answer);
@@ -46,19 +49,19 @@ const attempt = route({ entitled: true, body: AttemptRequest, rate: { key: "atte
   } else if (row.kind === "code") {
     // SEC: libraries and hidden tests come from the stored question; the client sends only its code
     if (!c.body.response?.trim() || !("tests" in stored)) throw new HttpError(400, "bad_request");
-    const r = await runInSandbox(c.user.id, CodeSpec.parse(row.code_spec).libraries, c.body.response, stored.tests);
+    const r = await runInSandbox(uid, CodeSpec.parse(row.code_spec).libraries, c.body.response, stored.tests);
     tests = r.run.tests;
     score = scoreTests(tests);
     feedback = codeFeedback(r.run);
   } else {
     if (!c.body.response?.trim() || !("rubric" in stored)) throw new HttpError(400, "bad_request");
     const p = buildGradePrompt(row.stem, stored, c.body.response);
-    const g = await chatJson({ who: { uid, plan: c.plan, capMicros: c.capMicros }, model: { system: "grade" }, kind: "grade", system: p.system, user: p.user, schema: GradeOutput, maxTokens: 400 });
+    const g = await chatJson({ who: { uid }, model: { system: "grade" }, kind: "grade", system: p.system, user: p.user, schema: GradeOutput, maxTokens: 400 });
     score = g.data.score;
     feedback = g.data.feedback;
   }
   const now = new Date();
-  const due = await recordAttempt({ uid, topicId: row.topic_id, questionId: row.id, score, confidence: c.body.confidence, latencyMs: c.body.latencyMs, response: row.kind === "mcq" ? null : (c.body.response ?? null), srsEnabled: loadSettings(c.user).srs.enabled }, now);
+  const due = await recordAttempt({ uid, topicId: row.topic_id, questionId: row.id, score, confidence: c.body.confidence, latencyMs: c.body.latencyMs, response: row.kind === "mcq" ? null : (c.body.response ?? null), srsEnabled: loadSettings(user).srs.enabled }, now);
   const body: AttemptResponse = { score, correct: score >= CORRECT_AT, feedback, answer: toAttemptAnswer(row.kind, stored, tests), explanation: row.explanation, citations: StoredCitations.parse(row.citations), nextDueAt: due ? due.toISOString() : null };
   return json(body);
 });

@@ -12,13 +12,6 @@ let stepMock: { explanationMd: string; keyIdea: string; example: null; check: { 
 
 beforeAll(async () => {
   t = await bootTestServer();
-  const { findUsage } = await import("../llm/sql.ts");
-  const { periodOf } = await import("../llm/core.ts");
-  const { HttpError } = await import("../http.ts");
-  const assertQuotaHeadroom = async (who: { uid: string; capMicros: bigint }): Promise<void> => {
-    const u = await findUsage(who.uid, periodOf(new Date()));
-    if (u.usedMicros + u.reservedMicros >= who.capMicros) throw new HttpError(429, "quota_exceeded");
-  };
   const never = async (): Promise<never> => {
     throw new Error("llm must not be reached");
   };
@@ -32,7 +25,6 @@ beforeAll(async () => {
     },
     chatStream: never,
     startPricingRefresh: () => {},
-    assertQuotaHeadroom,
   }));
   upsertTopics = (await import("../topics/sql.ts")).upsertTopics;
   topicsReleasedByLesson = (await import("../topics/core.ts")).topicsReleasedByLesson;
@@ -233,24 +225,6 @@ test("a generated quick check stores math inside dollar delimiters", async () =>
   expect(step.check.explanation).toBe("Only option B factors as a product of a function of $x (x^2)$ and a function of $y (y^3)$, allowing separation into $dy/y^3 = x^2 dx$.");
   expect(step.content.explanationMd).toBe("An ODE has the form $dy/dx = f(x, y)$.");
   expect(step.content.example).toBe("Solve $dy/dx = x y$.");
-});
-
-test("a free user whose usage_periods.used_micros equals the cap gets 429 from POST /api/lessons with a URL attached, and the mocked fetchUrlSource is never called", async () => {
-  await t.reset();
-  const u = await createTestUser({ plan: "free" });
-  const { entitlementOf } = await import("../billing/core.ts");
-  const { periodOf } = await import("../llm/core.ts");
-  const { capMicros } = entitlementOf({ sub_status: "none" });
-  const period = periodOf(new Date());
-  await t.sql`INSERT INTO usage_periods (user_id, period, used_micros, reserved_micros) VALUES (${u.id}, ${period}::date, ${capMicros}, 0)`;
-  fetchUrlSource.mockClear();
-  const res = await callRoute(h.create, "POST", "/api/lessons", {
-    cookie: u.cookie,
-    body: { prompt: "Intro to Quantum Mechanics", urls: ["https://example.com/syllabus.html"] },
-  });
-  expect(res.status).toBe(429);
-  expect(await res.json()).toEqual({ error: "quota_exceeded" });
-  expect(fetchUrlSource).not.toHaveBeenCalled();
 });
 
 test("two concurrent step requests call the model once", async () => {

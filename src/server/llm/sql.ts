@@ -5,14 +5,11 @@ export type UsageRow = { usedMicros: bigint; reservedMicros: bigint };
 export type CallRow = { kind: string; model: string; promptTokens: number | null; completionTokens: number | null; costMicros: bigint; createdAt: Date };
 
 // O(log n), one statement on the (user_id, period) primary key
-// INV: the cap check and the increment are one atomic upsert; the caller has already checked est <= cap for the insert branch
-export async function reserveQuota(uid: string, period: string, est: bigint, cap: bigint): Promise<boolean> {
-  const rows = await sql`
+// INV: the increment is one atomic upsert; there is no dollar cap
+export async function reserveQuota(uid: string, period: string, est: bigint): Promise<void> {
+  await sql`
     INSERT INTO usage_periods (user_id, period, reserved_micros) VALUES (${uid}, ${period}::date, ${est})
-    ON CONFLICT (user_id, period) DO UPDATE SET reserved_micros = usage_periods.reserved_micros + ${est}
-    WHERE usage_periods.used_micros + usage_periods.reserved_micros + ${est} <= ${cap}
-    RETURNING 1`;
-  return rows.length > 0;
+    ON CONFLICT (user_id, period) DO UPDATE SET reserved_micros = usage_periods.reserved_micros + ${est}`;
 }
 
 // O(log n), one statement

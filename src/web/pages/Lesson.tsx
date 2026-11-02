@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
-import { Link, useLocation, useParams } from "wouter";
+import { useLocation, useParams } from "wouter";
 import { LessonDetail, StepPublic } from "../../shared/api.ts";
 import { api } from "../api.ts";
 import { ChatPanel } from "../components/ChatPanel.tsx";
@@ -109,11 +109,7 @@ export function LessonPage(): JSX.Element {
       <Panel className="min-w-0">
         {lesson.expiresAt && (
           <p className="mb-4 rounded-xl border border-accent-2/40 bg-panel-2 px-4 py-2.5 text-sm text-muted">
-            Free plan: {formatExpiry(lesson.expiresAt, now)}. Deletes {new Date(lesson.expiresAt).toLocaleString()}.{" "}
-            <Link href="/billing" className="font-medium text-accent hover:underline">
-              Upgrade to keep it
-            </Link>
-            .
+            {formatExpiry(lesson.expiresAt, now)}. Deletes {new Date(lesson.expiresAt).toLocaleString()}.
           </p>
         )}
         <div className="mb-4 flex justify-end">

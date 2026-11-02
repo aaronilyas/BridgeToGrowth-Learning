@@ -1,6 +1,5 @@
 import { beforeAll, expect, test } from "bun:test";
 import { parseSseChunk } from "../../shared/sse.ts";
-import { bootTestServer, createTestUser, type TestServer } from "../testkit.ts";
 import type * as GatewayModule from "./gateway.ts";
 
 // O(1)
@@ -10,25 +9,24 @@ async function loadRealGateway(): Promise<typeof GatewayModule> {
   return import(specifier);
 }
 
-let t: TestServer;
 let core: typeof import("./core.ts");
-let reserveQuota: typeof import("./sql.ts")["reserveQuota"];
 
 beforeAll(async () => {
-  t = await bootTestServer();
   core = await import("./core.ts");
-  reserveQuota = (await import("./sql.ts")).reserveQuota;
 });
 
-test("20 concurrent reservations against a cap for 5 admit exactly 5", async () => {
-  await t.reset();
+test("20 concurrent reservations book every estimate", async () => {
+  const { bootTestServer, createTestUser } = await import("../testkit.ts");
+  const t = await bootTestServer();
+  const { reserveQuota } = await import("./sql.ts");
   const u = await createTestUser();
   const period = core.periodOf(new Date());
   const est = 1_000n;
-  const results = await Promise.all(Array.from({ length: 20 }, () => reserveQuota(u.id, period, est, 5n * est)));
-  expect(results.filter(Boolean)).toHaveLength(5);
-  const [row] = await t.sql`SELECT reserved_micros::text AS r FROM usage_periods WHERE user_id = ${u.id}`;
-  expect(BigInt(row.r)).toBe(5n * est);
+  await Promise.all(Array.from({ length: 20 }, () => reserveQuota(u.id, period, est)));
+  const [row] = await t.sql`SELECT reserved_micros::text AS r FROM usage_periods WHERE user_id = ${u.id}` as { r: string }[];
+  const saved = row?.r;
+  if (saved === undefined) throw new Error("missing reservation row");
+  expect(BigInt(saved)).toBe(20n * est);
 });
 
 test("parseSseChunk handles split frames, comments and [DONE]", () => {
@@ -109,7 +107,7 @@ test("the 201st zero-priced call in a day throws rate_limited", async () => {
   const { FREE_PRICE, SYSTEM_MODELS, setPricing } = await import("./models.ts");
   const { HttpError } = await import("../http.ts");
   setPricing(new Map([[SYSTEM_MODELS.grade, FREE_PRICE]]));
-  const who = { uid: crypto.randomUUID(), plan: "free" as const, capMicros: 1_000_000n };
+  const who = { uid: crypto.randomUUID() };
   const messages = [{ role: "user" as const, content: "grade this" }];
   try {
     for (let i = 0; i < 200; i++) prepareCall(who, { system: "grade" }, "grade", messages, 200);

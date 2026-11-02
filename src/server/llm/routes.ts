@@ -1,26 +1,24 @@
 import type { ModelsResponse, UsageResponse } from "../../shared/api.ts";
 import { json, route } from "../http.ts";
-import { listModelsForPlan, periodOf } from "./core.ts";
+import { LOCAL_USER_ID } from "../profile.ts";
+import { listModels, periodOf } from "./core.ts";
 import { isModelListed } from "./models.ts";
 import { findUsage, listCostByModel, listRecentCalls } from "./sql.ts";
 
-const models = route({ auth: true }, async (c) => {
-  const body: ModelsResponse = listModelsForPlan(c.plan)
+const models = route({}, async () => {
+  const body: ModelsResponse = listModels()
     .filter((m) => isModelListed(m.id))
-    .map((m) => ({ id: m.id, label: m.label, tier: m.tier }));
+    .map((m) => ({ id: m.id, label: m.label }));
   return json(body);
 });
 
-// INV: both plans see their usage; the cap is the plan's monthly dollar limit
-const usage = route({ auth: true }, async (c) => {
+const usage = route({}, async () => {
   const period = periodOf(new Date());
-  const [row, byModel, recent] = await Promise.all([findUsage(c.user.id, period), listCostByModel(c.user.id, period), listRecentCalls(c.user.id)]);
+  const [row, byModel, recent] = await Promise.all([findUsage(LOCAL_USER_ID, period), listCostByModel(LOCAL_USER_ID, period), listRecentCalls(LOCAL_USER_ID)]);
   const body: UsageResponse = {
-    plan: c.plan,
     period,
     usedMicros: Number(row.usedMicros),
     reservedMicros: Number(row.reservedMicros),
-    capMicros: Number(c.capMicros),
     byModel: byModel.map((m) => ({ model: m.model, costMicros: Number(m.costMicros) })),
     recent: recent.map((r) => ({ kind: r.kind, model: r.model, promptTokens: r.promptTokens, completionTokens: r.completionTokens, costMicros: Number(r.costMicros), createdAt: r.createdAt.toISOString() })),
   };

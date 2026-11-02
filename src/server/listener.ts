@@ -62,7 +62,7 @@ async function proxyDocument(req: Request, upstream: URL): Promise<Response> {
 // INV: `api` must not contain "/*"; the HTML bundle stays on the upstream so its responses pass through secureResponse
 // INV: maxRequestBodySize caps every body at the socket; route maxBody still caps each route below that
 // INV: idleTimeout stays above the model budgets in llm/timeouts.ts. Bun's default of 10s resets the socket before a lesson step or chat reply is written.
-// SEC: binds 127.0.0.1 only; Caddy is the only ingress
+// SEC: binds 127.0.0.1 only
 export function servePublic(o: { port: number; api: ApiRoutes; upstream: URL }): Server<UpstreamSocket> {
   if ("/*" in o.api) throw new Error("the document route belongs on the upstream");
   return Bun.serve<UpstreamSocket>({

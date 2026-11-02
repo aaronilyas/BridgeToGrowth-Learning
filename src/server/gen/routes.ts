@@ -6,21 +6,23 @@ import { loadSettings, resolveModel, toQuestionPublic } from "../learn/core.ts";
 import { insertCards } from "../learn/sql.ts";
 import { retrievePapers } from "../lit/openalex.ts";
 import { chatJson } from "../llm/gateway.ts";
+import { localProfile } from "../profile.ts";
 import { findStyleProfile } from "../styles/sql.ts";
 import { upsertTopics } from "../topics/sql.ts";
 import { GenOut, buildGenPrompt, normalizeQuestions } from "./core.ts";
 import { insertQuestions } from "./sql.ts";
 
-const generate = route({ entitled: true, body: GenerateRequest, rate: { key: "gen", cap: 10, perMin: 10 } }, async (c) => {
-  const uid = c.user.id;
-  const settings = loadSettings(c.user);
+const generate = route({ body: GenerateRequest, rate: { key: "gen", cap: 10, perMin: 10 } }, async (c) => {
+  const user = await localProfile();
+  const uid = user.id;
+  const settings = loadSettings(user);
   const style = c.body.styleId ? await findStyleProfile(uid, c.body.styleId) : null;
   if (c.body.styleId && !style) throw new HttpError(404, "not_found");
-  const model = resolveModel(settings, c.plan, c.body.model);
+  const model = resolveModel(settings, c.body.model);
   const [papers, rt] = await Promise.all([retrievePapers(c.body.topic, 3), codeRuntime()]);
   const codeLibs = rt.enabled ? rt.libraries : null;
   const r = await chatJson({
-    who: { uid, plan: c.plan, capMicros: c.capMicros },
+    who: { uid },
     model,
     kind: "gen",
     system: buildGenPrompt(settings, papers, style, codeLibs),
@@ -33,7 +35,7 @@ const generate = route({ entitled: true, body: GenerateRequest, rate: { key: "ge
   // INV: a code question is stored only if its reference solution passes every hidden test in the sandbox; that run does not apply the learner dunder-name ban
   for (const q of qs) {
     if (q.kind !== "code" || !q.code || !("tests" in q.answer)) continue;
-    const check = await runInSandbox(c.user.id, q.code.libraries, q.answer.model, q.answer.tests, false);
+    const check = await runInSandbox(uid, q.code.libraries, q.answer.model, q.answer.tests, false);
     const failed = check.run.tests.filter((t) => !t.passed).length;
     if (check.run.error === null && failed === 0) continue;
     console.error(`gen: code exercise rejected, reference solution ${check.run.error === null ? `failed ${failed} of ${check.run.tests.length} tests` : "raised an error"}`);

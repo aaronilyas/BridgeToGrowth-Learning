@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { Citation, type AttemptAnswer, type Plan, type QuestionCategory, type QuestionPublic } from "../../shared/api.ts";
+import { Citation, type AttemptAnswer, type QuestionCategory, type QuestionPublic } from "../../shared/api.ts";
 import { CodeSpec, type CodeTestResult } from "../../shared/code.ts";
 import { Settings } from "../../shared/settings.ts";
 import { StoredCodeAnswer } from "../code/core.ts";
 import { HttpError } from "../http.ts";
-import { listModelsForPlan } from "../llm/core.ts";
+import { listModels } from "../llm/core.ts";
 
 export type Card = { ef: number; intervalD: number; reps: number; lapses: number; dueAt: Date };
 export type Quality = 0 | 1 | 2 | 3 | 4 | 5;
@@ -92,14 +92,15 @@ export function loadSettings(user: { settings: Record<string, unknown> }): Setti
 }
 
 // O(1)
-// INV: null or an id outside the plan's models resolves to the plan's first model; an explicit pro request is passed through for the gateway to check
-// SEC: the free plan cannot pick a model; any request other than its default is 402 pro_required
-export function resolveModel(settings: Settings, plan: Plan, requested?: string): string {
-  const allowed = listModelsForPlan(plan);
+// SEC: a client-supplied id must be one of the selectable models
+export function resolveModel(settings: Settings, requested?: string): string {
+  const allowed = listModels();
   const first = allowed[0];
   if (!first) throw new HttpError(400, "model_not_allowed");
-  if (requested && plan !== "pro" && requested !== first.id) throw new HttpError(402, "pro_required");
-  if (requested) return requested;
+  if (requested) {
+    if (!allowed.some((m) => m.id === requested)) throw new HttpError(400, "model_not_allowed");
+    return requested;
+  }
   const own = settings.model;
   return own !== null && allowed.some((m) => m.id === own) ? own : first.id;
 }

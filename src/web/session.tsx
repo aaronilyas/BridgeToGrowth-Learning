@@ -1,20 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type JSX, type ReactNode } from "react";
-import { z } from "zod";
-import { ConfigResponse, MeResponse, type PlanTerms } from "../shared/api.ts";
+import { ConfigResponse } from "../shared/api.ts";
 import { Season, SeasonResponse, seasonOf } from "../shared/season.ts";
 import { Settings, type SettingsPatch } from "../shared/settings.ts";
-import { api, isApiError } from "./api.ts";
-import { resetAskJob } from "./askJob.ts";
+import { api } from "./api.ts";
 
-export type Me = Omit<MeResponse, "settings"> & { settings: Settings };
 export type SessionState = {
-  me: Me | null | undefined;
-  failed: boolean;
+  settings: Settings;
   config: ConfigResponse | null;
   season: Season;
   refresh: () => Promise<void>;
   updateSettings: (patch: SettingsPatch) => Promise<Settings>;
-  signOut: () => Promise<void>;
 };
 
 const SessionContext = createContext<SessionState | null>(null);
@@ -26,47 +21,31 @@ function applySeason(s: Season): void {
 }
 
 // O(1) per fetch
-// INV: me is undefined while loading and null when signed out; failed is set when /api/me fails for any reason other than 401
 export function SessionProvider({ children }: { children: ReactNode }): JSX.Element {
-  const [me, setMe] = useState<Me | null | undefined>(undefined);
-  const [failed, setFailed] = useState(false);
+  const [settings, setSettings] = useState<Settings>(() => Settings.parse({}));
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [auto, setAuto] = useState<Season>(() => seasonOf(new Date().getUTCMonth(), "N"));
 
   const refresh = useCallback(async (): Promise<void> => {
-    try {
-      const m = await api("/api/me", MeResponse);
-      setMe({ ...m, settings: Settings.parse(m.settings) });
-      setFailed(false);
-    } catch (e) {
-      setMe(null);
-      setFailed(!(isApiError(e) && e.status === 401));
-    }
+    setSettings(await api("/api/settings", Settings));
   }, []);
 
   const updateSettings = useCallback(async (patch: SettingsPatch): Promise<Settings> => {
     const next = await api("/api/settings", Settings, { method: "PUT", body: patch });
-    setMe((m) => (m ? { ...m, settings: next } : m));
+    setSettings(next);
     return next;
   }, []);
 
-  const signOut = useCallback(async (): Promise<void> => {
-    await api("/api/auth/logout", z.undefined(), { method: "POST" }).catch(() => undefined);
-    resetAskJob();
-    setMe(null);
-  }, []);
-
   useEffect(() => {
-    void refresh();
+    void refresh().catch(() => undefined);
     void api("/api/config", ConfigResponse).then(setConfig, () => undefined);
     void api("/api/season", SeasonResponse).then((r) => setAuto(r.season), () => undefined);
   }, [refresh]);
 
-  const pref = me?.settings.season ?? "auto";
-  const season = pref === "auto" ? auto : pref;
+  const season = settings.season === "auto" ? auto : settings.season;
   useEffect(() => applySeason(season), [season]);
 
-  const value = useMemo<SessionState>(() => ({ me, failed, config, season, refresh, updateSettings, signOut }), [me, failed, config, season, refresh, updateSettings, signOut]);
+  const value = useMemo<SessionState>(() => ({ settings, config, season, refresh, updateSettings }), [settings, config, season, refresh, updateSettings]);
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
@@ -78,28 +57,9 @@ export function useSession(): SessionState {
 }
 
 // O(1)
-// INV: only call inside the authenticated shell, where the guard guarantees me is loaded
-export function useMe(): Me {
-  const { me } = useSession();
-  if (!me) throw new Error("useMe outside the auth guard");
-  return me;
-}
-
-// O(1)
-export function useIsPro(): boolean {
-  return useMe().entitlement.plan === "pro";
-}
-
-// O(1)
-// INV: null until /api/config loads
-export function usePlanTerms(): PlanTerms | null {
-  return useSession().config?.plans ?? null;
-}
-
-// O(1)
 export function useSettings(): { settings: Settings; updateSettings: (patch: SettingsPatch) => Promise<Settings> } {
-  const { updateSettings } = useSession();
-  return { settings: useMe().settings, updateSettings };
+  const { settings, updateSettings } = useSession();
+  return { settings, updateSettings };
 }
 
 // O(1)
