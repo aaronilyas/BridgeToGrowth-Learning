@@ -20,6 +20,7 @@
     "rehype-katex": "7.0.1",
     "remark-math": "6.0.0",
     "tailwindcss": "4.3.3",
+    "unpdf": "2.1.0",
     "wouter": "3.13.0",
     "zod": "4.6.7"
   },

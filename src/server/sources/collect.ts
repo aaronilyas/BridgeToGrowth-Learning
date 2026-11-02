@@ -25,22 +25,13 @@ async function loadLinked(url: string, idx: number): Promise<Pending> {
 }
 
 // O(total input size)
-// SEC: counts are capped here as well as at the route; fetches run in parallel but PDF tools run one at a time so one request never exceeds the global sandbox cap on its own; nothing read is stored, only returned for one model call; any unreadable or blocked source fails the whole request so the learner knows it was not used
+// SEC: counts are capped here as well as at the route; fetches run in parallel but PDF reads run one at a time so one request holds only one of the two in-process read slots; nothing read is stored, only returned for one model call; any unreadable or blocked source fails the whole request so the learner knows it was not used
 export async function gatherSources(urls: string[], files: File[]): Promise<GatheredSources> {
   if (files.length > MAX_SOURCE_FILES || urls.length > MAX_SOURCE_URLS) throw new HttpError(400, "bad_request");
   if (files.length === 0 && urls.length === 0) return { block: "", files: [], count: 0 };
   const loaded = await Promise.all([...files.map((f, i) => loadUploaded(f, i)), ...urls.map((u, i) => loadLinked(u, files.length + i))]);
   const reads: Read[] = [];
   for (const p of loaded) reads.push({ label: p.label, read: "pdf" in p ? await readPdf(p.pdf, p.idx) : { kind: "text", text: p.text } });
-  const texts: SourceText[] = [];
-  const labels: string[] = [];
-  const parts: FilePart[] = [];
-  for (const r of reads) {
-    if (r.read.kind === "text") texts.push({ label: r.label, text: r.read.text });
-    else {
-      labels.push(r.label);
-      parts.push(r.read.part);
-    }
-  }
-  return { block: buildAttachmentBlock(texts, labels), files: parts, count: reads.length };
+  const texts: SourceText[] = reads.map((r) => ({ label: r.label, text: r.read.text }));
+  return { block: buildAttachmentBlock(texts, []), files: [], count: reads.length };
 }
