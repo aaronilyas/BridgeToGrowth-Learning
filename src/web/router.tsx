@@ -1,7 +1,9 @@
 import { lazy, Suspense, type JSX } from "react";
 import { Redirect, Route, Switch } from "wouter";
+import { useConnections } from "./connections.tsx";
 import { AppShell } from "./components/AppShell.tsx";
 import { Spinner } from "./components/Spinner.tsx";
+import { FirstRunPage } from "./pages/FirstRun.tsx";
 import { LessonPage } from "./pages/Lesson.tsx";
 import { PracticePage } from "./pages/Practice.tsx";
 import { TeachPage } from "./pages/Teach.tsx";
@@ -21,7 +23,17 @@ function PageLoading(): JSX.Element {
 }
 
 // O(1)
+// INV: the gate replaces every route, so a deep link cannot open the app before a provider is connected
 export function AppRouter(): JSX.Element {
+  const { ready, connected } = useConnections();
+  if (!ready) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Spinner size={28} label="Loading…" />
+      </div>
+    );
+  }
+  if (!connected) return <FirstRunPage />;
   return (
     <AppShell>
       <Suspense fallback={<PageLoading />}>
