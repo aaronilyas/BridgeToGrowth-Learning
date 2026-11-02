@@ -1,5 +1,4 @@
 import type { Server } from "bun";
-import { decorateDocument, stripDocumentConditionals } from "./ads/routes.ts";
 import { env } from "./env.ts";
 import { json, secureResponse } from "./http.ts";
 import { SERVER_IDLE_TIMEOUT_S } from "./llm/timeouts.ts";
@@ -41,19 +40,18 @@ function cacheHashedAsset(path: string, res: Response): Response {
 }
 
 // O(1) plus the upstream round trip
-// INV: only paths outside `api` reach here (HTML bundle, hashed assets, dev HMR); every response leaves through decorateDocument or secureResponse
+// INV: only paths outside `api` reach here (HTML bundle, hashed assets, dev HMR); every response leaves through secureResponse
 async function proxyDocument(req: Request, upstream: URL): Promise<Response> {
   try {
     const url = new URL(req.url);
     const headers = forwardedHeaders(req.headers);
-    stripDocumentConditionals(req, headers);
     const init: RequestInit & { proxy: false; duplex?: "half" } = { method: req.method, headers, redirect: "manual", proxy: false };
     if (req.method !== "GET" && req.method !== "HEAD") {
       init.body = req.body;
       init.duplex = "half";
     }
     const res = await fetch(new URL(url.pathname + url.search, upstream), init);
-    return await decorateDocument(req, cacheHashedAsset(url.pathname, res));
+    return secureResponse(cacheHashedAsset(url.pathname, res));
   } catch {
     return secureResponse(json({ error: "internal" }, 500));
   }
@@ -61,7 +59,7 @@ async function proxyDocument(req: Request, upstream: URL): Promise<Response> {
 
 // O(1) per request plus the handler
 // INV: `api` handlers are built with route(), which wraps every response (including errors) in secureResponse, so they are mounted directly with no loopback hop
-// INV: `api` must not contain "/*"; the HTML bundle stays on the upstream so its responses pass through decorateDocument (ads nonce CSP) and secureResponse
+// INV: `api` must not contain "/*"; the HTML bundle stays on the upstream so its responses pass through secureResponse
 // INV: maxRequestBodySize caps every body at the socket; route maxBody still caps each route below that
 // INV: idleTimeout stays above the model budgets in llm/timeouts.ts. Bun's default of 10s resets the socket before a lesson step or chat reply is written.
 // SEC: binds 127.0.0.1 only; Caddy is the only ingress
