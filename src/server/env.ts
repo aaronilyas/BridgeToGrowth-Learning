@@ -5,8 +5,6 @@ export type ReasoningLevel = (typeof REASONING_LEVELS)[number];
 
 const Schema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
-  PORT: z.coerce.number().int().min(1).max(65535).default(3000),
-  APP_ORIGIN: z.url().default("http://127.0.0.1:3000"),
   OPENROUTER_API_KEY: z.string().min(1).optional(),
   OPENROUTER_BASE_URL: z.url().default("https://openrouter.ai/api/v1"),
   OPENROUTER_MODEL: z.string().min(1).default("openrouter/free"),

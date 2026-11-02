@@ -4,6 +4,15 @@ import type { ErrorCode } from "../shared/api.ts";
 export type ApiError = Error & { status: number; code: ErrorCode };
 export type ApiInit = { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: unknown };
 
+type LaunchGlobal = typeof globalThis & { __BTG_TOKEN__?: string };
+
+// O(1)
+// SEC: the desktop preload owns the token; the renderer never writes it to localStorage or a URL
+export function readLaunchHeaders(): Record<string, string> {
+  const token = (globalThis as LaunchGlobal).__BTG_TOKEN__;
+  return typeof token === "string" && token.length > 0 ? { "x-btg-token": token } : {};
+}
+
 const CODES: ReadonlySet<string> = new Set<ErrorCode>(["bad_request", "forbidden_origin", "not_found", "rate_limited", "model_not_allowed", "unsupported_media", "too_large", "upstream", "llm_bad_output", "source_blocked", "source_unreadable", "sandbox_unavailable", "internal"]);
 
 const MESSAGES: Record<ErrorCode, string> = {
@@ -50,6 +59,7 @@ export async function readApiError(res: Response): Promise<ApiError> {
 // INV: the response is validated by `schema`, so a server/client drift surfaces as an ApiError, not a silent bad value
 export async function api<T>(path: string, schema: z.ZodType<T>, init: ApiInit = {}): Promise<T> {
   const headers: Record<string, string> = { accept: "application/json" };
+  Object.assign(headers, readLaunchHeaders());
   let body: BodyInit | undefined;
   if (init.body instanceof FormData) body = init.body;
   else if (init.body !== undefined) {

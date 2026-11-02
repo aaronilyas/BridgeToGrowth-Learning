@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import type { ErrorCode } from "../shared/api.ts";
 import { env } from "./env.ts";
+import { guardOrigin, originAllowed } from "./localGuard.ts";
 import { takeToken } from "./rate.ts";
 
 export class HttpError extends Error {
@@ -48,21 +49,17 @@ export type Ctx<B> = {
 export type RouteOpts<B> = { body?: z.ZodType<B>; rate?: { key: string; cap: number; perMin: number }; csrf?: boolean; maxBody?: number; raw?: boolean };
 
 const JSON_HEADERS = { "content-type": "application/json", "cache-control": "no-store" };
-const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "::1"]);
 const STRICT_CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 const SECURITY_HEADERS: ReadonlyArray<readonly [string, string]> = [
   ["x-content-type-options", "nosniff"],
   ["referrer-policy", "strict-origin-when-cross-origin"],
   ["permissions-policy", "camera=(), microphone=(), geolocation=()"],
 ];
-const HSTS = "max-age=15552000; includeSubDomains";
 
 // O(1)
-// SEC: HSTS is production-only so a local http origin is not pinned
 function applySecurityHeaders(headers: Headers, csp: string): void {
   headers.set("content-security-policy", csp);
   for (const [name, value] of SECURITY_HEADERS) headers.set(name, value);
-  if (env.NODE_ENV === "production") headers.set("strict-transport-security", HSTS);
 }
 
 // O(1)
@@ -80,24 +77,7 @@ export function secureResponse(res: Response, csp: string = STRICT_CSP): Respons
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }
 
-// O(1)
-// SEC: the browser sets Origin, so another site cannot claim a loopback origin; localhost, 127.0.0.1, and ::1 are one local app when the scheme and port match
-export function originAllowed(header: string | null, appOrigin: string): boolean {
-  if (header === null) return false;
-  let sent: URL;
-  let allowed: URL;
-  try {
-    sent = new URL(header);
-    allowed = new URL(appOrigin);
-  } catch {
-    return false;
-  }
-  if (sent.origin === allowed.origin) return true;
-  if (sent.protocol !== allowed.protocol || sent.port !== allowed.port) return false;
-  const sentHost = sent.hostname.startsWith("[") && sent.hostname.endsWith("]") ? sent.hostname.slice(1, -1) : sent.hostname;
-  const allowedHost = allowed.hostname.startsWith("[") && allowed.hostname.endsWith("]") ? allowed.hostname.slice(1, -1) : allowed.hostname;
-  return LOOPBACK_HOSTS.has(sentHost) && LOOPBACK_HOSTS.has(allowedHost);
-}
+export { originAllowed };
 
 // O(n) in body size
 export function json(data: unknown, status: number = 200): Response {
@@ -121,7 +101,7 @@ export function route<B = undefined>(opts: RouteOpts<B>, fn: (c: Ctx<B>) => Prom
       const len = Number(req.headers.get("content-length") ?? 0);
       if (len > maxBody) throw new HttpError(413, "too_large");
       const csrf = opts.csrf ?? (req.method !== "GET" && req.method !== "HEAD");
-      if (csrf && !originAllowed(req.headers.get("origin"), env.APP_ORIGIN)) throw new HttpError(403, "forbidden_origin");
+      if (csrf && !originAllowed(req.headers.get("origin"), guardOrigin())) throw new HttpError(403, "forbidden_origin");
       const ip = readIp(req);
       if (opts.rate && !takeToken(opts.rate.key, opts.rate.cap, opts.rate.perMin)) throw new HttpError(429, "rate_limited");
       let body = undefined as B;

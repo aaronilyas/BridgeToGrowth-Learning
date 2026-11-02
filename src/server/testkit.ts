@@ -12,7 +12,6 @@ export type Handler = (req: Request) => Promise<Response>;
 // INV: every variable env.ts requires; test-only values
 export const TEST_ENV: Record<string, string> = {
   NODE_ENV: "test",
-  APP_ORIGIN: TEST_ORIGIN,
   OPENROUTER_API_KEY: "k",
   OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1",
   OPENROUTER_MODEL: "openrouter/free",
@@ -26,6 +25,7 @@ export async function bootTestServer(): Promise<TestServer> {
   Object.assign(process.env, TEST_ENV, { DATABASE_URL: testDb });
   const { sql } = await import("./db.ts");
   const { env } = await import("./env.ts");
+  (await import("./localGuard.ts")).setRuntimeOrigin(TEST_ORIGIN);
   const reset = async (): Promise<void> => {
     await sql`TRUNCATE users, papers, retrieval_cache CASCADE`;
   };

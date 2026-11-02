@@ -96,7 +96,7 @@ function postCompletion(p: Prepared, extra: Record<string, unknown>, signal: Abo
   return fetch(`${env.OPENROUTER_BASE_URL}/chat/completions`, {
     method: "POST",
     signal,
-    headers: { authorization: `Bearer ${env.OPENROUTER_API_KEY}`, "content-type": "application/json", "HTTP-Referer": env.APP_ORIGIN, "X-Title": "BridgeToGrowth Learning" },
+    headers: { authorization: `Bearer ${env.OPENROUTER_API_KEY}`, "content-type": "application/json", "HTTP-Referer": "https://github.com/bridgetogrowth", "X-Title": "BridgeToGrowth Learning" },
     body: JSON.stringify({ model: p.model, messages: p.messages, max_tokens: p.maxTokens, usage: { include: true }, ...extra, ...(p.reasons ? reasoningPayload(env.OPENROUTER_REASONING_LEVEL) : {}) }),
   });
 }
