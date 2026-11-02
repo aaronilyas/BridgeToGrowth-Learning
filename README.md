@@ -1,72 +1,56 @@
 # BridgeToGrowth Learning
 
-BridgeToGrowth Learning is an AI-assisted learning app with grounded lessons, active recall, spaced repetition, and progress insights.
-It uses OpenAlex for research sources, OpenRouter for lesson and chat generation, and Stripe for the Pro subscription. Production runs on one Ubuntu VPS (Hetzner Cloud or a DigitalOcean Droplet). Caddy is the only public ingress, and Postgres runs either on the same server or as a managed database.
+BridgeToGrowth Learning is a desktop learning app. It offers grounded lessons, Socratic chat, active recall, spaced repetition, Python exercises and progress insights. It runs entirely on your computer with your own AI provider. It has no account, no subscription to us, and no server to host.
 
-## Plans
+## How AI is paid for
 
-| | Free | Pro |
+On first launch the app asks you to connect at least one AI source. You can connect several and pick a default model for each task (lessons, chat, practice generation, and system work such as grading, extraction and insights).
+
+| Source | How you connect | Who pays |
 |---|---|---|
-| Price | $0 | `PRO_PRICE_USD` a month (9.99) |
-| Monthly AI usage | `FREE_CAP_USD` (0.20) | `PRO_CAP_USD` (5.99) |
-| Lessons | deleted `FREE_LESSON_TTL_DAYS` (7) days after creation | kept |
-| Settings and model choice | defaults only | configurable |
-| Personal stats and insights | no | yes |
+| OpenRouter | paste an API key | your OpenRouter account, per use. The app shows the reported cost and can enforce an optional monthly budget. |
+| Codex | sign in to the official Codex CLI with ChatGPT | your ChatGPT plan's usage limits. Install the CLI yourself; the app runs `codex exec` with every tool disabled. |
+| SpaceXAI | paste an xAI API key | your xAI account, per use. |
 
-All four values come from the environment (see `.env.example`); nothing is hard-coded. Usage is the OpenRouter cost of each call, reserved before the call and settled at the reported cost, and resets on the 1st of each month (UTC). A subscription that is `active`, `trialing` or `past_due` counts as Pro. When a user upgrades, their pending lesson deletions are cancelled. When Pro ends, lessons made during Pro are kept, stored settings are kept but not applied, and stats are locked.
+API keys are stored in your OS keychain (libsecret, macOS Keychain, or Windows Credential Manager). They are never written to the database, logs or exports. The Usage page shows tokens per provider and model for each month. USD cost appears only where the provider reports it, which is OpenRouter.
 
-## Prerequisites
+## Your data
 
-- Bun 1.2 or newer
-- PostgreSQL 16 or newer
-- A Stripe account; the Stripe CLI for local webhook testing
-- For production: an Ubuntu 24.04 VPS with at least 4 GB of RAM (Hetzner Cloud or DigitalOcean), a domain, Caddy, and `rsync`
-- poppler-utils (`pdftotext`) and Ghostscript (`gs`) for lesson PDF attachments; `prlimit` (util-linux) is used to cap their resources when present
-- bubblewrap (`bwrap`), `prlimit` and a system Python at `/usr/bin/python3` for sandboxed code exercises. Optional libraries such as numpy, sympy, scipy and mpmath are offered only if installed for that interpreter (for example `pacman -S python-numpy python-sympy`)
+Everything lives in one SQLite database in the OS app-data directory:
 
-## Local setup
+- Linux: `$XDG_DATA_HOME/bridgetogrowth` or `~/.local/share/bridgetogrowth`
+- macOS: `~/Library/Application Support/BridgeToGrowth`
+- Windows: `%APPDATA%\BridgeToGrowth`
 
-1. Create the local role and databases: `scripts/db-setup.sh '<btg-role-password>'`.
-2. Create `.env` from `.env.example`. Set the database URLs, `OPENROUTER_API_KEY` and `STRIPE_SECRET_KEY` (test mode). The Turnstile test keys in the example work locally. Keep `.env` out of version control.
-3. Apply migrations: `bun run migrate` and `bun run migrate "$TEST_DATABASE_URL"`.
-4. Create the Pro price: `bun scripts/stripe-setup.ts`. Put the printed `STRIPE_PRICE_ID` in `.env`.
-5. Forward webhooks: `stripe listen --forward-to localhost:3000/api/stripe/webhook`. Put the printed `whsec_…` in `STRIPE_WEBHOOK_SECRET`.
-6. Start the app with `bun run dev` and open http://localhost:3000. Use `localhost`, not `127.0.0.1`: the session cookie is `Secure`, and browsers only accept that over plain http on `localhost`. Test card: `4242 4242 4242 4242`.
+Settings → Data exports a zip of the database. It can also delete all data and stored keys. Paper search uses OpenAlex. You can add a contact email for OpenAlex in Settings; it is optional.
 
-`bun test` needs `TEST_DATABASE_URL` in the environment.
+## Python exercises
 
-Upgrading from the single-user version: the old local profile (`local@localhost`) still owns your lessons and history. Claim it as a real account with `bun scripts/set-password.ts you@example.com --claim-local`. The script asks for the new password.
+Code questions run in Pyodide inside the app window, offline, with an import allowlist and a time limit. The check is advisory: the code runs on your own machine, so a result is for self-assessment, not proof.
 
-## Production
+## Development
 
-The app runs as the `btg` system user from `/opt/btg`, bound to `127.0.0.1`, on one Ubuntu 24.04 server (x86_64 or ARM64). Caddy on the same server is the only ingress. Postgres is either local to the server or a managed database; the deploy scripts support both.
+Prerequisites: Bun 1.4 or newer. Linux desktop builds also need GTK 3 and WebKitGTK 4.1.
 
-- [deploy/hetzner.md](deploy/hetzner.md): a Hetzner Cloud VPS with Postgres on the same server, step by step for first-time Hetzner users.
-- [deploy/digitalocean.md](deploy/digitalocean.md): a DigitalOcean Droplet with DigitalOcean Managed Postgres.
-- [deploy/common.md](deploy/common.md): the steps both share (environment, sandbox, machine sizing, backups, Turnstile, Stripe, OpenRouter).
+```sh
+bun install --frozen-lockfile
+bun scripts/fetch-pyodide.ts   # once: verified Pyodide wheels into .cache/pyodide
+bun run dev                    # headless backend; prints BTG_URL and BTG_TOKEN
+bun run desktop:dev            # the desktop window
+bun run typecheck && bun test
+bun run smoke                  # /api/health: 200 with the launch token, 401 without
+```
 
-In short:
+The backend binds `127.0.0.1` on a random port. Every `/api` request must carry the per-launch token in `x-btg-token`, so a plain browser tab cannot use the API. The desktop shell injects the token into its window. For headless debugging, use the printed token with `curl -H "x-btg-token: …"`.
 
-1. Create the server and a firewall that allows inbound TCP 22, 80, and 443 only. Point an A record for `$HOST` at it, not proxied by Cloudflare.
-2. Local database: `sudo deploy/setup-postgres.sh` installs Postgres, binds it to localhost, and writes `DATABASE_URL` into `/etc/btg/btg.env`. Managed database: skip this and put the cluster's URI (with `sslmode=require`) in the env file.
-3. `sudo BUN="$(command -v bun)" deploy/install.sh`. If `/etc/btg/btg.env` (root, 0600) does not exist yet, the first run creates it and stops. Fill it in (`NODE_ENV=production`, `APP_ORIGIN=https://$HOST`, live Stripe keys, Turnstile keys for `$HOST`, and the plan values) and run it again. It checks the sandbox prerequisites, syncs the checkout to `/opt/btg`, builds, migrates, sizes and installs the systemd units, and waits for `/api/health`. Rerun it for every update.
-4. `sudo deploy/setup-proxy.sh $HOST` installs Caddy, redirects HTTP to HTTPS, and reverse-proxies `https://$HOST` to the app with a Let's Encrypt certificate.
-5. Finish Turnstile, the Stripe webhook `https://$HOST/api/stripe/webhook`, and an OpenRouter credit limit as described in [deploy/common.md](deploy/common.md).
+Migrations in `db/migrations/` run automatically when the database opens. `bun run migrate [path]` applies them to another file.
 
-Signed-in users change their password on the Account page. That signs out every other session. The same page deletes the account: lessons, practice history and settings are removed, and a Pro subscription is canceled immediately so it cannot renew.
+## Packaging
 
-Set `RESEND_API_KEY` and `MAIL_FROM` (for example `BridgeToGrowth <learn@your-host>`) to email a one-hour, one-time reset link from the sign-in page. Without those, a forgotten password stays operator-assisted: `sudo bun --env-file=/etc/btg/btg.env /opt/btg/scripts/set-password.ts <email>`.
+`bun run package:linux` builds an AppImage and a .deb. macOS and Windows builds come from CI. Builds are unsigned, and there is no auto-update yet. See [docs/packaging.md](docs/packaging.md).
 
-Lessons and chat let you choose DeepSeek V4.1 Flash (`deepseek/deepseek-v4.1-flash`), GLM-5.3-Flash (`z-ai/glm-5.3-flash`), or GPT-6-Luna (`openai/gpt-6-luna`). The default `OPENROUTER_BASE_URL` is `https://openrouter.ai/api/v1`. Requests go to `${OPENROUTER_BASE_URL}/chat/completions`. `OPENROUTER_REASONING_LEVEL` (`low`, `high`, or `max`) is sent as the same reasoning effort for all three. Grading, extraction, and insights still use `OPENROUTER_MODEL`.
+## Further reading
 
-Lessons accept up to 3 PDFs (25 MB each) and 3 http(s) links as extra context. They are read once for the planning call and never stored; the plan keeps only short per-step notes in the model's words, which are used to write later steps and are never returned to the browser. Text-layer PDFs are reduced to capped plain text locally. Image-only PDFs are cut to 10 pages and compressed with Ghostscript before upload. Links are fetched only from public addresses on default ports, with every redirect re-checked.
-
-For programming and computational topics, the free-response question in a practice set can be a Python code exercise. Each one lists the libraries baked into it. The learner can import only those, and nothing can be installed. Code runs in a bubblewrap sandbox: no network, read-only `/usr` as its only host directory, a private 8 MB `/tmp`, no `/home`, `/etc` or `/proc`, all capabilities dropped and nested user namespaces disabled. `prlimit` caps it at 1 GB of memory and 5 s of CPU, with a 10 s wall-clock limit. Inside the sandbox, a policy layer rejects imports, dunder attributes and introspection built-ins outside the question's allowlist. Hidden tests grade each submission. A generated exercise is stored only if its reference solution passes those tests. If the sandbox can't start, code exercises are turned off and the server logs why.
-
-## Operating notes
-
-- The `btg-backup.timer` systemd unit runs nightly at 03:30 local time. It runs `pg_dump -Fc` against `DATABASE_URL`, writes mode 0600 dumps under `/var/backups/btg`, and removes dumps older than 14 days. Restore with `pg_restore -d "$DATABASE_URL" /var/backups/btg/btg-YYYY-MM-DD.dump`. With a local database the dumps share the server's disk, so turn on provider backups (Hetzner Backups) or copy `/var/backups/btg` off the server.
-- Rotate secrets in `/etc/btg/btg.env`, then restart `btg.service`. Never commit `.env` or production credentials.
-- Background sweeps run inside the app: expired sessions and password-reset links hourly, expired free-plan lessons every 15 minutes, and Stripe event ids older than 30 days daily.
-- If a webhook is missed, returning from Checkout calls `POST /api/billing/sync`, which reads the subscription straight from Stripe.
-- Selectable models are DeepSeek V4.1 Flash, GLM-5.3-Flash, and GPT-6-Luna. `OPENROUTER_REASONING_LEVEL` sets their shared reasoning effort. `OPENROUTER_MODEL` is only for server-side grading, extraction, and insights.
+- [docs/desktop-facts.md](docs/desktop-facts.md): verified facts about the Codex CLI, xAI, Bun and Electrobun that the design relies on, and the residual risks
+- [docs/prompt-research.md](docs/prompt-research.md): the research behind the tutoring prompts
+- [CLAUDE.md](CLAUDE.md): the contract for code changes

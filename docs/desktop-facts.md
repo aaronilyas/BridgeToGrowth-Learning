@@ -51,7 +51,17 @@ Verified on the build machine (Linux x64, Bun 1.4.4, codex-cli 0.166.0, grok 1.0
 
 ## Residual risks
 
-- Codex: a prompt-injected model could still try a tool call. Tool features are disabled, the sandbox is read-only, the network is off, the cwd is an empty temp dir, approvals are never granted, and any tool or command item aborts the call. A CLI update could re-enable a tool under a new feature name. The adapter's abort-on-unknown-tool-item rule is the backstop.
-- Codex terms (see above).
-- Pyodide runs inside the renderer process. Grading is advisory, because the user owns the machine.
-- Unsigned builds: no code signing, notarization or auto-update yet.
+- **Codex tool execution.** A prompt-injected model could still try a tool call. Tool features are disabled, the sandbox is read-only, the network is off, the cwd is an empty temp dir, approvals are never granted, and any tool or command item aborts the call. A CLI update could re-enable a tool under a new feature name. The adapter's abort-on-unknown-item rule is the backstop: anything other than `agent_message`, `reasoning` or `error` aborts.
+- **Codex terms.** See the terms note above.
+- **Codex streaming is coarse.** `exec --json` delivers whole messages, so Codex chat appears all at once rather than token by token.
+- **Codex quota.** A ChatGPT plan's usage limit surfaces as `quota_exhausted`. This was verified on 2026-11-02 against a real exhausted account.
+- **Pyodide is advisory.** Hidden tests reach the renderer, so a learner can forge a pass. Generation no longer executes the reference solution, so a wrong reference can be stored.
+- **Pyodide memory.** Python runs synchronously inside the worker, so the in-worker heap poll cannot fire mid-run. A runaway allocation is bounded by WebAssembly's own memory limit and the 10 s hard timeout (`worker.terminate()`), not by the 512 MB poll.
+- **Scanned PDFs.** Ghostscript compression is gone. A lesson PDF with no text layer becomes an empty attachment. Style uploads still send the original PDF, up to 10 MB.
+- **Build-time downloads.** `scripts/fetch-pyodide.ts` downloads Pyodide wheels from the jsDelivr mirror of the 314.0.7 release, and `package:linux` downloads appimagetool 1.9.1. Both are SHA-256 pinned. Nothing is fetched at runtime.
+- **Unsigned builds.** There is no code signing, notarization or auto-update yet; `.github/workflows/desktop.yml` has stubs for them, described in docs/packaging.md.
+- **Local attack surface.** Another local process running as the same OS user can read the SQLite file, and can talk to the backend if it learns the launch token. The token and the Host and Origin checks defend against web pages and DNS rebinding, not against local malware.
+
+## History
+
+This app was previously a hosted service. It ran on Postgres with accounts, Stripe billing, Turnstile, Resend mail, AdSense, a Caddy reverse proxy, and a bwrap/cgroup sandbox for code and PDF tools (pg_dump backups, citext columns). All of that was removed in the desktop pivot (branch `desktop-pivot`).
