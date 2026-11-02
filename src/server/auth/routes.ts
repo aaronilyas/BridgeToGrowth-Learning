@@ -8,6 +8,7 @@ import { passwordResetEnabled } from "./mail.ts";
 import { deleteSession, findUserCreds, insertSession, insertUser } from "./sql.ts";
 import { verifyTurnstile } from "./turnstile.ts";
 import { verifyPassword } from "./verify.ts";
+import { readAdsConfig } from "../ads/routes.ts";
 
 // O(1)
 export function buildSessionResponse(uid: string, email: string, token: string, status: number): Response {
@@ -52,7 +53,7 @@ const logout = route({ auth: true }, async (c) => {
 
 const me = route({ auth: true }, async (c) => json({ id: c.user.id, email: c.user.email, settings: c.user.settings, entitlement: { plan: c.plan, capMicros: Number(c.capMicros) } } satisfies MeResponse));
 
-const config = route({}, async () => json(ConfigResponse.parse({ turnstileSiteKey: env.TURNSTILE_SITE_KEY, plans: readPlanTerms(), passwordReset: passwordResetEnabled() })));
+const config = route({}, async () => json(ConfigResponse.parse({ turnstileSiteKey: env.TURNSTILE_SITE_KEY, plans: readPlanTerms(), passwordReset: passwordResetEnabled(), ads: readAdsConfig() })));
 
 export const authRoutes = {
   "/api/auth/signup": { POST: signup },

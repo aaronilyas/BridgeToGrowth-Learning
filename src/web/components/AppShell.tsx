@@ -4,6 +4,7 @@ import { StatsResponse } from "../../shared/api.ts";
 import { api } from "../api.ts";
 import { formatCents } from "../money.ts";
 import { useIsPro, useMe, usePlanTerms, useSession } from "../session.tsx";
+import { AdSlot } from "./AdSlot.tsx";
 import { Logo } from "./Logo.tsx";
 import { UsageCard } from "./UsageMeter.tsx";
 
@@ -58,7 +59,7 @@ function UpgradeCard(): JSX.Element {
   return (
     <div className="rounded-xl border border-accent/40 bg-accent-soft p-4">
       <p className="text-sm font-semibold text-accent">Free plan</p>
-      <p className="mt-1 text-xs text-muted">Unlock settings, personal stats and lessons that are never deleted.</p>
+      <p className="mt-1 text-xs text-muted">Unlock settings, personal stats, lessons that are never deleted, and no ads.</p>
       <Link href="/billing" className="mt-3 inline-block rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent hover:brightness-110">
         {terms ? `Go Pro · ${formatCents(terms.pro.priceCents)}/mo` : "Go Pro"}
       </Link>
@@ -97,6 +98,7 @@ export function AppShell({ children }: { children: ReactNode }): JSX.Element {
         </nav>
         <div className="mt-auto flex flex-col gap-3">
           <UsageCard />
+          {!pro && <AdSlot />}
           {pro ? <ProgressCard /> : <UpgradeCard />}
           <div className="flex items-center justify-between gap-2 px-1 text-xs text-muted">
             <span className="min-w-0 truncate" title={me.email}>

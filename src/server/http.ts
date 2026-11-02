@@ -55,8 +55,8 @@ export type RouteOpts<B, A extends boolean = false, E extends boolean = false> =
 
 const JSON_HEADERS = { "content-type": "application/json", "cache-control": "no-store" };
 const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "::1"]);
+const STRICT_CSP = "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 const SECURITY_HEADERS: ReadonlyArray<readonly [string, string]> = [
-  ["content-security-policy", "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"],
   ["x-content-type-options", "nosniff"],
   ["referrer-policy", "strict-origin-when-cross-origin"],
   ["permissions-policy", "camera=(), microphone=(), geolocation=()"],
@@ -65,21 +65,23 @@ const HSTS = "max-age=15552000; includeSubDomains";
 
 // O(1)
 // SEC: HSTS is production-only so a local http origin is not pinned
-function applySecurityHeaders(headers: Headers): void {
+function applySecurityHeaders(headers: Headers, csp: string): void {
+  headers.set("content-security-policy", csp);
   for (const [name, value] of SECURITY_HEADERS) headers.set(name, value);
   if (env.NODE_ENV === "production") headers.set("strict-transport-security", HSTS);
 }
 
 // O(1)
 // INV: 204, 205 and 304 stay bodyless so the Fetch API accepts them
-export function secureResponse(res: Response): Response {
+// SEC: csp defaults to the strict policy; only an ad-serving document passes its nonce policy
+export function secureResponse(res: Response, csp: string = STRICT_CSP): Response {
   const headers = new Headers();
   for (const [name, value] of res.headers) {
     if (name === "set-cookie") continue;
     headers.append(name, value);
   }
   for (const cookie of res.headers.getSetCookie()) headers.append("set-cookie", cookie);
-  applySecurityHeaders(headers);
+  applySecurityHeaders(headers, csp);
   if (res.status === 204 || res.status === 205 || res.status === 304) return new Response(null, { status: res.status, statusText: res.statusText, headers });
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }

@@ -30,10 +30,16 @@ const Schema = z.object({
   FREE_LESSON_TTL_DAYS: requireNumber(z.number().int().min(1).max(365)),
   RESEND_API_KEY: z.string().trim().min(1).optional(),
   MAIL_FROM: z.string().trim().min(3).max(200).optional(),
+  ADSENSE_CLIENT: z.string().trim().regex(/^ca-pub-\d{10,20}$/).optional(),
+  ADSENSE_SLOT: z.string().trim().regex(/^\d{5,20}$/).optional(),
 }).superRefine((e, ctx) => {
   if (Boolean(e.RESEND_API_KEY) !== Boolean(e.MAIL_FROM)) {
     ctx.addIssue({ code: "custom", path: ["RESEND_API_KEY"], message: "set with MAIL_FROM" });
     ctx.addIssue({ code: "custom", path: ["MAIL_FROM"], message: "set with RESEND_API_KEY" });
+  }
+  if (Boolean(e.ADSENSE_CLIENT) !== Boolean(e.ADSENSE_SLOT)) {
+    ctx.addIssue({ code: "custom", path: ["ADSENSE_CLIENT"], message: "set with ADSENSE_SLOT" });
+    ctx.addIssue({ code: "custom", path: ["ADSENSE_SLOT"], message: "set with ADSENSE_CLIENT" });
   }
   // SEC: production is https-only so the __Host- cookie is set, and Cloudflare's always-pass Turnstile test keys must not ship
   if (e.NODE_ENV !== "production") return;

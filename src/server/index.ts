@@ -1,4 +1,5 @@
 import index from "../web/index.html";
+import { adsRoutes, decorateDocument, stripDocumentConditionals } from "./ads/routes.ts";
 import { accountRoutes } from "./auth/account.ts";
 import { authRoutes } from "./auth/routes.ts";
 import { deleteExpiredPasswordResets, deleteExpiredSessions } from "./auth/sql.ts";
@@ -32,6 +33,7 @@ const routes = {
   ...teachRoutes,
   ...statsRoutes,
   ...seasonRoutes,
+  ...adsRoutes,
   "/api/health": { GET: route({}, async () => json({ ok: true })) },
   "/api/*": route({ csrf: false }, async () => json({ error: "not_found" }, 404)),
   "/*": index,
@@ -122,12 +124,14 @@ Bun.serve<UpstreamSocket>({
     }
     try {
       const url = new URL(req.url);
-      const init: RequestInit & { proxy: false; duplex?: "half" } = { method: req.method, headers: forwardedHeaders(req.headers), redirect: "manual", proxy: false };
+      const headers = forwardedHeaders(req.headers);
+      stripDocumentConditionals(req, headers);
+      const init: RequestInit & { proxy: false; duplex?: "half" } = { method: req.method, headers, redirect: "manual", proxy: false };
       if (req.method !== "GET" && req.method !== "HEAD") {
         init.body = req.body;
         init.duplex = "half";
       }
-      return secureResponse(await fetch(new URL(url.pathname + url.search, upstream.url), init));
+      return await decorateDocument(req, await fetch(new URL(url.pathname + url.search, upstream.url), init));
     } catch {
       return secureResponse(json({ error: "internal" }, 500));
     }

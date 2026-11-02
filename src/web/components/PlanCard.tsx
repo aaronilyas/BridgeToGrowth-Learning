@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import type { BillingResponse, PlanTerms } from "../../shared/api.ts";
 import { formatCents, formatMicros } from "../money.ts";
+import { useSession } from "../session.tsx";
 import { Button } from "./Button.tsx";
 import { Panel } from "./Panel.tsx";
 
@@ -23,6 +24,7 @@ function Feature({ on, children }: { on: boolean; children: string }): JSX.Eleme
 // INV: shows both plans side by side; the current plan is labelled and only the other plan has an action
 export function PlanCard({ billing, terms, busy, onSubscribe, onPortal }: { billing: BillingResponse; terms: PlanTerms; busy: string | null; onSubscribe: () => void; onPortal: () => void }): JSX.Element {
   const pro = billing.plan === "pro";
+  const ads = useSession().config?.ads != null;
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Panel className={`flex flex-col gap-4 ${pro ? "" : "border-accent/50"}`}>
@@ -37,6 +39,7 @@ export function PlanCard({ billing, terms, busy, onSubscribe, onPortal }: { bill
           <Feature on={false}>{`Lessons are deleted after ${terms.free.lessonTtlDays} days`}</Feature>
           <Feature on={false}>Configurable settings and model choice</Feature>
           <Feature on={false}>Personal stats and insights</Feature>
+          {ads && <Feature on={false}>Shows ads</Feature>}
         </ul>
       </Panel>
       <Panel className={`flex flex-col gap-4 ${pro ? "border-accent/50" : ""}`}>
@@ -50,6 +53,7 @@ export function PlanCard({ billing, terms, busy, onSubscribe, onPortal }: { bill
           <Feature on>Lessons are kept for good</Feature>
           <Feature on>Configurable settings and model choice</Feature>
           <Feature on>Personal stats and insights</Feature>
+          {ads && <Feature on>No ads</Feature>}
         </ul>
         <div className="mt-auto grid gap-2">
           {pro && billing.subStatus === "past_due" && <p className="text-sm text-danger">Your last payment failed. Update your card to keep Pro.</p>}

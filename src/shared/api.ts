@@ -44,7 +44,10 @@ export const PlanTerms = z.strictObject({
 });
 export type PlanTerms = z.infer<typeof PlanTerms>;
 
-export const ConfigResponse = z.strictObject({ turnstileSiteKey: z.string(), plans: PlanTerms, passwordReset: z.boolean() });
+export const AdsConfig = z.strictObject({ client: z.string().regex(/^ca-pub-\d+$/), slot: z.string().regex(/^\d+$/) });
+export type AdsConfig = z.infer<typeof AdsConfig>;
+
+export const ConfigResponse = z.strictObject({ turnstileSiteKey: z.string(), plans: PlanTerms, passwordReset: z.boolean(), ads: AdsConfig.nullable() });
 export type ConfigResponse = z.infer<typeof ConfigResponse>;
 
 export const BillingResponse = z.strictObject({ plan: Plan, subStatus: z.string(), periodEnd: z.iso.datetime().nullable(), cancelAtPeriodEnd: z.boolean(), hasCustomer: z.boolean() });

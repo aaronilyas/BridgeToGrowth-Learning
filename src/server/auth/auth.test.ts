@@ -76,5 +76,5 @@ test("six wrong passwords with a passing turnstile rate-limit the email", async 
 test("config exposes the plan terms from env and no secrets", async () => {
   const res = await callRoute(r["/api/config"].GET, "GET", "/api/config");
   const body = await res.json();
-  expect(body).toEqual({ turnstileSiteKey: t.env.TURNSTILE_SITE_KEY, passwordReset: false, plans: { free: { capMicros: 200_000, lessonTtlDays: 7 }, pro: { capMicros: 5_990_000, priceCents: 999 } } });
+  expect(body).toEqual({ turnstileSiteKey: t.env.TURNSTILE_SITE_KEY, passwordReset: false, ads: null, plans: { free: { capMicros: 200_000, lessonTtlDays: 7 }, pro: { capMicros: 5_990_000, priceCents: 999 } } });
 });
