@@ -104,7 +104,7 @@ const create = route({ raw: true, maxBody: LESSON_FORM_BYTES, rate: { key: "less
     const ids = await upsertTopics(tx, uid, [plan.topic, ...plan.related], plan.related.map((rel, i) => ({ src: 0, dst: i + 1, kind: rel.kind })));
     const topicId = ids[0];
     if (!topicId) throw new HttpError(502, "llm_bad_output");
-    return insertLesson(tx, uid, topicId, plan, papers.map((p) => p.id), model, null);
+    return insertLesson(tx, uid, topicId, plan, papers.map((p) => p.id), model);
   });
   return json({ lessonId, plan: toPublicPlan(plan), grounded: papers.length > 0 });
 });
@@ -113,7 +113,7 @@ const list = route({}, async (c) => {
   const q = ListQuery.safeParse(query(c.req));
   if (!q.success) throw new HttpError(400, "bad_request");
   const rows = await listLessons((await localProfile()).id, q.data.limit);
-  return json(rows.map((l) => ({ id: l.id, title: l.title, createdAt: l.created_at.toISOString(), expiresAt: l.expires_at ? l.expires_at.toISOString() : null })));
+  return json(rows.map((l) => ({ id: l.id, title: l.title, createdAt: l.created_at.toISOString() })));
 });
 
 const get = route({}, async (c) => {
@@ -121,7 +121,7 @@ const get = route({}, async (c) => {
   const lesson = await requireLesson(uid, c.params);
   const plan = readPlan(lesson);
   const [papers, steps, mastered] = await Promise.all([listPapers(lesson.paper_ids), listSteps(uid, lesson.id), findMasteredSlugs(uid, listPrereqs(plan).map(slugOf))]);
-  return json({ id: lesson.id, title: lesson.title, expiresAt: lesson.expires_at ? lesson.expires_at.toISOString() : null, plan: toPublicPlan(plan), prerequisites: unmetPrereqs(plan, mastered), steps: steps.map(stepOf), citations: allCitations(papers) });
+  return json({ id: lesson.id, title: lesson.title, plan: toPublicPlan(plan), prerequisites: unmetPrereqs(plan, mastered), steps: steps.map(stepOf), citations: allCitations(papers) });
 });
 
 const makeStep = route({ rate: { key: "step", cap: 30, perMin: 30 } }, async (c) => {

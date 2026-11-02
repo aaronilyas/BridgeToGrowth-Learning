@@ -8,7 +8,6 @@ import { genRoutes } from "./gen/routes.ts";
 import { learnRoutes } from "./learn/routes.ts";
 import { SERVER_IDLE_TIMEOUT_S } from "./llm/timeouts.ts";
 import { llmRoutes } from "./llm/routes.ts";
-import { resetReservations } from "./llm/sql.ts";
 import { seasonRoutes } from "./season/routes.ts";
 import { statsRoutes } from "./stats/routes.ts";
 import { styleRoutes } from "./styles/routes.ts";
@@ -28,11 +27,10 @@ const apiRoutes: ApiRoutes = {
 };
 
 // O(1)
-// INV: single process ⇒ no in-flight reservations at boot; one loopback listener per call
+// INV: one loopback listener per call
 // SEC: the mutation origin is the bound loopback origin; an omitted port lets the kernel choose one
 export async function startServer(opts: { token: string; port?: number }): Promise<{ url: string; origin: string; stop: () => Promise<void> }> {
   appDataDir();
-  await resetReservations();
   // SEC: API is served on the random public loopback socket; the upstream handles documents and assets only
   const upstream = Bun.serve({ id: "btg-upstream", hostname: "127.0.0.1", port: 0, maxRequestBodySize: MAX_REQUEST_BYTES, idleTimeout: SERVER_IDLE_TIMEOUT_S, routes: { "/*": index } });
   const server = servePublic({ port: opts.port ?? 0, api: apiRoutes, upstream: upstream.url, token: opts.token });

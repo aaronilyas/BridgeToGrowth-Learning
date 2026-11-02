@@ -5,12 +5,6 @@ export type UsageInsert = { provider: string; model: string; kind: string; input
 export type UsageGroup = { period: string; provider: string; model: string; inputTokens: number; outputTokens: number; costMicros: bigint | null };
 
 // O(1)
-// INV: single process means no in-flight reservations at boot; the dollar cap is gone
-export async function resetReservations(): Promise<void> {
-  await sql`UPDATE usage_periods SET reserved_micros = 0 WHERE reserved_micros <> 0`;
-}
-
-// O(1)
 export async function insertLlmUsage(row: UsageInsert): Promise<void> {
   await sql`
     INSERT INTO llm_usage (provider, model, kind, input_tokens, output_tokens, cost_micros)

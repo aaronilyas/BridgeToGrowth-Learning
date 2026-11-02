@@ -9,7 +9,6 @@ import { DeleteLessonButton } from "../components/DeleteLessonButton.tsx";
 import { ErrorBanner } from "../components/ErrorBanner.tsx";
 import { Panel } from "../components/Panel.tsx";
 import { Spinner } from "../components/Spinner.tsx";
-import { formatExpiry, useMinuteClock } from "../expiry.ts";
 
 // O(1)
 export function GeneratingLesson({ prompt }: { prompt: string }): JSX.Element {
@@ -27,7 +26,6 @@ export function TeachPage(): JSX.Element {
   const [lessons, setLessons] = useState<LessonSummary[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const generating = generatingLessonPrompt(useAskJob());
-  const now = useMinuteClock();
   useEffect(() => {
     let live = true;
     api("/api/lessons?limit=20", z.array(LessonSummary)).then((l) => live && setLessons(l), (e: unknown) => live && setError(e));
@@ -54,13 +52,6 @@ export function TeachPage(): JSX.Element {
               <Link href={`/lesson/${l.id}`} className="flex flex-col gap-1 transition hover:text-accent">
                 <span className="font-medium">{l.title}</span>
                 <span className="text-xs text-muted">{new Date(l.createdAt).toLocaleDateString()}</span>
-                {l.expiresAt ? (
-                  <span className="text-xs text-accent-2">
-                    {formatExpiry(l.expiresAt, now)} · deletes {new Date(l.expiresAt).toLocaleString()}
-                  </span>
-                ) : (
-                  <span className="text-xs text-muted">Kept</span>
-                )}
               </Link>
               <DeleteLessonButton lessonId={l.id} lessonTitle={l.title} onDeleted={() => setLessons((rows) => rows?.filter((row) => row.id !== l.id) ?? rows)} />
             </li>
