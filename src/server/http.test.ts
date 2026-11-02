@@ -36,3 +36,40 @@ test("route caps chunked JSON bodies and accepts the exact cap", async () => {
   expect((await h(req('{"a":"1"} '))).status).toBe(413);
   expect((await h(req('{"a":"1"}'))).status).toBe(200);
 });
+
+test("an /api route served by the public listener carries CSP, nosniff and HSTS, and a foreign Origin is still 403", async () => {
+  const { env } = await import("./env.ts");
+  const { route, json } = await import("./http.ts");
+  const { servePublic } = await import("./listener.ts");
+  const { seasonRoutes } = await import("./season/routes.ts");
+  const mode = env as { NODE_ENV: string };
+  const prev = mode.NODE_ENV;
+  mode.NODE_ENV = "production";
+  let proxied = 0;
+  const upstream = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => (proxied++, new Response("doc", { headers: { "content-type": "text/html" } })) });
+  const api = { ...seasonRoutes, "/api/echo": { POST: route({ body: z.strictObject({ a: z.string() }) }, async (c) => json(c.body)) } };
+  const pub = servePublic({ port: 0, api, upstream: upstream.url });
+  try {
+    const got = await fetch(new URL("/api/season", pub.url));
+    expect(got.status).toBe(200);
+    const evil = await fetch(new URL("/api/echo", pub.url), { method: "POST", headers: { origin: "https://evil.test", "content-type": "application/json" }, body: '{"a":"1"}' });
+    for (const res of [got, evil]) {
+      expect(res.headers.get("content-security-policy")).toContain("script-src 'self'");
+      expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(res.headers.get("strict-transport-security")).toBe("max-age=15552000; includeSubDomains");
+    }
+    expect(evil.status).toBe(403);
+    expect(await evil.json()).toEqual({ error: "forbidden_origin" });
+    const ok = await fetch(new URL("/api/echo", pub.url), { method: "POST", headers: { origin: "https://app.test", "content-type": "application/json" }, body: '{"a":"1"}' });
+    expect(await ok.json()).toEqual({ a: "1" });
+    expect(proxied).toBe(0);
+    const doc = await fetch(new URL("/teach", pub.url));
+    expect(await doc.text()).toBe("doc");
+    expect(doc.headers.get("strict-transport-security")).not.toBeNull();
+    expect(proxied).toBe(1);
+  } finally {
+    mode.NODE_ENV = prev;
+    pub.stop(true);
+    upstream.stop(true);
+  }
+});

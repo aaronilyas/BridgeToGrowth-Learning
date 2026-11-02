@@ -20,15 +20,17 @@ export async function findCached(qhash: Buffer): Promise<Paper[] | null> {
   return out.length === ids.length ? out : null;
 }
 
-// O(k)
-// INV: papers and the cache row are written atomically; only bibliographic fields are stored
+// O(k), two statements in one transaction
+// INV: papers and the cache row are written atomically; only bibliographic fields are stored; a repeated id keeps its last copy (as sequential upserts did), so one INSERT never touches a row twice
 export async function storePapers(qhash: Buffer, papers: Paper[]): Promise<void> {
+  const rows = [...new Map(papers.map((p) => [p.id, p])).values()];
   await sql.begin(async (tx) => {
-    for (const p of papers) {
-      await tx`
-        INSERT INTO papers (id, doi, title, year, venue, abstract) VALUES (${p.id}, ${p.doi}, ${p.title}, ${p.year}, ${p.venue}, ${p.abstract})
-        ON CONFLICT (id) DO UPDATE SET doi = EXCLUDED.doi, title = EXCLUDED.title, year = EXCLUDED.year, venue = EXCLUDED.venue, abstract = EXCLUDED.abstract, fetched_at = now()`;
-    }
+    if (rows.length > 0) await tx`
+      INSERT INTO papers (id, doi, title, year, venue, abstract)
+      SELECT p.id, p.doi, p.title, p.year, p.venue, p.abstract
+      FROM unnest(${rows.map((p) => p.id)}::text[], ${rows.map((p) => p.doi)}::text[], ${rows.map((p) => p.title)}::text[], ${rows.map((p) => p.year)}::int[], ${rows.map((p) => p.venue)}::text[], ${rows.map((p) => p.abstract)}::text[])
+        AS p(id, doi, title, year, venue, abstract)
+      ON CONFLICT (id) DO UPDATE SET doi = EXCLUDED.doi, title = EXCLUDED.title, year = EXCLUDED.year, venue = EXCLUDED.venue, abstract = EXCLUDED.abstract, fetched_at = now()`;
     await tx`
       INSERT INTO retrieval_cache (qhash, paper_ids) VALUES (${qhash}, ${papers.map((p) => p.id)})
       ON CONFLICT (qhash) DO UPDATE SET paper_ids = EXCLUDED.paper_ids, fetched_at = now()`;

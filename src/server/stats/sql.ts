@@ -28,10 +28,11 @@ export async function listDomains(uid: string): Promise<DomainRow[]> {
 }
 
 // O(50)
+// INV: the order matches topics(user_id, last_seen_at DESC NULLS LAST, id), so a user with more topics than the limit gets an ordered index scan and no sort; NULLS LAST changes nothing here because nulls are filtered out
 export async function listTopStats(uid: string): Promise<TopicRow[]> {
   const rows: { id: string; name: string; domain: string; attempts: number; correct: number; conf_err_sum: number; mastery: number }[] = await sql`
     SELECT id, name, domain, attempts, correct, conf_err_sum, mastery FROM topics
-    WHERE user_id = ${uid} AND last_seen_at IS NOT NULL ORDER BY last_seen_at DESC LIMIT 50`;
+    WHERE user_id = ${uid} AND last_seen_at IS NOT NULL ORDER BY last_seen_at DESC NULLS LAST LIMIT 50`;
   return rows.map((r) => ({ id: r.id, name: r.name, domain: r.domain, attempts: r.attempts, correct: r.correct, reviews: 0, reviewCorrect: 0, confErrSum: r.conf_err_sum, mastered: r.mastery >= MASTERED_AT ? 1 : 0, topics: 1 }));
 }
 
@@ -42,6 +43,7 @@ export async function countDue(uid: string): Promise<number> {
 }
 
 // O(500)
+// INV: the node order matches topics(user_id, last_seen_at DESC NULLS LAST, id), so a user with more topics than the limit gets an ordered index scan and no sort
 export async function listGraph(uid: string): Promise<{ nodes: GraphNodeRow[]; edges: { src: string; dst: string; kind: "prereq" | "related" }[] }> {
   const nodes: GraphNodeRow[] = await sql`
     SELECT id, name, domain, mastery, attempts, to_char(last_seen_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "lastSeenAt"

@@ -29,7 +29,7 @@ export async function upsertTopics(tx: SQL, uid: string, topics: TopicIn[], edge
 }
 
 // O(limit)
-// INV: served by topics(user_id, last_seen_at DESC); most recently practised mastered topics first
+// INV: served by topics(user_id, last_seen_at DESC NULLS LAST, id); most recently practised mastered topics first
 export async function listMasteredNames(uid: string, limit: number): Promise<string[]> {
   const rows: { name: string }[] = await sql`
     SELECT name FROM topics WHERE user_id = ${uid} AND mastery >= ${MASTERED_AT}

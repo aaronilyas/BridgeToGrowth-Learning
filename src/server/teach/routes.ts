@@ -13,7 +13,7 @@ import { findMasteredSlugs, listMasteredNames, upsertTopics } from "../topics/sq
 import { gatherSources } from "../sources/collect.ts";
 import { MAX_PDF_BYTES, MAX_SOURCE_FILES } from "../sources/core.ts";
 import { SourcedPlanOut, StepContent, StepOut, StoredPlan, allCitations, buildChatContext, buildPlanPrompt, buildStepPrompt, buildTutorSystem, categoryOfStep, KNOWN_TOPICS_IN_PROMPT, listPrereqs, maxPlanSteps, normalizePlan, normalizeStep, pickLessonModel, toPublicPlan, toStepPublic, unmetPrereqs } from "./core.ts";
-import { deleteLessonData, ensureConversation, findLesson, insertLesson, insertStep, insertMessagePair, listLessons, listMessages, listPapers, listSteps, type LessonRow } from "./sql.ts";
+import { deleteLessonData, ensureConversation, findLesson, insertLesson, insertStep, insertMessagePair, listLessons, listMessages, listPapers, listSteps, type LessonRow, type StepRow } from "./sql.ts";
 
 const IdParams = z.strictObject({ id: z.uuid() });
 const StepParams = z.strictObject({ id: z.uuid(), idx: z.coerce.number().int().min(0).max(SETTINGS_LIMITS.bite.stepsPerLesson.max - 1) });
@@ -52,7 +52,7 @@ function readPlan(lesson: LessonRow): StoredPlan {
   return p.data;
 }
 
-function stepOf(r: Awaited<ReturnType<typeof listSteps>>[number]): StepPublic {
+function stepOf(r: StepRow): StepPublic {
   return toStepPublic(r.idx, StepContent.parse(r.content), r.question);
 }
 
@@ -147,9 +147,8 @@ const makeStep = route({ entitled: true, rate: { key: "step", cap: 30, perMin: 3
       maxTokens: 2000,
     });
     const step = normalizeStep(r.data, planned.title, settings.bite.maxWordsPerStep, papers, categoryOfStep(idx));
-    if (!(await insertStep(uid, lesson, idx, step))) throw new HttpError(404, "not_found");
-    const row = (await listSteps(uid, lesson.id, idx))[0];
-    if (!row) throw new Error("step missing after insert");
+    const row = await insertStep(uid, lesson, idx, step);
+    if (!row) throw new HttpError(404, "not_found");
     return stepOf(row);
   });
   return json(built);
@@ -159,11 +158,10 @@ const chat = route({ entitled: true, body: ChatRequest, rate: { key: "chat", cap
   const uid = c.user.id;
   const lesson = await requireLesson(uid, c.params);
   const settings = loadSettings(c.user);
-  const papers = await listPapers(lesson.paper_ids);
-  const system = buildTutorSystem(settings, readPlan(lesson), papers);
+  const plan = readPlan(lesson);
   const model = pickLessonModel(lesson.model, settings, c.plan);
-  const convId = await ensureConversation(uid, lesson.id);
-  const recent = await listMessages(uid, lesson.id, null, 12);
+  const [papers, convId, recent] = await Promise.all([listPapers(lesson.paper_ids), ensureConversation(uid, lesson.id), listMessages(uid, lesson.id, null, 12)]);
+  const system = buildTutorSystem(settings, plan, papers);
   const stream = chatStream({
     who: { uid, plan: c.plan, capMicros: c.capMicros },
     model,

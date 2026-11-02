@@ -1,27 +1,37 @@
-import type { JSX } from "react";
+import { lazy, Suspense, type JSX } from "react";
 import { Redirect, Route, Switch } from "wouter";
 import { AppShell } from "./components/AppShell.tsx";
 import { ProGate } from "./components/ProGate.tsx";
 import { Spinner } from "./components/Spinner.tsx";
-import { AccountPage } from "./pages/Account.tsx";
-import { BillingPage } from "./pages/Billing.tsx";
 import { CancelPage } from "./pages/Cancel.tsx";
 import { ForgotPage } from "./pages/Forgot.tsx";
-import { GraphPage } from "./pages/Graph.tsx";
 import { LessonPage } from "./pages/Lesson.tsx";
 import { LoginPage } from "./pages/Login.tsx";
 import { PracticePage } from "./pages/Practice.tsx";
 import { ResetPage } from "./pages/Reset.tsx";
-import { SettingsPage } from "./pages/Settings.tsx";
 import { SignupPage } from "./pages/Signup.tsx";
-import { StatsPage } from "./pages/Stats.tsx";
 import { TeachPage } from "./pages/Teach.tsx";
-import { UsagePage } from "./pages/Usage.tsx";
 import { useSession } from "./session.tsx";
+
+// INV: pages that pull heavy code (d3-force on Graph) or that most sessions never open load as separate chunks; Teach, Lesson and Practice stay in the entry
+const AccountPage = lazy(() => import("./pages/Account.tsx").then((m) => ({ default: m.AccountPage })));
+const BillingPage = lazy(() => import("./pages/Billing.tsx").then((m) => ({ default: m.BillingPage })));
+const GraphPage = lazy(() => import("./pages/Graph.tsx").then((m) => ({ default: m.GraphPage })));
+const SettingsPage = lazy(() => import("./pages/Settings.tsx").then((m) => ({ default: m.SettingsPage })));
+const StatsPage = lazy(() => import("./pages/Stats.tsx").then((m) => ({ default: m.StatsPage })));
+const UsagePage = lazy(() => import("./pages/Usage.tsx").then((m) => ({ default: m.UsagePage })));
 
 function Loading(): JSX.Element {
   return (
     <div className="flex min-h-screen items-center justify-center">
+      <Spinner size={28} />
+    </div>
+  );
+}
+
+function PageLoading(): JSX.Element {
+  return (
+    <div className="flex justify-center p-10">
       <Spinner size={28} />
     </div>
   );
@@ -57,21 +67,23 @@ function Guarded(): JSX.Element {
   if (me === null) return failed ? <Unavailable /> : <Redirect to="/login" replace />;
   return (
     <AppShell>
-      <Switch>
-        <Route path="/teach" component={TeachPage} />
-        <Route path="/lesson/:id" component={LessonPage} />
-        <Route path="/practice" component={PracticePage} />
-        <Route path="/graph" component={GraphPage} />
-        <Route path="/stats" component={StatsRoute} />
-        <Route path="/settings" component={SettingsRoute} />
-        <Route path="/billing/cancel" component={CancelPage} />
-        <Route path="/billing" component={BillingPage} />
-        <Route path="/account" component={AccountPage} />
-        <Route path="/usage" component={UsagePage} />
-        <Route>
-          <Redirect to="/teach" replace />
-        </Route>
-      </Switch>
+      <Suspense fallback={<PageLoading />}>
+        <Switch>
+          <Route path="/teach" component={TeachPage} />
+          <Route path="/lesson/:id" component={LessonPage} />
+          <Route path="/practice" component={PracticePage} />
+          <Route path="/graph" component={GraphPage} />
+          <Route path="/stats" component={StatsRoute} />
+          <Route path="/settings" component={SettingsRoute} />
+          <Route path="/billing/cancel" component={CancelPage} />
+          <Route path="/billing" component={BillingPage} />
+          <Route path="/account" component={AccountPage} />
+          <Route path="/usage" component={UsagePage} />
+          <Route>
+            <Redirect to="/teach" replace />
+          </Route>
+        </Switch>
+      </Suspense>
     </AppShell>
   );
 }

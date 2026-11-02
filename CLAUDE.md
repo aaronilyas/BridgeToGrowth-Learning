@@ -26,6 +26,7 @@ TESTS: bun test. Write only the tests listed in a prompt. No network: mock with 
 DONE: `bun run typecheck && bun test` is green and the prompt's VERIFY passes.
 MODULE MAP (append one line per module: path · purpose · key exports):
 - src/server/http.ts · route wrapper (session, plan gate, per-user rate limit), errors, response security headers · route, HttpError, json, originAllowed, secureResponse
+- src/server/listener.ts · public 127.0.0.1 listener: API routes mounted directly, everything else (HTML bundle, hashed assets, dev HMR socket) proxied to the loopback upstream through decorateDocument; immutable caching for production chunks · servePublic, MAX_REQUEST_BYTES, ApiRoutes
 - src/server/rate.ts · token bucket · takeToken
 - src/server/env.ts · validated env · env
 - src/server/db.ts · shared Bun.sql pool · sql

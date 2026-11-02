@@ -69,8 +69,8 @@ export async function listPapers(ids: string[]): Promise<Paper[]> {
 
 // O(steps), one statement
 // INV: steps are joined to their question in a single query; limit 16 is the maximum stepsPerLesson
-export async function listSteps(uid: string, lessonId: string, only: number | null = null): Promise<StepRow[]> {
-  const rows: (QuestionRow & { idx: number; content: unknown })[] = await sql`
+async function selectSteps(db: SQL, uid: string, lessonId: string, only: number | null): Promise<StepRow[]> {
+  const rows: (QuestionRow & { idx: number; content: unknown })[] = await db`
     SELECT s.idx, s.content, q.id, q.topic_id, q.lesson_id, q.kind, q.category, q.stem, q.choices, q.code_spec, q.answer, q.explanation, q.citations
     FROM lesson_steps s
     JOIN lessons l ON l.id = s.lesson_id
@@ -80,21 +80,32 @@ export async function listSteps(uid: string, lessonId: string, only: number | nu
   return rows.map((r) => ({ idx: r.idx, content: r.content, question: r }));
 }
 
-// O(1), three statements in one transaction
+// O(steps), one statement
+export async function listSteps(uid: string, lessonId: string, only: number | null = null): Promise<StepRow[]> {
+  return selectSteps(sql, uid, lessonId, only);
+}
+
+// O(1), four statements in one transaction (five when the race is lost)
 // INV: locks the lesson row so a delete cannot detach the new question; concurrent calls yield one step; the loser's question is deleted (its card cascades)
-export async function insertStep(uid: string, lesson: LessonRow, idx: number, s: NewStep): Promise<boolean> {
+// INV: the winner's row is built from the RETURNING values; a loser re-reads the stored step under the same lesson lock, which serialises every insertStep for the lesson, so the winner has committed
+// INV: null means the lesson is gone
+export async function insertStep(uid: string, lesson: LessonRow, idx: number, s: NewStep): Promise<StepRow | null> {
   return sql.begin(async (tx) => {
     const held: { id: string }[] = await tx`SELECT id FROM lessons WHERE id = ${lesson.id} AND user_id = ${uid} FOR UPDATE`;
-    if (held.length === 0) return false;
+    if (held.length === 0) return null;
     const [q] = await insertQuestions(tx, uid, lesson.topic_id, null, [s.check], lesson.id);
     if (!q) throw new Error("question insert returned no row");
     await insertCards(tx, uid, [q.id]);
     const content: Omit<StepContent, "citations"> & { citations: Citation[] } = { ...s.content, questionId: q.id };
-    const won: { idx: number }[] = await tx`
+    const won: { idx: number; content: unknown }[] = await tx`
       INSERT INTO lesson_steps (lesson_id, idx, content) VALUES (${lesson.id}, ${idx}, ${JSON.stringify(content)}::text::jsonb)
-      ON CONFLICT (lesson_id, idx) DO NOTHING RETURNING idx`;
-    if (won.length === 0) await tx`DELETE FROM questions WHERE id = ${q.id} AND user_id = ${uid}`;
-    return true;
+      ON CONFLICT (lesson_id, idx) DO NOTHING RETURNING idx, content`;
+    const mine = won[0];
+    if (mine) return { idx: mine.idx, content: mine.content, question: q };
+    await tx`DELETE FROM questions WHERE id = ${q.id} AND user_id = ${uid}`;
+    const theirs = (await selectSteps(tx, uid, lesson.id, idx))[0];
+    if (!theirs) throw new Error("step missing after insert");
+    return theirs;
   });
 }
 
@@ -199,14 +210,22 @@ async function rewriteTopicStats(tx: SQL, uid: string, topicIds: string[]): Prom
 }
 
 // O(attempts on the touched days)
+// INV: each day is a sargable [d, d+1) UTC range on attempts(user_id, created_at DESC), evaluated per day through LATERAL; a plain JOIN lets the planner join-filter every attempt against every day
+// INV: days are deduplicated, and a day with no remaining attempts gets no row, as with the former GROUP BY
 async function rewriteDays(tx: SQL, uid: string, days: string[]): Promise<void> {
   await tx`DELETE FROM daily_activity WHERE user_id = ${uid} AND day = ANY(${days}::date[])`;
   await tx`
     INSERT INTO daily_activity (user_id, day, attempts, correct, reviews, review_correct, conf_err_sum)
-    SELECT ${uid}, (a.created_at AT TIME ZONE 'UTC')::date, count(*)::int,
-      count(*) FILTER (WHERE a.score >= ${CORRECT_AT})::int, count(*) FILTER (WHERE a.is_review)::int,
-      count(*) FILTER (WHERE a.is_review AND a.score >= ${CORRECT_AT})::int, coalesce(sum(abs(a.confidence / 100.0 - a.score)), 0)
-    FROM attempts a WHERE a.user_id = ${uid} AND (a.created_at AT TIME ZONE 'UTC')::date = ANY(${days}::date[]) GROUP BY 2`;
+    SELECT ${uid}, d.day, s.attempts, s.correct, s.reviews, s.review_correct, s.conf_err_sum
+    FROM (SELECT DISTINCT unnest(${days}::date[]) AS day) d
+    CROSS JOIN LATERAL (
+      SELECT count(*)::int AS attempts, count(*) FILTER (WHERE a.score >= ${CORRECT_AT})::int AS correct,
+        count(*) FILTER (WHERE a.is_review)::int AS reviews, count(*) FILTER (WHERE a.is_review AND a.score >= ${CORRECT_AT})::int AS review_correct,
+        coalesce(sum(abs(a.confidence / 100.0 - a.score)), 0) AS conf_err_sum
+      FROM attempts a
+      WHERE a.user_id = ${uid} AND a.created_at >= d.day::timestamp AT TIME ZONE 'UTC' AND a.created_at < (d.day + 1)::timestamp AT TIME ZONE 'UTC'
+    ) s
+    WHERE s.attempts > 0`;
 }
 
 // O(e) in edges touching the lesson topic

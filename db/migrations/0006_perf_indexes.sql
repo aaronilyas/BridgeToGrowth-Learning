@@ -1,0 +1,11 @@
+CREATE INDEX IF NOT EXISTS questions_lesson_idx ON questions (lesson_id) WHERE lesson_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS questions_topic_idx ON questions (topic_id);
+CREATE INDEX IF NOT EXISTS questions_style_idx ON questions (style_id) WHERE style_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS lessons_topic_idx ON lessons (topic_id);
+CREATE INDEX IF NOT EXISTS attempts_question_idx ON attempts (question_id);
+CREATE INDEX IF NOT EXISTS attempts_user_topic_created_idx ON attempts (user_id, topic_id, created_at, id);
+CREATE INDEX IF NOT EXISTS topic_edges_dst_idx ON topic_edges (dst);
+CREATE INDEX IF NOT EXISTS topic_edges_src_idx ON topic_edges (src);
+CREATE INDEX IF NOT EXISTS conversations_user_idx ON conversations (user_id);
+DROP INDEX IF EXISTS topics_user_seen_idx;
+CREATE INDEX IF NOT EXISTS topics_user_seen_idx ON topics (user_id, last_seen_at DESC NULLS LAST, id);

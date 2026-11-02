@@ -1,6 +1,7 @@
 # Rendered by deploy/setup-proxy.sh. The only placeholders are HOST and PORT.
 # Upstream timeouts stay at least SERVER_IDLE_TIMEOUT_S (210s) from src/server/llm/timeouts.ts.
 # flush_interval -1 disables response buffering. header_up replaces X-Real-IP with the TCP peer.
+# encode compresses only the listed text types. SEC: text/event-stream is deliberately absent, so SSE chat is never buffered by a compressor and keeps streaming token by token.
 
 http://${HOST} {
 	redir https://${HOST}{uri} permanent
@@ -14,6 +15,19 @@ ${HOST} {
 	}
 	request_body {
 		max_size 80MiB
+	}
+	encode {
+		zstd
+		gzip
+		match {
+			header Content-Type text/html*
+			header Content-Type text/css*
+			header Content-Type application/javascript*
+			header Content-Type text/javascript*
+			header Content-Type application/json*
+			header Content-Type image/svg+xml*
+			header Content-Type text/plain*
+		}
 	}
 	reverse_proxy 127.0.0.1:${PORT} {
 		header_up X-Real-IP {remote_host}
