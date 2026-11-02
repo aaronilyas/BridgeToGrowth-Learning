@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { CODE_MAX_TESTS, CodeAttempt, CodeSpec, CodeTest, CodeTestResult } from "./code.ts";
-import { ModelRef } from "./providers.ts";
+import { ConnectionStatus, ModelRef } from "./providers.ts";
 
 export { UsageResponse } from "./providers.ts";
 export type { UsageModel } from "./providers.ts";
@@ -12,6 +12,9 @@ export type ConfigResponse = z.infer<typeof ConfigResponse>;
 
 export const ModelsResponse = z.array(ModelRef);
 export type ModelsResponse = z.infer<typeof ModelsResponse>;
+
+export const ProvidersResponse = z.array(ConnectionStatus);
+export type ProvidersResponse = z.infer<typeof ProvidersResponse>;
 
 export const Citation = z.strictObject({ n: z.int().min(1), paperId: z.string(), doi: z.string().nullable(), title: z.string(), year: z.int().nullable() });
 export type Citation = z.infer<typeof Citation>;
