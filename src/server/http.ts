@@ -53,8 +53,36 @@ export type Ctx<B, A extends boolean = false, E extends boolean = false> = {
 };
 export type RouteOpts<B, A extends boolean = false, E extends boolean = false> = { auth?: A; entitled?: E; pro?: boolean; body?: z.ZodType<B>; rate?: { key: string; cap: number; perMin: number }; csrf?: boolean; maxBody?: number; raw?: boolean };
 
-const JSON_HEADERS = { "content-type": "application/json", "cache-control": "no-store", "x-content-type-options": "nosniff" };
+const JSON_HEADERS = { "content-type": "application/json", "cache-control": "no-store" };
 const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "::1"]);
+const SECURITY_HEADERS: ReadonlyArray<readonly [string, string]> = [
+  ["content-security-policy", "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"],
+  ["x-content-type-options", "nosniff"],
+  ["referrer-policy", "strict-origin-when-cross-origin"],
+  ["permissions-policy", "camera=(), microphone=(), geolocation=()"],
+];
+const HSTS = "max-age=15552000; includeSubDomains";
+
+// O(1)
+// SEC: HSTS is production-only so a local http origin is not pinned
+function applySecurityHeaders(headers: Headers): void {
+  for (const [name, value] of SECURITY_HEADERS) headers.set(name, value);
+  if (env.NODE_ENV === "production") headers.set("strict-transport-security", HSTS);
+}
+
+// O(1)
+// INV: 204, 205 and 304 stay bodyless so the Fetch API accepts them
+export function secureResponse(res: Response): Response {
+  const headers = new Headers();
+  for (const [name, value] of res.headers) {
+    if (name === "set-cookie") continue;
+    headers.append(name, value);
+  }
+  for (const cookie of res.headers.getSetCookie()) headers.append("set-cookie", cookie);
+  applySecurityHeaders(headers);
+  if (res.status === 204 || res.status === 205 || res.status === 304) return new Response(null, { status: res.status, statusText: res.statusText, headers });
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
 
 // O(1)
 // SEC: the browser sets Origin, so another site cannot claim a loopback origin; localhost, 127.0.0.1, and ::1 are one local app when the scheme and port match
@@ -81,9 +109,9 @@ export function json(data: unknown, status: number = 200): Response {
 }
 
 // O(1)
-// SEC: cf-connecting-ip is trustworthy only because the server binds to 127.0.0.1 and cloudflared is the only ingress; direct local requests share one bucket
+// SEC: X-Real-IP is trustworthy only because the server binds to 127.0.0.1 and Caddy overwrites that header; a missing header shares the "local" bucket
 function readIp(req: Request): string {
-  return req.headers.get("cf-connecting-ip") ?? "local";
+  return req.headers.get("x-real-ip") ?? "local";
 }
 
 // O(1)
@@ -130,11 +158,11 @@ export function route<B = undefined, A extends boolean = false, E extends boolea
         if (!r.success) throw new HttpError(400, "bad_request");
         body = r.data;
       }
-      return await fn({ req, ip, params: req.params ?? {}, body, user: user as Ctx<B, A, E>["user"], plan: ent?.plan as Ctx<B, A, E>["plan"], capMicros: ent?.capMicros as Ctx<B, A, E>["capMicros"] });
+      return secureResponse(await fn({ req, ip, params: req.params ?? {}, body, user: user as Ctx<B, A, E>["user"], plan: ent?.plan as Ctx<B, A, E>["plan"], capMicros: ent?.capMicros as Ctx<B, A, E>["capMicros"] }));
     } catch (e) {
-      if (e instanceof HttpError) return json({ error: e.code }, e.status);
+      if (e instanceof HttpError) return secureResponse(json({ error: e.code }, e.status));
       console.error("request failed");
-      return json({ error: "internal" }, 500);
+      return secureResponse(json({ error: "internal" }, 500));
     }
   };
 }

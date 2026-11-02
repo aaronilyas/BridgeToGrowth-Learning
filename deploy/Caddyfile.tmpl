@@ -1,0 +1,28 @@
+# Rendered by deploy/setup-proxy.sh. The only placeholders are HOST and PORT.
+# Upstream timeouts stay at least SERVER_IDLE_TIMEOUT_S (210s) from src/server/llm/timeouts.ts.
+# flush_interval -1 disables response buffering. header_up replaces X-Real-IP with the TCP peer.
+
+http://${HOST} {
+	redir https://${HOST}{uri} permanent
+}
+
+${HOST} {
+	tls {
+		issuer acme {
+			dir https://acme-v02.api.letsencrypt.org/directory
+		}
+	}
+	request_body {
+		max_size 80MiB
+	}
+	reverse_proxy 127.0.0.1:${PORT} {
+		header_up X-Real-IP {remote_host}
+		flush_interval -1
+		transport http {
+			compression off
+			response_header_timeout 210s
+			read_timeout 210s
+			write_timeout 210s
+		}
+	}
+}

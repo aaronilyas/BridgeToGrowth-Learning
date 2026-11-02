@@ -1,7 +1,7 @@
 # BridgeToGrowth Learning
 
 BridgeToGrowth Learning is an AI-assisted learning app with grounded lessons, active recall, spaced repetition, and progress insights.
-It uses OpenAlex for research sources, OpenRouter for lesson and chat generation, Stripe for the Pro subscription, and a Cloudflare Tunnel to serve a local machine on a public domain.
+It uses OpenAlex for research sources, OpenRouter for lesson and chat generation, and Stripe for the Pro subscription. Production runs on a DigitalOcean Droplet. Caddy is the only public ingress, and Postgres is a DigitalOcean Managed Database.
 
 ## Plans
 
@@ -20,7 +20,7 @@ All four values come from the environment (see `.env.example`); nothing is hard-
 - Bun 1.2 or newer
 - PostgreSQL 16 or newer
 - A Stripe account; the Stripe CLI for local webhook testing
-- For production: a domain on Cloudflare and `cloudflared`, `jq`, `envsubst` (gettext), `rsync` on the app machine
+- For production: a DigitalOcean account, a domain, Caddy, and `rsync`
 - poppler-utils (`pdftotext`) and Ghostscript (`gs`) for lesson PDF attachments; `prlimit` (util-linux) is used to cap their resources when present
 - bubblewrap (`bwrap`), `prlimit` and a system Python at `/usr/bin/python3` for sandboxed code exercises. Optional libraries such as numpy, sympy, scipy and mpmath are offered only if installed for that interpreter (for example `pacman -S python-numpy python-sympy`)
 
@@ -33,23 +33,26 @@ All four values come from the environment (see `.env.example`); nothing is hard-
 5. Forward webhooks: `stripe listen --forward-to localhost:3000/api/stripe/webhook`. Put the printed `whsec_…` in `STRIPE_WEBHOOK_SECRET`.
 6. Start the app with `bun run dev` and open http://localhost:3000. Use `localhost`, not `127.0.0.1`: the session cookie is `Secure`, and browsers only accept that over plain http on `localhost`. Test card: `4242 4242 4242 4242`.
 
+`bun test` needs `TEST_DATABASE_URL` in the environment.
+
 Upgrading from the single-user version: the old local profile (`local@localhost`) still owns your lessons and history. Claim it as a real account with `bun scripts/set-password.ts you@example.com --claim-local`. The script asks for the new password.
 
-## Production on this machine
+## Production on a DigitalOcean Droplet
 
-The app runs as the `btg` system user from `/opt/btg`, bound to `127.0.0.1`. `cloudflared` is the only ingress.
+The app runs as the `btg` system user from `/opt/btg`, bound to `127.0.0.1`. Caddy on the same Droplet is the only ingress. Postgres is a managed database that accepts connections from the Droplet only. The operator checklist is [deploy/digitalocean.md](deploy/digitalocean.md).
 
-1. `sudo BUN="$(command -v bun)" deploy/install.sh`. The first run creates `/etc/btg/btg.env` (root, 0600) and stops.
-2. Fill in `/etc/btg/btg.env`: `NODE_ENV=production`, `APP_ORIGIN=https://<your-host>`, the production `DATABASE_URL`, live Stripe keys, Turnstile keys for your hostname, and the plan values. The app refuses to start in production with a non-https origin or Turnstile test keys.
-3. Run `deploy/install.sh` again. It syncs the checkout to `/opt/btg`, builds, migrates, installs the systemd units and waits for `/api/health`. Rerun it for every update.
-4. `sudo deploy/setup-tunnel.sh <your-host>` (once) creates the tunnel, the DNS record and the `cloudflared` service.
-5. Work through [deploy/cloudflare-dashboard.md](deploy/cloudflare-dashboard.md): TLS, security headers, WAF rate limit, Turnstile, the Stripe product, webhook and customer portal, and an OpenRouter credit limit.
+1. Create one Ubuntu Droplet with more than 8 GB of RAM and a Cloud Firewall that allows inbound TCP 22, 80, and 443 only. Create one Managed Postgres 16 or newer whose only trusted source is that Droplet. Point an A record for `$HOST` at the Droplet. The record is not proxied by Cloudflare.
+2. `sudo BUN="$(command -v bun)" deploy/install.sh`. The first run creates `/etc/btg/btg.env` (root, 0600) and stops.
+3. Fill in `/etc/btg/btg.env`: `NODE_ENV=production`, `APP_ORIGIN=https://$HOST`, the managed `DATABASE_URL` (include `sslmode=require`), live Stripe keys, Turnstile keys for `$HOST`, and the plan values. The app refuses to start in production with a non-https origin or Turnstile test keys.
+4. Run `deploy/install.sh` again. It syncs the checkout to `/opt/btg`, builds, migrates, installs the systemd units and waits for `/api/health`. Rerun it for every update.
+5. `sudo deploy/setup-proxy.sh $HOST` installs Caddy, redirects HTTP to HTTPS, and reverse-proxies `https://$HOST` to the app with a Let's Encrypt certificate.
+6. Finish Turnstile (a managed widget for `$HOST`; the DNS zone is not a Cloudflare zone), the Stripe webhook `https://$HOST/api/stripe/webhook`, and an OpenRouter credit limit. Details are in [deploy/digitalocean.md](deploy/digitalocean.md).
 
 Signed-in users change their password on the Account page. That signs out every other session. The same page deletes the account: lessons, practice history and settings are removed, and a Pro subscription is canceled immediately so it cannot renew.
 
 Set `RESEND_API_KEY` and `MAIL_FROM` (for example `BridgeToGrowth <learn@your-host>`) to email a one-hour, one-time reset link from the sign-in page. Without those, a forgotten password stays operator-assisted: `sudo bun --env-file=/etc/btg/btg.env /opt/btg/scripts/set-password.ts <email>`.
 
-Lessons and chat let you choose DeepSeek V4.1 Flash (`deepseek/deepseek-v4.1-flash`), GLM-5.3-Flash (`z-ai/glm-5.3-flash`), or GPT-6-Luna (`openai/gpt-6-luna`). `.env.example` sets `OPENROUTER_BASE_URL=https://openrouter.ai/api/v1`. Requests go to `${OPENROUTER_BASE_URL}/chat/completions`. `OPENROUTER_REASONING_LEVEL` (`low`, `high`, or `max`) is sent as the same reasoning effort for all three. Grading, extraction, and insights still use `OPENROUTER_MODEL`.
+Lessons and chat let you choose DeepSeek V4.1 Flash (`deepseek/deepseek-v4.1-flash`), GLM-5.3-Flash (`z-ai/glm-5.3-flash`), or GPT-6-Luna (`openai/gpt-6-luna`). The default `OPENROUTER_BASE_URL` is `https://openrouter.ai/api/v1`. Requests go to `${OPENROUTER_BASE_URL}/chat/completions`. `OPENROUTER_REASONING_LEVEL` (`low`, `high`, or `max`) is sent as the same reasoning effort for all three. Grading, extraction, and insights still use `OPENROUTER_MODEL`.
 
 Lessons accept up to 3 PDFs (25 MB each) and 3 http(s) links as extra context. They are read once for the planning call and never stored; the plan keeps only short per-step notes in the model's words, which are used to write later steps and are never returned to the browser. Text-layer PDFs are reduced to capped plain text locally. Image-only PDFs are cut to 10 pages and compressed with Ghostscript before upload. Links are fetched only from public addresses on default ports, with every redirect re-checked.
 
@@ -57,7 +60,7 @@ For programming and computational topics, the free-response question in a practi
 
 ## Operating notes
 
-- The `btg-backup.timer` systemd unit runs nightly at 03:30 local time. It writes mode 0600 dumps under `/var/backups/btg` and removes dumps older than 14 days. Restore with `createdb btg_restore_check && pg_restore -d btg_restore_check /var/backups/btg/btg-YYYY-MM-DD.dump`.
+- The `btg-backup.timer` systemd unit runs nightly at 03:30 local time. It runs `pg_dump -Fc` against `DATABASE_URL`, writes mode 0600 dumps under `/var/backups/btg`, and removes dumps older than 14 days. Restore with `pg_restore -d "$DATABASE_URL" /var/backups/btg/btg-YYYY-MM-DD.dump`.
 - Rotate secrets in `/etc/btg/btg.env`, then restart `btg.service`. Never commit `.env` or production credentials.
 - Background sweeps run inside the app: expired sessions and password-reset links hourly, expired free-plan lessons every 15 minutes, and Stripe event ids older than 30 days daily.
 - If a webhook is missed, returning from Checkout calls `POST /api/billing/sync`, which reads the subscription straight from Stripe.

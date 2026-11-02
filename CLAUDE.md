@@ -1,5 +1,5 @@
 # Agent contract (optimized for agents, not humans)
-STACK: Bun>=1.2 · TS strict · Bun.serve routes · Bun.sql (Postgres>=16, local) · Bun.password (argon2id) · zod v4 · React 19 + wouter + Tailwind v4 · OpenRouter (DeepSeek V4.1 Flash, GLM-5.3-Flash, GPT-6-Luna; system calls use OPENROUTER_MODEL) · Stripe · Turnstile · OpenAlex · Cloudflare Tunnel (the only ingress; the server binds 127.0.0.1).
+STACK: Bun>=1.2 · TS strict · Bun.serve routes · Bun.sql (Postgres>=16, DigitalOcean Managed Postgres) · Bun.password (argon2id) · zod v4 · React 19 + wouter + Tailwind v4 · OpenRouter (DeepSeek V4.1 Flash, GLM-5.3-Flash, GPT-6-Luna; system calls use OPENROUTER_MODEL) · Stripe · Turnstile · OpenAlex · DigitalOcean Droplet (Caddy is the only ingress; the server binds 127.0.0.1).
 PLANS: free and pro, decided only by billing/core.ts entitlementOf. Caps, price and lesson TTL come from env (FREE_CAP_USD, PRO_CAP_USD, PRO_PRICE_USD, FREE_LESSON_TTL_DAYS). Gate pro features server-side with route({ auth: true, pro: true }); the UI gate (ProGate) is cosmetic.
 DEPS: only those in package.json. Adding one requires a justification line in the commit body. Exact versions only. CI uses --frozen-lockfile.
 LAYOUT: src/server/<module>/{routes.ts,core.ts,sql.ts} · src/shared/*.ts (isomorphic; zod schemas are the single source of API truth) · src/web/** · db/migrations/NNNN_*.sql · scripts/* · deploy/* · tests colocated as *.test.ts.
@@ -25,7 +25,7 @@ SECURITY (MUST):
 TESTS: bun test. Write only the tests listed in a prompt. No network: mock with `mock.module`. DB tests use TEST_DATABASE_URL and truncate their tables.
 DONE: `bun run typecheck && bun test` is green and the prompt's VERIFY passes.
 MODULE MAP (append one line per module: path · purpose · key exports):
-- src/server/http.ts · route wrapper (session, plan gate, per-user rate limit), errors · route, HttpError, json, originAllowed
+- src/server/http.ts · route wrapper (session, plan gate, per-user rate limit), errors, response security headers · route, HttpError, json, originAllowed, secureResponse
 - src/server/rate.ts · token bucket · takeToken
 - src/server/env.ts · validated env · env
 - src/server/db.ts · shared Bun.sql pool · sql
@@ -34,7 +34,7 @@ MODULE MAP (append one line per module: path · purpose · key exports):
 - scripts/build.ts · production bundle with the Tailwind plugin (`bun run build`; run dist/index.js from dist/) · none
 - scripts/stripe-setup.ts · create or reuse the Pro price and webhook endpoint · none
 - scripts/set-password.ts · operator password reset, `--claim-local` turns local@localhost into an account · none
-- deploy/{install.sh,setup-tunnel.sh,cloudflared/,systemd/,cloudflare-dashboard.md} · /opt/btg install, Cloudflare Tunnel, units, dashboard checklist · none
+- deploy/{install.sh,setup-proxy.sh,backup.sh,Caddyfile.tmpl,systemd/,digitalocean.md} · /opt/btg install, Caddy on the Droplet, managed-database backup, systemd units, operator checklist · none
 - src/server/auth/{core,sql,routes,turnstile,verify,account,mail,customer}.ts · email+password accounts, sessions, Turnstile, signed-in password change, email reset links, account deletion · authRoutes, accountRoutes, AuthUser, hashToken, readSessionToken, findSession, verifyTurnstile, verifyPassword, setUserPassword, claimLocalProfile, passwordResetEnabled, sendPasswordReset, deleteAccountCustomer, LEGACY_LOCAL_EMAIL
 - src/server/billing/{core,sql,routes,stripe}.ts · free/pro entitlement, plan terms, lesson expiry, Stripe checkout/portal/sync/cancel/resume, order-independent webhook, customer delete on account deletion · billingRoutes, entitlementOf, readPlanTerms, computeLessonExpiry, snapshotSubscription, applyStripeEvent, saveUserSubscription, findCustomerSubscription, deleteStripeCustomer
 - src/server/testkit.ts · test env + test DB helpers (import statically, server modules dynamically after boot); createTestUser({ plan }) returns a session cookie · bootTestServer, createTestUser, callRoute, TEST_ENV, TEST_ORIGIN

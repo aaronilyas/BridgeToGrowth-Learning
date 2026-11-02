@@ -63,7 +63,7 @@ export async function createTestUser(o: { email?: string; password?: string; pla
 
 // O(1) plus handler cost
 export async function callRoute(handler: Handler, method: string, path: string, o: CallOpts = {}): Promise<Response> {
-  const headers: Record<string, string> = { origin: o.origin ?? TEST_ORIGIN, "cf-connecting-ip": o.ip ?? "203.0.113.1" };
+  const headers: Record<string, string> = { origin: o.origin ?? TEST_ORIGIN, "x-real-ip": o.ip ?? "203.0.113.1" };
   if (o.body !== undefined) headers["content-type"] = "application/json";
   if (o.cookie) headers.cookie = o.cookie;
   const init: RequestInit = { method, headers };

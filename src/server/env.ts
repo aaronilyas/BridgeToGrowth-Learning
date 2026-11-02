@@ -35,7 +35,7 @@ const Schema = z.object({
     ctx.addIssue({ code: "custom", path: ["RESEND_API_KEY"], message: "set with MAIL_FROM" });
     ctx.addIssue({ code: "custom", path: ["MAIL_FROM"], message: "set with RESEND_API_KEY" });
   }
-  // SEC: production is served over the tunnel; __Host- cookies need https and Cloudflare's always-pass Turnstile test keys must not ship
+  // SEC: production is https-only so the __Host- cookie is set, and Cloudflare's always-pass Turnstile test keys must not ship
   if (e.NODE_ENV !== "production") return;
   if (!e.APP_ORIGIN.startsWith("https://")) ctx.addIssue({ code: "custom", path: ["APP_ORIGIN"], message: "https required" });
   if (TURNSTILE_TEST_KEY.test(e.TURNSTILE_SITE_KEY)) ctx.addIssue({ code: "custom", path: ["TURNSTILE_SITE_KEY"], message: "test key" });

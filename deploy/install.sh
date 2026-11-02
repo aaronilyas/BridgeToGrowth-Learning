@@ -66,7 +66,7 @@ systemctl restart btg.service
 log "waiting for http://127.0.0.1:$PORT/api/health"
 for _ in $(seq 1 30); do
   if curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; then
-    log "btg.service is up. Next: sudo deploy/setup-tunnel.sh <your-hostname> (once), then the checklist in deploy/cloudflare-dashboard.md"
+    log 'btg.service is up. Next: sudo deploy/setup-proxy.sh $HOST'
     exit 0
   fi
   sleep 1
