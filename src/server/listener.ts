@@ -3,6 +3,7 @@ import { decorateDocument, stripDocumentConditionals } from "./ads/routes.ts";
 import { env } from "./env.ts";
 import { json, secureResponse } from "./http.ts";
 import { SERVER_IDLE_TIMEOUT_S } from "./llm/timeouts.ts";
+import { localGuard } from "./localGuard.ts";
 
 export const MAX_REQUEST_BYTES = 80 * 2 ** 20;
 
@@ -59,21 +60,50 @@ async function proxyDocument(req: Request, upstream: URL): Promise<Response> {
   }
 }
 
+const API_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
+
+// O(n) in route count
+// SEC: when a launch token is set, every API handler and the document fallback share one guard
+function guardRoutes(api: ApiRoutes, token: string | undefined, portOf: () => number): ApiRoutes {
+  const guard = (handler: ApiHandler): ApiHandler => async (req) => {
+    if (token === undefined) return handler(req);
+    const blocked = localGuard(req, `127.0.0.1:${portOf()}`, token);
+    if (blocked) return secureResponse(blocked);
+    return handler(req);
+  };
+  const guarded: ApiRoutes = {};
+  for (const [path, entry] of Object.entries(api)) {
+    if (typeof entry === "function") {
+      guarded[path] = guard(entry);
+      continue;
+    }
+    const methods: Partial<Record<(typeof API_METHODS)[number], ApiHandler>> = {};
+    for (const method of API_METHODS) {
+      const handler = entry[method];
+      if (handler) methods[method] = guard(handler);
+    }
+    guarded[path] = methods;
+  }
+  return guarded;
+}
+
 // O(1) per request plus the handler
 // INV: `api` handlers are built with route(), which wraps every response (including errors) in secureResponse, so they are mounted directly with no loopback hop
 // INV: `api` must not contain "/*"; the HTML bundle stays on the upstream so its responses pass through decorateDocument (ads nonce CSP) and secureResponse
 // INV: maxRequestBodySize caps every body at the socket; route maxBody still caps each route below that
 // INV: idleTimeout stays above the model budgets in llm/timeouts.ts. Bun's default of 10s resets the socket before a lesson step or chat reply is written.
-// SEC: binds 127.0.0.1 only; Caddy is the only ingress
-export function servePublic(o: { port: number; api: ApiRoutes; upstream: URL }): Server<UpstreamSocket> {
+// SEC: binds 127.0.0.1 only. A launch token makes localGuard reject any other Host, a missing API token, and a foreign mutation Origin.
+export function servePublic(o: { port: number; api: ApiRoutes; upstream: URL; token?: string }): Server<UpstreamSocket> {
   if ("/*" in o.api) throw new Error("the document route belongs on the upstream");
-  return Bun.serve<UpstreamSocket>({
+  const bound = { port: 0 };
+  const guardedApi = guardRoutes(o.api, o.token, () => bound.port);
+  const server = Bun.serve<UpstreamSocket>({
     id: "btg",
     hostname: "127.0.0.1",
     port: o.port,
     maxRequestBodySize: MAX_REQUEST_BYTES,
     idleTimeout: SERVER_IDLE_TIMEOUT_S,
-    routes: o.api,
+    routes: guardedApi,
     websocket: {
       open(ws) {
         const client = new WebSocket(ws.data.url);
@@ -103,6 +133,10 @@ export function servePublic(o: { port: number; api: ApiRoutes; upstream: URL }):
       },
     },
     async fetch(req, server) {
+      if (o.token !== undefined) {
+        const blocked = localGuard(req, `127.0.0.1:${server.port}`, o.token);
+        if (blocked) return secureResponse(blocked);
+      }
       if ((req.headers.get("upgrade") ?? "").toLowerCase() === "websocket") {
         const url = new URL(req.url);
         const target = new URL(url.pathname + url.search, o.upstream).href.replace(/^http/, "ws");
@@ -115,4 +149,8 @@ export function servePublic(o: { port: number; api: ApiRoutes; upstream: URL }):
       return secureResponse(json({ error: "internal" }, 500));
     },
   });
+  const port = server.port ?? 0;
+  if (port === 0) throw new Error("listener did not bind");
+  bound.port = port;
+  return server;
 }

@@ -1,6 +1,6 @@
 import { StreamEvent } from "../shared/api.ts";
 import { parseSseChunk } from "../shared/sse.ts";
-import { makeApiError, readApiError } from "./api.ts";
+import { makeApiError, readApiError, readLaunchHeaders } from "./api.ts";
 
 export type SseEvent = StreamEvent;
 
@@ -10,7 +10,7 @@ export type SseEvent = StreamEvent;
 export async function streamSse(path: string, body: unknown, on: (e: SseEvent) => void, signal: AbortSignal): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(path, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json", accept: "text/event-stream" }, body: JSON.stringify(body), signal });
+    res = await fetch(path, { method: "POST", credentials: "same-origin", headers: { ...readLaunchHeaders(), "content-type": "application/json", accept: "text/event-stream" }, body: JSON.stringify(body), signal });
   } catch (e) {
     if (signal.aborted) throw e;
     throw makeApiError(0, "upstream");
