@@ -1,7 +1,7 @@
 # BridgeToGrowth Learning
 
 BridgeToGrowth Learning is an AI-assisted learning app with grounded lessons, active recall, spaced repetition, and progress insights.
-It uses OpenAlex for research sources, OpenRouter for lesson and chat generation, and Stripe for the Pro subscription. Production runs on a DigitalOcean Droplet. Caddy is the only public ingress, and Postgres is a DigitalOcean Managed Database.
+It uses OpenAlex for research sources, OpenRouter for lesson and chat generation, and Stripe for the Pro subscription. Production runs on one Ubuntu VPS (Hetzner Cloud or a DigitalOcean Droplet). Caddy is the only public ingress, and Postgres runs either on the same server or as a managed database.
 
 ## Plans
 
@@ -20,7 +20,7 @@ All four values come from the environment (see `.env.example`); nothing is hard-
 - Bun 1.2 or newer
 - PostgreSQL 16 or newer
 - A Stripe account; the Stripe CLI for local webhook testing
-- For production: a DigitalOcean account, a domain, Caddy, and `rsync`
+- For production: an Ubuntu 24.04 VPS with at least 4 GB of RAM (Hetzner Cloud or DigitalOcean), a domain, Caddy, and `rsync`
 - poppler-utils (`pdftotext`) and Ghostscript (`gs`) for lesson PDF attachments; `prlimit` (util-linux) is used to cap their resources when present
 - bubblewrap (`bwrap`), `prlimit` and a system Python at `/usr/bin/python3` for sandboxed code exercises. Optional libraries such as numpy, sympy, scipy and mpmath are offered only if installed for that interpreter (for example `pacman -S python-numpy python-sympy`)
 
@@ -37,16 +37,21 @@ All four values come from the environment (see `.env.example`); nothing is hard-
 
 Upgrading from the single-user version: the old local profile (`local@localhost`) still owns your lessons and history. Claim it as a real account with `bun scripts/set-password.ts you@example.com --claim-local`. The script asks for the new password.
 
-## Production on a DigitalOcean Droplet
+## Production
 
-The app runs as the `btg` system user from `/opt/btg`, bound to `127.0.0.1`. Caddy on the same Droplet is the only ingress. Postgres is a managed database that accepts connections from the Droplet only. The operator checklist is [deploy/digitalocean.md](deploy/digitalocean.md).
+The app runs as the `btg` system user from `/opt/btg`, bound to `127.0.0.1`, on one Ubuntu 24.04 server (x86_64 or ARM64). Caddy on the same server is the only ingress. Postgres is either local to the server or a managed database; the deploy scripts support both.
 
-1. Create one Ubuntu Droplet with more than 8 GB of RAM and a Cloud Firewall that allows inbound TCP 22, 80, and 443 only. Create one Managed Postgres 16 or newer whose only trusted source is that Droplet. Point an A record for `$HOST` at the Droplet. The record is not proxied by Cloudflare.
-2. `sudo BUN="$(command -v bun)" deploy/install.sh`. The first run creates `/etc/btg/btg.env` (root, 0600) and stops.
-3. Fill in `/etc/btg/btg.env`: `NODE_ENV=production`, `APP_ORIGIN=https://$HOST`, the managed `DATABASE_URL` (include `sslmode=require`), live Stripe keys, Turnstile keys for `$HOST`, and the plan values. The app refuses to start in production with a non-https origin or Turnstile test keys.
-4. Run `deploy/install.sh` again. It syncs the checkout to `/opt/btg`, builds, migrates, installs the systemd units and waits for `/api/health`. Rerun it for every update.
-5. `sudo deploy/setup-proxy.sh $HOST` installs Caddy, redirects HTTP to HTTPS, and reverse-proxies `https://$HOST` to the app with a Let's Encrypt certificate.
-6. Finish Turnstile (a managed widget for `$HOST`; the DNS zone is not a Cloudflare zone), the Stripe webhook `https://$HOST/api/stripe/webhook`, and an OpenRouter credit limit. Details are in [deploy/digitalocean.md](deploy/digitalocean.md).
+- [deploy/hetzner.md](deploy/hetzner.md): a Hetzner Cloud VPS with Postgres on the same server, step by step for first-time Hetzner users.
+- [deploy/digitalocean.md](deploy/digitalocean.md): a DigitalOcean Droplet with DigitalOcean Managed Postgres.
+- [deploy/common.md](deploy/common.md): the steps both share (environment, sandbox, machine sizing, backups, Turnstile, Stripe, OpenRouter).
+
+In short:
+
+1. Create the server and a firewall that allows inbound TCP 22, 80, and 443 only. Point an A record for `$HOST` at it, not proxied by Cloudflare.
+2. Local database: `sudo deploy/setup-postgres.sh` installs Postgres, binds it to localhost, and writes `DATABASE_URL` into `/etc/btg/btg.env`. Managed database: skip this and put the cluster's URI (with `sslmode=require`) in the env file.
+3. `sudo BUN="$(command -v bun)" deploy/install.sh`. If `/etc/btg/btg.env` (root, 0600) does not exist yet, the first run creates it and stops. Fill it in (`NODE_ENV=production`, `APP_ORIGIN=https://$HOST`, live Stripe keys, Turnstile keys for `$HOST`, and the plan values) and run it again. It checks the sandbox prerequisites, syncs the checkout to `/opt/btg`, builds, migrates, sizes and installs the systemd units, and waits for `/api/health`. Rerun it for every update.
+4. `sudo deploy/setup-proxy.sh $HOST` installs Caddy, redirects HTTP to HTTPS, and reverse-proxies `https://$HOST` to the app with a Let's Encrypt certificate.
+5. Finish Turnstile, the Stripe webhook `https://$HOST/api/stripe/webhook`, and an OpenRouter credit limit as described in [deploy/common.md](deploy/common.md).
 
 Signed-in users change their password on the Account page. That signs out every other session. The same page deletes the account: lessons, practice history and settings are removed, and a Pro subscription is canceled immediately so it cannot renew.
 
@@ -60,7 +65,7 @@ For programming and computational topics, the free-response question in a practi
 
 ## Operating notes
 
-- The `btg-backup.timer` systemd unit runs nightly at 03:30 local time. It runs `pg_dump -Fc` against `DATABASE_URL`, writes mode 0600 dumps under `/var/backups/btg`, and removes dumps older than 14 days. Restore with `pg_restore -d "$DATABASE_URL" /var/backups/btg/btg-YYYY-MM-DD.dump`.
+- The `btg-backup.timer` systemd unit runs nightly at 03:30 local time. It runs `pg_dump -Fc` against `DATABASE_URL`, writes mode 0600 dumps under `/var/backups/btg`, and removes dumps older than 14 days. Restore with `pg_restore -d "$DATABASE_URL" /var/backups/btg/btg-YYYY-MM-DD.dump`. With a local database the dumps share the server's disk, so turn on provider backups (Hetzner Backups) or copy `/var/backups/btg` off the server.
 - Rotate secrets in `/etc/btg/btg.env`, then restart `btg.service`. Never commit `.env` or production credentials.
 - Background sweeps run inside the app: expired sessions and password-reset links hourly, expired free-plan lessons every 15 minutes, and Stripe event ids older than 30 days daily.
 - If a webhook is missed, returning from Checkout calls `POST /api/billing/sync`, which reads the subscription straight from Stripe.

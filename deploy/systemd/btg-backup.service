@@ -1,10 +1,11 @@
 # pg_dump -Fc reads DATABASE_URL from /etc/btg/btg.env. The dump command does not print the URL.
 # Writes mode 0600 dumps under /var/backups/btg and deletes dumps older than 14 days.
-# Outbound TCP to the managed database is allowed. This unit does not wait on a local Postgres.
+# The database may be local (deploy/setup-postgres.sh) or managed; TCP to either is allowed. After=/Wants=postgresql.service is a no-op when that unit does not exist.
+# A local database's dumps live on the same disk: enable provider backups or copy /var/backups/btg off the server.
 [Unit]
 Description=Back up the BridgeToGrowth Learning database
-Wants=network-online.target
-After=network-online.target
+Wants=network-online.target postgresql.service
+After=network-online.target postgresql.service
 
 [Service]
 Type=oneshot
