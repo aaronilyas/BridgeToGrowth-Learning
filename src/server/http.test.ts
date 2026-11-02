@@ -73,3 +73,28 @@ test("an /api route served by the public listener carries CSP, nosniff and HSTS,
     upstream.stop(true);
   }
 });
+
+test("a hashed font file is cached as immutable, but the HTML fallback for the same path is not", async () => {
+  const { env } = await import("./env.ts");
+  const { servePublic } = await import("./listener.ts");
+  const mode = env as { NODE_ENV: string };
+  const prev = mode.NODE_ENV;
+  mode.NODE_ENV = "production";
+  let type = "font/woff2";
+  const upstream = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("x", { headers: { "content-type": type } }) });
+  const pub = servePublic({ port: 0, api: {}, upstream: upstream.url });
+  const path = "/KaTeX_Main-Regular-xvp1b75c.woff2";
+  try {
+    const font = await fetch(new URL(path, pub.url));
+    expect(font.status).toBe(200);
+    expect(font.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    type = "text/html;charset=utf-8";
+    const fallback = await fetch(new URL(path, pub.url));
+    expect(fallback.status).toBe(200);
+    expect(fallback.headers.get("cache-control")).not.toBe("public, max-age=31536000, immutable");
+  } finally {
+    mode.NODE_ENV = prev;
+    pub.stop(true);
+    upstream.stop(true);
+  }
+});

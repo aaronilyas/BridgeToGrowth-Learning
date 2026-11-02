@@ -2,7 +2,7 @@ import "katex/dist/katex.min.css";
 import { lazy, Suspense, type JSX } from "react";
 
 // INV: the markdown + KaTeX renderer is a separate chunk; its fetch starts when this module loads, so it is off the entry's critical path but usually ready by first use
-// INV: the stylesheet stays in the entry CSS bundle so rendered math is never unstyled
+// INV: the stylesheet stays in the entry CSS bundle so rendered math is never unstyled; its fonts are registered by MdBody (katexFonts.ts), before any math renders
 const renderer = import("./MdBody.tsx");
 const LazyMdBody = lazy(() => renderer.then((m) => ({ default: m.MdBody })));
 

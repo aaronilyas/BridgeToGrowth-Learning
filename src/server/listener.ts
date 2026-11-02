@@ -10,8 +10,10 @@ type ApiHandler = (req: Request & { params?: Record<string, string> }) => Promis
 export type ApiRoutes = Record<string, ApiHandler | Partial<Record<"GET" | "POST" | "PUT" | "PATCH" | "DELETE", ApiHandler>>>;
 type UpstreamSocket = { url: string; inner: WebSocket | null; pending: Array<string | Buffer> };
 
-const HASHED_ASSET = /^\/chunk-[a-z0-9]+\.(?:js|css)$/;
-const ASSET_TYPES = ["text/javascript", "application/javascript", "text/css"];
+const HASHED_CHUNK = /^\/chunk-[a-z0-9]+\.(?:js|css)$/;
+const CHUNK_TYPES = ["text/javascript", "application/javascript", "text/css"];
+const HASHED_FONT = /^\/[A-Za-z0-9_]+(?:-[A-Za-z0-9]+)*-[a-z0-9]{8}\.(?:woff2|woff|ttf)$/;
+const FONT_TYPES = ["font/woff2", "font/woff", "font/ttf"];
 const IMMUTABLE = "public, max-age=31536000, immutable";
 const SKIP_REQUEST_HEADERS = new Set(["connection", "keep-alive", "proxy-connection", "transfer-encoding", "upgrade", "te", "trailer", "accept-encoding"]);
 
@@ -27,11 +29,12 @@ function forwardedHeaders(src: Headers): Headers {
 }
 
 // O(n) in header count
-// INV: only a production bundle chunk (content-hashed name, 200, JS or CSS body) is cached as immutable; a stale hash that falls through to the HTML document keeps Bun's headers
+// INV: only a production bundle chunk (chunk-<hash>.js|css, 200, JS or CSS body) or a file-loader font (<name>-<hash>.woff2|woff|ttf, 200, font body) is cached as immutable; a stale hash that falls through to the HTML document keeps Bun's headers
 function cacheHashedAsset(path: string, res: Response): Response {
-  if (env.NODE_ENV !== "production" || res.status !== 200 || !HASHED_ASSET.test(path)) return res;
+  if (env.NODE_ENV !== "production" || res.status !== 200) return res;
+  const types = HASHED_CHUNK.test(path) ? CHUNK_TYPES : HASHED_FONT.test(path) ? FONT_TYPES : null;
   const type = (res.headers.get("content-type") ?? "").toLowerCase();
-  if (!ASSET_TYPES.some((t) => type.startsWith(t))) return res;
+  if (types === null || !types.some((t) => type.startsWith(t))) return res;
   const headers = new Headers(res.headers);
   headers.set("cache-control", IMMUTABLE);
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers });

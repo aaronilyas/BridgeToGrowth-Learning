@@ -3,6 +3,9 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkMath from "remark-math";
 import { wrapBareMath } from "../../shared/math.ts";
+import { registerKatexFonts } from "../katexFonts.ts";
+
+registerKatexFonts();
 
 // SEC: model output is untrusted: no raw HTML, no images, links only for http(s) and always in a new, opener-less tab
 const components: Components = {
