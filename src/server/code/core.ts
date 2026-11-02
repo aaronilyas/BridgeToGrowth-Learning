@@ -101,7 +101,7 @@ export type LineTest = { name: string; lines: readonly string[] };
 
 // O(n) in code length
 // INV: models in strict JSON mode may emit no escape sequences, so code arrives as one string per source line; trailing spaces and leading/trailing blank lines are dropped, indentation is kept; null if empty or over CODE_MAX_CHARS
-export function joinCodeLines(lines: readonly string[] | null): string | null {
+function joinCodeLines(lines: readonly string[] | null): string | null {
   const ls = (lines ?? []).flatMap((l) => l.split(/\r?\n/)).map((l) => l.trimEnd());
   while (ls.length > 0 && ls[0] === "") ls.shift();
   while (ls.length > 0 && ls[ls.length - 1] === "") ls.pop();

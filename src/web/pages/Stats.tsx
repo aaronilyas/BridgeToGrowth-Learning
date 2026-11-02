@@ -26,7 +26,7 @@ const DAYS = [7, 30, 90] as const;
 
 // O(n log n)
 // INV: null sorts last in both directions
-export function sortRows(rows: Row[], key: SortKey, dir: 1 | -1): Row[] {
+function sortRows(rows: Row[], key: SortKey, dir: 1 | -1): Row[] {
   return [...rows].sort((a, b) => {
     const x = a[key];
     const y = b[key];
@@ -39,7 +39,7 @@ export function sortRows(rows: Row[], key: SortKey, dir: 1 | -1): Row[] {
 
 // O(days)
 // INV: the server returns only days with attempts; this pads the window with empty UTC days so bars sit on a true time axis
-export function fillDays(daily: StatsResponse["daily"], days: number, now: Date): DailyPoint[] {
+function fillDays(daily: StatsResponse["daily"], days: number, now: Date): DailyPoint[] {
   const byDay = new Map(daily.map((d) => [d.day, d]));
   const out: DailyPoint[] = [];
   for (let i = days - 1; i >= 0; i--) {

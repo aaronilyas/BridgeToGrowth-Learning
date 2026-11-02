@@ -1,9 +1,0 @@
-Context (MEDIUM): In src/server/auth/routes.ts (login) and src/server/auth/account.ts (forgot), the per-email rate bucket is spent before Turnstile is verified and before the password is checked. One IP sending 5 junk login requests a minute (no Turnstile token needed) keeps a victim's email locked out of sign-in indefinitely; 3 a minute blocks their password-reset emails.
-
-Task: In both handlers, verify Turnstile before touching the per-email bucket. For login, spend the "login-email:" token only after a failed password check, and reject with 429 up front only if that bucket is already empty. Add a peek helper hasToken(key, cap, perMin) to src/server/rate.ts that does not spend a token. For forgot, spend "forgot-email:" only after Turnstile passes.
-
-Tests (colocated, with Turnstile mocked via mock.module):
-(a) 20 login requests for one email with a failing Turnstile token, then a correct login with a passing token, returns 200.
-(b) 6 wrong-password logins with passing Turnstile return 429 on the 6th.
-
-VERIFY: bun run typecheck && bun test pass.

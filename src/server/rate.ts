@@ -24,7 +24,7 @@ export function takeToken(key: string, cap: number, perMin: number, now: number 
 
 // O(n)
 // INV: only full buckets are deleted, so no rate state is lost
-export function sweepBuckets(now: number = Date.now()): number {
+function sweepBuckets(now: number = Date.now()): number {
   let n = 0;
   for (const [k, b] of buckets) {
     refill(b, now);

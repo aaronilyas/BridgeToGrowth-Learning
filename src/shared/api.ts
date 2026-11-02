@@ -3,12 +3,6 @@ import { CodeSpec, CodeTestResult } from "./code.ts";
 
 export type ErrorCode = "bad_request"|"unauthenticated"|"forbidden_origin"|"not_found"|"rate_limited"|"pro_required"|"quota_exceeded"|"email_taken"|"bad_credentials"|"wrong_password"|"turnstile_failed"|"already_subscribed"|"model_not_allowed"|"unsupported_media"|"too_large"|"upstream"|"llm_bad_output"|"source_blocked"|"source_unreadable"|"sandbox_unavailable"|"internal";
 
-export const HealthResponse = z.strictObject({ ok: z.literal(true) });
-export type HealthResponse = z.infer<typeof HealthResponse>;
-
-export const ErrorResponse = z.strictObject({ error: z.string() });
-export type ErrorResponse = z.infer<typeof ErrorResponse>;
-
 const Email = z.string().trim().toLowerCase().max(254).pipe(z.email());
 
 export const MIN_PASSWORD = 12;

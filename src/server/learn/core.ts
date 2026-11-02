@@ -32,9 +32,9 @@ export type QuestionRow = {
 };
 
 const DAY_MS = 86_400_000;
-export const MIN_EF = 1.3;
+const MIN_EF = 1.3;
 export const CORRECT_AT = 0.6;
-export const MASTERY_ALPHA = 0.3;
+const MASTERY_ALPHA = 0.3;
 
 // O(1)
 // SEC: a confident error (conf >= 70, score < .6) gets quality 0, the shortest interval

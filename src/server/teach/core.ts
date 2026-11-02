@@ -11,10 +11,10 @@ import { GROUNDING_RULES, buildSourcesBlock, filterCitations, toCitations, type 
 import { CATEGORY_KINDS, CATEGORY_RULES, FREE_RULES, MCQ_RULES, SOURCE_RULES, toNewQuestion, type NewQuestion } from "../gen/core.ts";
 import { EXPLANATION_RULES, LEVEL_RULES, PLAN_RULES, TUTOR_RULES } from "./prompts.ts";
 
-export const CHAT_CONTEXT_MESSAGES = 12;
-export const CHAT_MESSAGE_CHARS = 4000;
+const CHAT_CONTEXT_MESSAGES = 12;
+const CHAT_MESSAGE_CHARS = 4000;
 const MAX_RELATED = 6;
-export const PREREQ_STEPS = 3;
+const PREREQ_STEPS = 3;
 export const KNOWN_TOPICS_IN_PROMPT = 40;
 
 // INV: strict-mode compatible: optional fields are nullable and arrays carry no exact length; counts are enforced by normalizePlan and normalizeStep
@@ -189,7 +189,7 @@ export function normalizeStep(out: StepOut, title: string, maxWords: number, pap
 
 // O(n)
 // INV: drops the inline prerequisites line that older lessons wrote at the top of step 1; the page lists unmet prerequisites itself
-export function stripPrereqLine(md: string): string {
+function stripPrereqLine(md: string): string {
   return md.replace(/^\s*\*\*Prerequisites:\*\*[^\n]*?\.(?:\s+|$)/, "");
 }
 

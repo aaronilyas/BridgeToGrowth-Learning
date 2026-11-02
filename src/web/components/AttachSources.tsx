@@ -1,8 +1,8 @@
 import { useRef, useState, type JSX } from "react";
 import { MAX_LESSON_URLS } from "../../shared/api.ts";
 
-export const MAX_ATTACH_FILES = 3;
-export const MAX_ATTACH_BYTES = 25 * 1024 * 1024;
+const MAX_ATTACH_FILES = 3;
+const MAX_ATTACH_BYTES = 25 * 1024 * 1024;
 
 export type Attachments = { files: File[]; urls: string[] };
 

@@ -46,7 +46,7 @@ PORT="${PORT:-3000}"
 
 log "syncing $repo to $APP_DIR"
 install -d -m 0755 "$APP_DIR"
-rsync -a --delete --exclude '.git/' --exclude 'node_modules/' --exclude 'dist/' --exclude '.env' --exclude '.env.*' --exclude 'Example-UI/' --exclude 'prompts/' "$repo/" "$APP_DIR/"
+rsync -a --delete --exclude '.git/' --exclude 'node_modules/' --exclude 'dist/' --exclude '.env' --exclude '.env.*' "$repo/" "$APP_DIR/"
 
 log "installing dependencies and building"
 (cd "$APP_DIR" && "$BUN_BIN" install --frozen-lockfile && "$BUN_BIN" run build)

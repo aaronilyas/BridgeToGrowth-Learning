@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const REASONING_LEVELS = ["low", "high", "max"] as const;
+const REASONING_LEVELS = ["low", "high", "max"] as const;
 export type ReasoningLevel = (typeof REASONING_LEVELS)[number];
 
 // INV: plan limits have no defaults; an empty value is rejected rather than read as 0

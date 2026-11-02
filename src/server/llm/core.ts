@@ -109,7 +109,7 @@ export function countPromptChars(messages: ChatMessage[]): number {
 }
 
 // O(1)
-export function readUsage(raw: unknown): Usage {
+function readUsage(raw: unknown): Usage {
   const r = UpstreamUsage.safeParse(raw);
   if (!r.success) return { costMicros: null, promptTokens: null, completionTokens: null };
   const cost = r.data.cost;

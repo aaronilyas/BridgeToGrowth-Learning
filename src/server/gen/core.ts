@@ -70,7 +70,7 @@ export const FREE_RULES: string = [
 
 // O(n) in libraries
 // SEC: the model may bake in only libraries this host's sandbox reported as installed
-export function buildCodeRules(libs: readonly CodeLibrary[]): string {
+function buildCodeRules(libs: readonly CodeLibrary[]): string {
   return [
     "Code exercise rules: if the learner's topic is about programming, algorithms, data structures, numerical methods or computational statistics, write the free question as kind \"code\" instead of kind \"free\". Otherwise never use kind \"code\".",
     "A kind \"code\" question is a Python 3 exercise. The stem asks the learner to implement one function, gives its exact name, parameters and return value, and states any edge cases. Put inline code in backticks.",

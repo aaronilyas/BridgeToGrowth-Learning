@@ -6,7 +6,7 @@ import { Button } from "./Button.tsx";
 import { Panel } from "./Panel.tsx";
 
 // O(1)
-export function UpgradeNotice({ feature, detail }: { feature: string; detail: string }): JSX.Element {
+function UpgradeNotice({ feature, detail }: { feature: string; detail: string }): JSX.Element {
   const terms = usePlanTerms();
   return (
     <div className="mx-auto grid max-w-2xl gap-4">

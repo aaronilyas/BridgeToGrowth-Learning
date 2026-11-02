@@ -1,7 +1,0 @@
-Context (MEDIUM-LOW): MAX_CONCURRENT_RUNS = 2 in src/server/code/core.ts is one global limit (enforced in src/server/code/sandbox.ts), so one user can keep both slots busy with 20 ten-second runs a minute and everyone else gets 429. prlimit sets no --nproc, and deploy/systemd/btg.service sets neither MemoryMax= nor TasksMax=. The harness states its Python policy layer is not the security boundary; if it is bypassed, a fork bomb of 1 GB processes inside the sandbox exhausts memory and process slots for the Bun server too.
-
-Task: In src/server/code/sandbox.ts, allow at most one running sandbox per user (track a Set of uids; pass uid into runInSandbox from src/server/learn/routes.ts, src/server/code/routes.ts and src/server/gen/routes.ts). Raise the global limit to 4. In src/server/code/core.ts LIMITS, add --nproc= set to the host's current Bun thread count plus 64, documented with an // INV: line. In deploy/systemd/btg.service, add MemoryMax=6G, TasksMax=512 and CPUQuota= at 80% of cores, and explain the sizing in the header comment.
-
-Tests: buildSandboxArgv includes --nproc; a second concurrent runInSandbox for the same uid throws rate_limited.
-
-VERIFY: bun run typecheck && bun test pass, and the startup probe still reports the sandbox as enabled.

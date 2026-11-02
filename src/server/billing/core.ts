@@ -44,7 +44,7 @@ export function computeLessonExpiry(plan: Plan, now: Date): Date | null {
 
 // O(1)
 // INV: statuses outside the users.sub_status CHECK (incomplete_expired, paused, future values) collapse to canceled, which is never pro
-export function normalizeSubStatus(status: string): string {
+function normalizeSubStatus(status: string): string {
   return DB_STATUSES.has(status) ? status : "canceled";
 }
 

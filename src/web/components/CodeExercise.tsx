@@ -19,7 +19,7 @@ function indentOnTab(e: KeyboardEvent<HTMLTextAreaElement>, onChange: (v: string
 
 // O(1)
 // SEC: libraries are shown from the question and cannot be changed here; the server runs code only with the question's own libraries
-export function LibraryList({ spec }: { spec: CodeSpec }): JSX.Element {
+function LibraryList({ spec }: { spec: CodeSpec }): JSX.Element {
   return (
     <div className="mt-3 rounded-xl border border-border bg-panel-2 px-3 py-2 text-xs">
       <p className="flex flex-wrap items-center gap-1.5">
