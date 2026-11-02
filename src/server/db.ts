@@ -2,9 +2,42 @@ import { SQL } from "bun";
 import { databasePath } from "./paths.ts";
 import { runMigrations } from "../../scripts/migrate.ts";
 
-export const sql = new SQL(`sqlite://${databasePath()}`);
-// INV: user_id remains on surviving tables because removing it requires rewriting every query and constraint; the only profile id is local.
-await sql`PRAGMA journal_mode=WAL`;
-await sql`PRAGMA foreign_keys=ON`;
-await sql`PRAGMA busy_timeout=5000`;
-await runMigrations(sql);
+let inner: SQL | null = null;
+let boundPath = "";
+
+// O(migrations)
+// INV: user_id stays on every per-user table and stores the single local profile id; dropping the column would rewrite every query, so the predicate remains and the id does not vary
+export async function activateDatabase(path: string = databasePath()): Promise<void> {
+  if (inner && boundPath === path) return;
+  const prev = inner;
+  const next = new SQL(`sqlite://${path}`);
+  try {
+    await runMigrations(next);
+  } catch (error) {
+    await next.close();
+    throw error;
+  }
+  inner = next;
+  boundPath = path;
+  if (prev) await prev.close();
+}
+
+await activateDatabase();
+
+function live(): SQL {
+  if (!inner) throw new Error("database is closed");
+  return inner;
+}
+
+export const sql = new Proxy(function () {} as unknown as SQL, {
+  apply(_target, _thisArg, args: unknown[]) {
+    const db = live() as unknown as (...a: unknown[]) => unknown;
+    return db.apply(live(), args);
+  },
+  get(_target, prop) {
+    const db = live() as unknown as Record<PropertyKey, unknown>;
+    const value = db[prop];
+    if (typeof value === "function") return (value as (...a: unknown[]) => unknown).bind(db);
+    return value;
+  },
+}) as SQL;

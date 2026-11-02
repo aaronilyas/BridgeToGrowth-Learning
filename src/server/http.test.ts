@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { z } from "zod";
 import { TEST_ENV, TEST_ORIGIN } from "./testkit.ts";
 
-Object.assign(process.env, TEST_ENV, { DATABASE_URL: process.env.TEST_DATABASE_URL ?? "postgres://x" });
+Object.assign(process.env, TEST_ENV);
 (await import("./localGuard.ts")).setRuntimeOrigin(TEST_ORIGIN);
 const TOKEN = "t".repeat(64);
 

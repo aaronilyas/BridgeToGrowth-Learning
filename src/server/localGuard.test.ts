@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { connect } from "node:net";
 import { TEST_ENV } from "./testkit.ts";
 
-Object.assign(process.env, TEST_ENV, { DATABASE_URL: process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? "postgres://x" });
+Object.assign(process.env, TEST_ENV);
 
 // O(1)
 function httpExchange(port: number, method: string, path: string, headers: Record<string, string>): Promise<{ status: number; raw: string }> {

@@ -25,6 +25,6 @@ test("storePapers with 3 papers, one already present, upserts all 3 and findCach
   const qhash = Buffer.from("q".repeat(32));
   await storePapers(qhash, papers);
   expect(await findCached(qhash)).toEqual(papers);
-  const [n] = await t.sql`SELECT count(*)::int AS n FROM papers`;
+  const [n] = await t.sql`SELECT count(*) AS n FROM papers LIMIT 1`;
   expect(n.n).toBe(3);
 });

@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -12,6 +12,7 @@ export function appDataDir(): string {
       ? join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "BridgeToGrowth")
       : join(process.env.XDG_DATA_HOME ?? join(home, ".local", "share"), "bridgetogrowth"));
   mkdirSync(path, { recursive: true, mode: 0o700 });
+  chmodSync(path, 0o700);
   return path;
 }
 
