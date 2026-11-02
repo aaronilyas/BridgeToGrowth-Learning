@@ -16,9 +16,7 @@ export async function deleteAppRows(tx: SQL): Promise<void> {
   await tx`DELETE FROM styles`;
   await tx`DELETE FROM daily_activity`;
   await tx`DELETE FROM insights`;
-  await tx`DELETE FROM llm_calls`;
   await tx`DELETE FROM llm_usage`;
-  await tx`DELETE FROM usage_periods`;
   await tx`DELETE FROM provider_models`;
   await tx`DELETE FROM papers`;
   await tx`DELETE FROM retrieval_cache`;

@@ -134,10 +134,10 @@ export type InsightsResponse = z.infer<typeof InsightsResponse>;
 export const LessonCreated = z.strictObject({ lessonId: z.uuid(), plan: LessonPlan, grounded: z.boolean() });
 export type LessonCreated = z.infer<typeof LessonCreated>;
 
-export const LessonSummary = z.strictObject({ id: z.uuid(), title: z.string(), createdAt: z.iso.datetime(), expiresAt: z.iso.datetime().nullable() });
+export const LessonSummary = z.strictObject({ id: z.uuid(), title: z.string(), createdAt: z.iso.datetime() });
 export type LessonSummary = z.infer<typeof LessonSummary>;
 
-export const LessonDetail = z.strictObject({ id: z.uuid(), title: z.string(), expiresAt: z.iso.datetime().nullable(), plan: LessonPlan, prerequisites: z.array(z.string()), steps: z.array(StepPublic), citations: z.array(Citation) });
+export const LessonDetail = z.strictObject({ id: z.uuid(), title: z.string(), plan: LessonPlan, prerequisites: z.array(z.string()), steps: z.array(StepPublic), citations: z.array(Citation) });
 export type LessonDetail = z.infer<typeof LessonDetail>;
 
 export const MessageResponse = z.strictObject({ id: z.string(), role: z.enum(["user", "assistant"]), content: z.string(), citations: z.array(Citation), createdAt: z.iso.datetime() });

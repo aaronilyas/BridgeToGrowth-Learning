@@ -8,18 +8,8 @@ export function epochOf(d: Date): number {
 }
 
 // O(1)
-export function epochOrNull(d: Date | null): number | null {
-  return d === null ? null : d.getTime();
-}
-
-// O(1)
 export function dateFromMs(ms: number): Date {
   return new Date(ms);
-}
-
-// O(1)
-export function dateOrNull(ms: number | null): Date | null {
-  return ms === null ? null : new Date(ms);
 }
 
 // O(n) in the encoded value

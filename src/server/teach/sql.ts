@@ -5,26 +5,26 @@ import { insertQuestions } from "../gen/sql.ts";
 import { CORRECT_AT, foldTopicStats, type AttemptScore, type QuestionRow } from "../learn/core.ts";
 import { insertCards } from "../learn/sql.ts";
 import type { Paper } from "../lit/core.ts";
-import { dateFromMs, dateOrNull, dayEndMs, dayStartMs, epochOf, epochOrNull, jsonText, jsonValue, questionFrom, stringList, utcDayOf } from "../sqlmap.ts";
+import { dateFromMs, dayEndMs, dayStartMs, epochOf, jsonText, jsonValue, questionFrom, stringList, utcDayOf } from "../sqlmap.ts";
 import { topicsReleasedByLesson, type TopicUse } from "../topics/core.ts";
 import type { NewStep, StepContent } from "./core.ts";
 
-export type LessonRow = { id: string; topic_id: string; title: string; plan: unknown; paper_ids: string[]; model: string; created_at: Date; expires_at: Date | null };
+export type LessonRow = { id: string; topic_id: string; title: string; plan: unknown; paper_ids: string[]; model: string; created_at: Date };
 export type StepRow = { idx: number; content: unknown; question: QuestionRow };
 export type MessageRow = { id: string; role: "user" | "assistant"; content: string; citations: unknown; created_at: Date };
 
-type LessonRaw = { id: string; topic_id: string; title: string; plan: unknown; paper_ids: unknown; model: string; created_at: number; expires_at: number | null };
-type LessonListRaw = { id: string; title: string; created_at: number; expires_at: number | null };
+type LessonRaw = { id: string; topic_id: string; title: string; plan: unknown; paper_ids: unknown; model: string; created_at: number };
+type LessonListRaw = { id: string; title: string; created_at: number };
 type PaperRaw = { id: string; doi: string | null; title: string; year: number | null; venue: string | null; abstract: string | null };
 type StepJoin = QuestionRow & { idx: number; content: unknown };
 type MessageRaw = { id: string | number; role: "user" | "assistant"; content: string; citations: unknown; created_at: number };
 
-const LESSON_COLS = sql`l.id, l.topic_id, l.title, l.plan, l.paper_ids, l.model, l.created_at, l.expires_at`;
+const LESSON_COLS = sql`l.id, l.topic_id, l.title, l.plan, l.paper_ids, l.model, l.created_at`;
 const REPLAY_LIMIT = 100_000;
 
 // O(1)
 function lessonFrom(row: LessonRaw): LessonRow {
-  return { id: row.id, topic_id: row.topic_id, title: row.title, plan: jsonValue(row.plan), paper_ids: stringList(row.paper_ids), model: row.model, created_at: dateFromMs(row.created_at), expires_at: dateOrNull(row.expires_at) };
+  return { id: row.id, topic_id: row.topic_id, title: row.title, plan: jsonValue(row.plan), paper_ids: stringList(row.paper_ids), model: row.model, created_at: dateFromMs(row.created_at) };
 }
 
 // O(1)
@@ -38,52 +38,32 @@ function messageFrom(row: MessageRaw): MessageRow {
 }
 
 // O(1)
-// INV: plan and paper ids are JSON text; expiresAt is set for free-plan lessons only
-export async function insertLesson(tx: SQL, uid: string, topicId: string, plan: LessonPlan, paperIds: string[], model: string, expiresAt: Date | null): Promise<string> {
+// INV: plan and paper ids are JSON text
+export async function insertLesson(tx: SQL, uid: string, topicId: string, plan: LessonPlan, paperIds: string[], model: string): Promise<string> {
   const rows: { id: string }[] = await tx`
-    INSERT INTO lessons (user_id, topic_id, title, plan, paper_ids, model, expires_at)
-    VALUES (${uid}, ${topicId}, ${plan.title}, ${jsonText(plan)}, ${jsonText(paperIds)}, ${model}, ${epochOrNull(expiresAt)}) RETURNING id`;
+    INSERT INTO lessons (user_id, topic_id, title, plan, paper_ids, model)
+    VALUES (${uid}, ${topicId}, ${plan.title}, ${jsonText(plan)}, ${jsonText(paperIds)}, ${model}) RETURNING id`;
   const row = rows[0];
   if (!row) throw new Error("lesson insert returned no row");
   return row.id;
 }
 
 // O(log n)
-// INV: an expired lesson is gone to its owner even before the sweeper deletes it
 export async function findLesson(uid: string, id: string): Promise<LessonRow | null> {
-  const now = Date.now();
   const rows: LessonRaw[] = await sql`
     SELECT ${LESSON_COLS} FROM lessons l
-    WHERE l.id = ${id} AND l.user_id = ${uid} AND (l.expires_at IS NULL OR l.expires_at > ${now}) LIMIT 1`;
+    WHERE l.id = ${id} AND l.user_id = ${uid} LIMIT 1`;
   const row = rows[0];
   return row ? lessonFrom(row) : null;
 }
 
 // O(limit)
-// INV: served by lessons(user_id, created_at DESC); expired lessons are hidden
-export async function listLessons(uid: string, limit: number): Promise<{ id: string; title: string; created_at: Date; expires_at: Date | null }[]> {
-  const now = Date.now();
+// INV: served by lessons(user_id, created_at DESC)
+export async function listLessons(uid: string, limit: number): Promise<{ id: string; title: string; created_at: Date }[]> {
   const rows: LessonListRaw[] = await sql`
-    SELECT id, title, created_at, expires_at FROM lessons
-    WHERE user_id = ${uid} AND (expires_at IS NULL OR expires_at > ${now}) ORDER BY created_at DESC LIMIT ${limit}`;
-  return rows.map((row) => ({ id: row.id, title: row.title, created_at: dateFromMs(row.created_at), expires_at: dateOrNull(row.expires_at) }));
-}
-
-// O(batch) lesson deletions, via lessons_expires_idx
-// INV: each lesson goes through deleteLessonData so topic stats, daily activity and orphaned topics stay consistent; one failing lesson does not stop the rest
-export async function deleteExpiredLessons(batch: number = 200): Promise<number> {
-  const now = Date.now();
-  const due: { id: string; user_id: string }[] = await sql`
-    SELECT id, user_id FROM lessons WHERE expires_at IS NOT NULL AND expires_at <= ${now} ORDER BY expires_at LIMIT ${batch}`;
-  let n = 0;
-  for (const l of due) {
-    try {
-      if (await deleteLessonData(l.user_id, l.id)) n++;
-    } catch {
-      console.error("teach: expired lesson delete failed");
-    }
-  }
-  return n;
+    SELECT id, title, created_at FROM lessons
+    WHERE user_id = ${uid} ORDER BY created_at DESC LIMIT ${limit}`;
+  return rows.map((row) => ({ id: row.id, title: row.title, created_at: dateFromMs(row.created_at) }));
 }
 
 // O(k)
@@ -179,7 +159,7 @@ export async function listMessages(uid: string, lessonId: string, before: string
 // O(n) in the lesson's attempts
 // INV: questions are deleted before the lesson row, so ON DELETE SET NULL cannot leave them behind
 // INV: topic mastery is replayed from the attempts that remain, oldest first
-// SEC: uid is the session user (or the owner, for the expiry sweeper); a missing lesson deletes nothing and returns false
+// SEC: uid is the session user; a missing lesson deletes nothing and returns false
 export async function deleteLessonData(uid: string, lessonId: string): Promise<boolean> {
   return sql.begin(async (tx) => {
     const locked: { id: string; topic_id: string }[] = await tx`SELECT id, topic_id FROM lessons WHERE id = ${lessonId} AND user_id = ${uid} LIMIT 1`;
