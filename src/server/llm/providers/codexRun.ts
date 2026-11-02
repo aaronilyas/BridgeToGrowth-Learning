@@ -136,6 +136,11 @@ export async function* streamCodexEvents(req: LlmRequest, effort: string, bin: s
         return;
       }
       yield* parsed.events;
+      // INV: the CLI reports one failure as both `error` and `turn.failed`; the stream ends at the first
+      if (parsed.events.some((e) => e.type === "error")) {
+        stop();
+        return;
+      }
     }
     if (req.signal.aborted) {
       const reason: unknown = req.signal.reason;

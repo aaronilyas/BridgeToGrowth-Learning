@@ -43,7 +43,11 @@ test("local guard requires the launch token, exact host, and mutation origin", a
     const foreignHost = await httpExchange(port, "GET", "/api/health", { Host: "evil.test", "x-btg-token": token });
     const foreignOrigin = await httpExchange(port, "POST", "/api/mutate", { Host: host, "x-btg-token": token, Origin: "https://evil.test", "Content-Length": "0" });
     const ok = await httpExchange(port, "GET", "/api/health", { Host: host, "x-btg-token": token });
+    const bareApi = await httpExchange(port, "GET", "/api", { Host: host });
+    const foreignSocket = await httpExchange(port, "GET", "/_bun/hmr", { Host: host, Origin: "https://evil.test", Upgrade: "websocket", "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==" });
     expect(missing.status).toBe(401);
+    expect(bareApi.status).toBe(401);
+    expect(foreignSocket.status).toBe(403);
     expect(wrong.status).toBe(401);
     expect(foreignHost.status).toBe(421);
     expect(foreignOrigin.status).toBe(403);

@@ -10,8 +10,7 @@ export async function exportDatabaseZip(): Promise<Uint8Array> {
   const dir = mkdtempSync(join(tmpdir(), "btg-export-"));
   const snap = join(dir, "learning.sqlite");
   try {
-    const escaped = snap.replaceAll("'", "''");
-    await sql.unsafe(`VACUUM INTO '${escaped}'`);
+    await sql`VACUUM INTO ${snap}`;
     const bytes = new Uint8Array(await Bun.file(snap).arrayBuffer());
     return zipSync({ "learning.sqlite": bytes });
   } finally {

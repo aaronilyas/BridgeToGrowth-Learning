@@ -18,7 +18,7 @@ export function providerHttpDetail(status: number): "key_invalid" | "unreachable
 }
 
 // O(1)
-function numberOf(value: unknown): number {
+function readSseCount(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.trunc(value) : 0;
 }
 
@@ -71,7 +71,7 @@ export function openAiDataEvents(raw: unknown): LlmEvent[] {
   if (usage !== undefined && typeof usage === "object") {
     const row = usage as Record<string, unknown>;
     const cost = typeof row.cost === "number" && Number.isFinite(row.cost) && row.cost >= 0 ? row.cost : null;
-    out.push({ type: "usage", inputTokens: numberOf(row.prompt_tokens), outputTokens: numberOf(row.completion_tokens), costUsd: cost });
+    out.push({ type: "usage", inputTokens: readSseCount(row.prompt_tokens), outputTokens: readSseCount(row.completion_tokens), costUsd: cost });
   }
   return out;
 }

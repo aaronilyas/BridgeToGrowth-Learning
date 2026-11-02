@@ -2,7 +2,7 @@ import type { Server } from "bun";
 import { env } from "./env.ts";
 import { json, secureResponse } from "./http.ts";
 import { SERVER_IDLE_TIMEOUT_S } from "./llm/timeouts.ts";
-import { localGuard } from "./localGuard.ts";
+import { guardOrigin, localGuard, originAllowed } from "./localGuard.ts";
 import { readPyodideAsset } from "./pyodideAssets.ts";
 
 export const MAX_REQUEST_BYTES = 80 * 2 ** 20;
@@ -134,6 +134,8 @@ export function servePublic(o: { port: number; api: ApiRoutes; upstream: URL; to
       const blocked = localGuard(req, `127.0.0.1:${server.port}`, o.token);
       if (blocked) return secureResponse(blocked);
       if ((req.headers.get("upgrade") ?? "").toLowerCase() === "websocket") {
+        // SEC: a WebSocket handshake is a GET and carries no launch token, so a foreign page could open one; require the exact app Origin
+        if (!originAllowed(req.headers.get("origin"), guardOrigin())) return secureResponse(new Response(null, { status: 403 }));
         const url = new URL(req.url);
         const target = new URL(url.pathname + url.search, o.upstream).href.replace(/^http/, "ws");
         if (server.upgrade(req, { data: { url: target, inner: null, pending: [] } })) return;

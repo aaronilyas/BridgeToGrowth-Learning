@@ -42,7 +42,8 @@ export function originAllowed(header: string | null, appOrigin: string | null): 
 // SEC: reject DNS rebinding before serving API, documents, or assets; /api requires the launch token
 export function localGuard(req: Request, host: string, token: string): Response | null {
   if (req.headers.get("host") !== host) return new Response(null, { status: 421 });
-  if (new URL(req.url).pathname.startsWith("/api/") && !tokenMatches(req.headers.get("x-btg-token"), token)) return new Response(null, { status: 401 });
+  const path = new URL(req.url).pathname;
+  if ((path === "/api" || path.startsWith("/api/")) && !tokenMatches(req.headers.get("x-btg-token"), token)) return new Response(null, { status: 401 });
   if (!SAFE_METHODS.has(req.method) && !originAllowed(req.headers.get("origin"), guardOrigin() ?? `http://${host}`)) return new Response(null, { status: 403 });
   return null;
 }

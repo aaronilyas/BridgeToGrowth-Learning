@@ -5,7 +5,7 @@ const SAFE_ITEMS = new Set(["agent_message", "reasoning", "error"]);
 export type CodexLine = { events: LlmEvent[]; abort: boolean; toolType: string | null; ignoreType: string | null };
 
 // O(1)
-function numberOf(value: unknown): number {
+function readCodexCount(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.trunc(value) : 0;
 }
 
@@ -65,7 +65,7 @@ export function parseCodexLine(line: string): CodexLine {
     const usage = rec.usage;
     if (usage === undefined || typeof usage !== "object") return empty;
     const row = usage as Record<string, unknown>;
-    return { events: [{ type: "usage", inputTokens: numberOf(row.input_tokens), outputTokens: numberOf(row.output_tokens), costUsd: null }], abort: false, toolType: null, ignoreType: null };
+    return { events: [{ type: "usage", inputTokens: readCodexCount(row.input_tokens), outputTokens: readCodexCount(row.output_tokens), costUsd: null }], abort: false, toolType: null, ignoreType: null };
   }
   if (type === "turn.failed" || type === "error") return { events: [{ type: "error", code: mapCodexFailure(failureMessage(rec)) }], abort: false, toolType: null, ignoreType: null };
   return empty;
