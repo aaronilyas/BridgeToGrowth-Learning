@@ -11,7 +11,7 @@
     "migrate": "bun scripts/migrate.ts",
     "desktop:dev": "cd desktop && bunx electrobun dev --watch",
     "desktop:build": "cd desktop && bunx electrobun build --env=stable",
-    "package:linux": "bun run desktop:build && bun scripts/package-linux.ts",
+    "package:linux": "bun scripts/fetch-pyodide.ts && bun run desktop:build && bun scripts/package-linux.ts",
     "smoke": "bun scripts/smoke.ts"
   },
   "dependencies": {

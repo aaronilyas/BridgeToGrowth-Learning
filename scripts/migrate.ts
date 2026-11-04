@@ -1,10 +1,20 @@
 import { SQL } from "bun";
 import { chmodSync, mkdirSync } from "node:fs";
-import { readdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { databasePath } from "../src/server/paths.ts";
 
-const dir = join(import.meta.dir, "..", "db", "migrations");
+import m0001 from "../db/migrations/0001_init.sql" with { type: "text" };
+import m0002 from "../db/migrations/0002_provider_models.sql" with { type: "text" };
+import m0003 from "../db/migrations/0003_llm_usage.sql" with { type: "text" };
+import m0004 from "../db/migrations/0004_drop_legacy.sql" with { type: "text" };
+
+// INV: embedded so a packaged app needs no db/ directory; migrations.test.ts checks this list equals db/migrations/*.sql in order
+export const MIGRATIONS: ReadonlyArray<readonly [string, string]> = [
+  ["0001_init.sql", m0001],
+  ["0002_provider_models.sql", m0002],
+  ["0003_llm_usage.sql", m0003],
+  ["0004_drop_legacy.sql", m0004],
+];
 
 // O(1)
 export async function configureSqlite(db: SQL): Promise<void> {
@@ -20,8 +30,7 @@ export async function runMigrations(db: SQL): Promise<void> {
   await db`CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, sha256 TEXT NOT NULL, applied_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000))`;
   const rows = await db`SELECT name, sha256 FROM schema_migrations LIMIT 100000` as { name: string; sha256: string }[];
   const applied = new Map(rows.map((row) => [row.name, row.sha256]));
-  for (const name of (await readdir(dir)).filter((file) => file.endsWith(".sql")).sort()) {
-    const source = await Bun.file(join(dir, name)).text();
+  for (const [name, source] of MIGRATIONS) {
     const digest = new Bun.CryptoHasher("sha256").update(source).digest("hex");
     const previous = applied.get(name);
     if (previous !== undefined) {
