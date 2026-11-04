@@ -1,9 +1,10 @@
 import { z } from "zod";
 import type { UsageModel, UsageResponse } from "../../shared/providers.ts";
-import { ConnectionStatus, LoginState, ProviderId, ProviderKeyBody } from "../../shared/providers.ts";
+import { ConnectionStatus, LoginBody, OpenExternalBody, ProviderId, ProviderKeyBody } from "../../shared/providers.ts";
+import { fixedExternalUrl, openExternalUrl } from "../external.ts";
 import { HttpError, json, route } from "../http.ts";
 import { deleteProviderKey, keyHint, readProviderKey, storeProviderKey } from "../secrets.ts";
-import { beginCodexLogin, readCodexLogin } from "./providers/codex.ts";
+import { beginCodexLogin, cancelCodexLogin, pendingCodexLoginUrl, readCodexLogin, signOutCodex } from "./providers/codexLogin.ts";
 import { probeOpenRouterKey } from "./providers/openrouter.ts";
 import { forgetProviderModels, listConnectedModels, providerAdapter } from "./providers/registry.ts";
 import { probeSpaceXaiKey } from "./providers/spacexai.ts";
@@ -75,18 +76,44 @@ const deleteKey = route({}, async (c) => {
   return new Response(null, { status: 204 });
 });
 
-const startLogin = route({}, async (c) => {
-  const id = IdParams.safeParse(c.params);
+// O(1)
+function requireCodex(params: Record<string, string>): void {
+  const id = IdParams.safeParse(params);
   if (!id.success || id.data.id !== "codex") throw new HttpError(404, "not_found");
-  beginCodexLogin();
-  const body: LoginState = readCodexLogin();
-  return json(body);
+}
+
+// INV: a new login is refused while Codex is signed in, because the CLI discards the saved session as soon as a login starts
+const startLogin = route({ body: LoginBody, rate: { key: "codex-login", cap: 5, perMin: 5 } }, async (c) => {
+  requireCodex(c.params);
+  if ((await providerAdapter("codex").status()).connected) throw new HttpError(409, "bad_request");
+  beginCodexLogin(c.body.method);
+  return json(readCodexLogin());
 });
 
 const pollLogin = route({}, async (c) => {
-  const id = IdParams.safeParse(c.params);
-  if (!id.success || id.data.id !== "codex") throw new HttpError(404, "not_found");
+  requireCodex(c.params);
   return json(readCodexLogin());
+});
+
+const cancelLogin = route({}, async (c) => {
+  requireCodex(c.params);
+  cancelCodexLogin();
+  return new Response(null, { status: 204 });
+});
+
+const logout = route({}, async (c) => {
+  requireCodex(c.params);
+  if (!(await signOutCodex())) throw new HttpError(502, "provider_error");
+  await forgetProviderModels("codex");
+  return new Response(null, { status: 204 });
+});
+
+// SEC: the renderer names a target, never a URL; Codex sign-in opens only the link the official CLI printed for the pending login
+const openExternal = route({ body: OpenExternalBody, rate: { key: "open-external", cap: 10, perMin: 10 } }, async (c) => {
+  const url = c.body.target === "codex_signin" ? pendingCodexLoginUrl() : fixedExternalUrl(c.body.target);
+  if (url === null) throw new HttpError(404, "not_found");
+  if (!openExternalUrl(url)) throw new HttpError(502, "provider_error");
+  return new Response(null, { status: 204 });
 });
 
 export const llmRoutes = {
@@ -94,5 +121,7 @@ export const llmRoutes = {
   "/api/usage": { GET: usage },
   "/api/providers": { GET: providers },
   "/api/providers/:id/key": { PUT: putKey, DELETE: deleteKey },
-  "/api/providers/:id/login": { POST: startLogin, GET: pollLogin },
+  "/api/providers/:id/login": { POST: startLogin, GET: pollLogin, DELETE: cancelLogin },
+  "/api/providers/:id/logout": { POST: logout },
+  "/api/open-external": { POST: openExternal },
 };

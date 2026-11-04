@@ -12,7 +12,8 @@
     "desktop:dev": "cd desktop && bunx electrobun dev --watch",
     "desktop:build": "cd desktop && bunx electrobun build --env=stable",
     "package:linux": "bun scripts/fetch-pyodide.ts && bun run desktop:build && bun scripts/package-linux.ts",
-    "smoke": "bun scripts/smoke.ts"
+    "smoke": "bun scripts/smoke.ts",
+    "make": "bun scripts/make-app.ts"
   },
   "dependencies": {
     "bun-plugin-tailwind": "0.1.2",

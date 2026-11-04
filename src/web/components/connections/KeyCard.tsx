@@ -2,7 +2,8 @@ import { useState, type JSX } from "react";
 import { z } from "zod";
 import { ConnectionStatus, type ConnectionStatus as ConnectionRow } from "../../../shared/providers.ts";
 import { api, describeError, isApiError } from "../../api.ts";
-import { titleOfProvider } from "../../providerCopy.ts";
+import { openExternalTarget } from "../../openExternal.ts";
+import { keyNoteOf, titleOfProvider } from "../../providerCopy.ts";
 import { Button } from "../Button.tsx";
 import { Panel } from "../Panel.tsx";
 
@@ -57,7 +58,12 @@ export function KeyCard({ status, onChanged }: { status: ConnectionRow; onChange
   return (
     <Panel>
       <h3 className="text-base font-semibold">{title}</h3>
-      <p className="mt-1 text-sm text-muted">API key. {title} bills your own provider account for each use.</p>
+      <p className="mt-1 text-sm text-muted">API key. {title} bills your own provider account for each use. {keyNoteOf(status.provider)}</p>
+      <div className="mt-3">
+        <Button variant="soft" onClick={() => void openExternalTarget(status.provider === "spacexai" ? "spacexai_keys" : "openrouter_keys").catch((cause: unknown) => setError(describeError(cause)))}>
+          Get a {title} key
+        </Button>
+      </div>
       <p className="mt-3 text-sm">{keyStatusLine(status)}</p>
       <form className="mt-3 flex flex-col gap-3 sm:flex-row" onSubmit={(event) => void submitProviderKey(event)}>
         <input

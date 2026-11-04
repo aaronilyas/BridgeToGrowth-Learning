@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { LoginState } from "../../../shared/providers.ts";
+import { findCodexBin } from "./codexLogin.ts";
 import { codexEffortValue, spawnCodexLines, streamCodexEvents, type CodexRun } from "./codexRun.ts";
 import type { ConnectionStatus, LlmEvent, LlmRequest, ModelRef, ProviderAdapter, ReasoningLevel } from "./types.ts";
 
@@ -15,7 +15,6 @@ const ModelItem = z.object({
 const Catalog = z.object({ models: z.array(z.unknown()) });
 
 const efforts = new Map<string, readonly string[]>();
-let login: { state: LoginState["state"]; proc: Bun.Subprocess | null } = { state: "idle", proc: null };
 
 export type CodexDeps = {
   which: (name: string) => string | null;
@@ -58,9 +57,9 @@ async function readStdout(proc: Bun.Subprocess): Promise<{ code: number; text: s
 // O(1)
 function defaultDeps(): CodexDeps {
   return {
-    which: (name) => Bun.which(name),
+    which: (name) => (name === "codex" ? findCodexBin() : Bun.which(name)),
     statusCode: async () => {
-      const bin = Bun.which("codex");
+      const bin = findCodexBin();
       if (bin === null) return 127;
       const proc = Bun.spawn([bin, "login", "status"], { stdout: "ignore", stderr: "ignore" });
       return proc.exited;
@@ -127,28 +126,6 @@ async function* streamCodex(req: LlmRequest, deps: CodexDeps): AsyncIterable<Llm
   }
   const known = efforts.get(req.model.id) ?? req.model.reasoning;
   yield* streamCodexEvents(req, codexEffortValue(req.reasoning, known), bin, deps.run);
-}
-
-// O(1)
-// SEC: login is the user's own CLI opening their browser; this process never reads ~/.codex
-export function beginCodexLogin(which: (name: string) => string | null = (name) => Bun.which(name)): void {
-  if (login.state === "pending") return;
-  const bin = which("codex");
-  if (bin === null) {
-    login = { state: "failed", proc: null };
-    return;
-  }
-  const proc = Bun.spawn([bin, "login"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
-  login = { state: "pending", proc };
-  void proc.exited.then((code) => {
-    if (login.proc !== proc) return;
-    login = { state: code === 0 ? "ok" : "failed", proc: null };
-  });
-}
-
-// O(1)
-export function readCodexLogin(): LoginState {
-  return { state: login.state };
 }
 
 export const codexAdapter = createCodexAdapter();

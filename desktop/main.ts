@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
-import Electrobun, { BrowserWindow } from "electrobun/main";
+import Electrobun, { BrowserWindow, Utils } from "electrobun/main";
 import { startServer } from "../src/server/boot.ts";
+import { setExternalOpener } from "../src/server/external.ts";
 
 // O(1)
 // SEC: the preload value is inline JavaScript, never a URL, and the token stays out of logs
@@ -17,6 +18,7 @@ async function stopDesktopServer(stop: () => Promise<void>, state: { stopping: b
   await stop();
 }
 
+setExternalOpener((url) => Utils.openExternal(url));
 const token = randomBytes(32).toString("hex");
 const server = await startServer({ token });
 const appWindow = new BrowserWindow({
