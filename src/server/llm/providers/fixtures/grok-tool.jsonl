@@ -1,0 +1,6 @@
+{"type":"available_commands","tools":[],"commands":["compact"]}
+{"type":"text","data":"Searching"}
+{"type":"tool_call","toolCallId":"ctc_1","title":"X search:","kind":"search","status":"in_progress","toolName":"X search:","rawInput":{"variant":"XSearch","backend":true},"content":[],"locations":[]}
+{"type":"tool_call_update","toolCallId":"ctc_1","status":"completed","content":[],"rawOutput":{"input":"{\"query\":\"Bun\"}","name":"x_keyword_search"},"locations":[]}
+{"type":"text","data":"DONE"}
+{"type":"end","stopReason":"end_turn","num_turns":1}
