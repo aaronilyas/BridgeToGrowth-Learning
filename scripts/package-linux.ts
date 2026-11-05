@@ -199,9 +199,14 @@ async function listTree(root: string): Promise<TarEntry[]> {
   return [...directories, ...files];
 }
 
+// O(1)
+function debControlText(): string {
+  return `Package: bridgetogrowth-learning\nVersion: ${VERSION}\nSection: education\nPriority: optional\nArchitecture: amd64\nMaintainer: BridgeToGrowth <ops@example.com>\nDepends: libgtk-3-0 | libgtk-3-0t64, libwebkit2gtk-4.1-0\nDescription: BridgeToGrowth Learning desktop app\n Local lessons, practice, and a knowledge graph.\n`;
+}
+
 // O(n) in package size
 async function writePureDeb(root: string, output: string): Promise<void> {
-  const control = encoder.encode(`Package: bridgetogrowth-learning\nVersion: ${VERSION}\nSection: education\nPriority: optional\nArchitecture: amd64\nMaintainer: BridgeToGrowth <ops@example.com>\nDepends: libgtk-3-0 | libgtk-3-0t64, libwebkit2gtk-4.1-0\nDescription: BridgeToGrowth Learning desktop app\n Local lessons, practice, and a knowledge graph.\n`);
+  const control = encoder.encode(debControlText());
   const controlTar = gzipSync(makeTar([{ path: "./control", bytes: control, mode: 0o644, dir: false }]));
   const dataTar = gzipSync(makeTar(await listTree(root)));
   await writeFile(output, makeAr([
@@ -244,8 +249,11 @@ async function buildDeb(bundle: string, bin: string): Promise<string> {
   await cp(join(ROOT, "desktop", "icon.png"), join(root, "usr", "share", "icons", "hicolor", "256x256", "apps", "bridgetogrowth-learning.png"));
   const output = join(OUTPUT, `BridgeToGrowthLearning_${VERSION}_amd64.deb`);
   const dpkg = Bun.which("dpkg-deb");
-  if (dpkg) await runCommand([dpkg, "--build", "--root-owner-group", root, output]);
-  else await writePureDeb(root, output);
+  if (dpkg) {
+    await mkdir(join(root, "DEBIAN"), { recursive: true });
+    await writeFile(join(root, "DEBIAN", "control"), debControlText(), { mode: 0o644 });
+    await runCommand([dpkg, "--build", "--root-owner-group", root, output]);
+  } else await writePureDeb(root, output);
   return output;
 }
 
