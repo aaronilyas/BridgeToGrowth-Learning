@@ -1,12 +1,51 @@
+# Dependencies
+node_modules/
+
+# Environment / secrets
 .env*
 !.env.example
-node_modules
-dist
 
-# Electrobun build state, package output, and the verified AppImage tool
+# Build output
+dist/
+/artifacts/
+*.tsbuildinfo
+
+# Electrobun build state, package output, and temp build helpers
 desktop/.hutch/
+desktop/.cottontail-tmp/
 desktop/build/
 desktop/artifacts/
+
+# Downloaded tooling (e.g. verified AppImage tool, Pyodide)
 scripts/cache/
-/artifacts
 .cache/
+
+# Packaged app files
+*.AppImage
+*.deb
+*.dmg
+*.exe
+*.msi
+*.zip
+*.tar.gz
+
+# Local databases
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# Logs and coverage
+*.log
+npm-debug.log*
+bun-debug.log*
+coverage/
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
