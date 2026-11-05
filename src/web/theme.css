@@ -116,6 +116,8 @@
 }
 
 html {
+  /* 100% app zoom; zoom.ts overrides this inline from the saved level */
+  font-size: 75%;
   color-scheme: dark;
   background: var(--bg);
   color: var(--text);

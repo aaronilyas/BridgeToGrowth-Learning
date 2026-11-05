@@ -2,6 +2,7 @@ import { useState, type JSX, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { Sidebar, SidebarToggle } from "./Sidebar.tsx";
 import { StaleModelBanner } from "./settings/StaleModelBanner.tsx";
+import { ZoomControl } from "./ZoomControl.tsx";
 
 const KEY = "btg:sidebar-collapsed";
 
@@ -32,8 +33,9 @@ export function AppShell({ children }: { children: ReactNode }): JSX.Element {
   return (
     <div className="relative flex h-screen">
       {collapsed ? (
-        <div className="flex w-12 shrink-0 justify-center border-r border-border pt-3">
+        <div className="flex w-12 shrink-0 flex-col items-center justify-between border-r border-border pt-3 pb-3">
           <SidebarToggle onClick={() => set(false)} label="Show sidebar" />
+          <ZoomControl vertical />
         </div>
       ) : (
         <Sidebar onCollapse={() => set(true)} />

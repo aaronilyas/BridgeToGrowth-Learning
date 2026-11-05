@@ -4,6 +4,9 @@ import { SeasonArt } from "./components/SeasonArt.tsx";
 import { ConnectionsProvider } from "./connections.tsx";
 import { AppRouter } from "./router.tsx";
 import { SessionProvider } from "./session.tsx";
+import { installZoom } from "./zoom.ts";
+
+installZoom();
 
 const root = document.getElementById("root");
 if (root)

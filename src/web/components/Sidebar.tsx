@@ -7,6 +7,7 @@ import { generatingLessonPrompt, useAskJob } from "../askJob.ts";
 import { Logo } from "./Logo.tsx";
 import { Spinner } from "./Spinner.tsx";
 import { UsageCard } from "./UsageMeter.tsx";
+import { ZoomControl } from "./ZoomControl.tsx";
 
 export type SessionFilter = "all" | "waiting" | "done";
 
@@ -172,13 +173,16 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
             </div>
           </div>
         )}
-        <nav aria-label="Secondary" className="flex gap-3 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-muted">
-          {(["graph", "stats", "settings"] as const).map((p) => (
-            <Link key={p} href={`/${p}`} aria-current={location === `/${p}` ? "page" : undefined} className={`transition hover:text-text ${location === `/${p}` ? "text-text" : ""}`}>
-              {p}
-            </Link>
-          ))}
-        </nav>
+        <div className="flex items-center justify-between gap-2">
+          <nav aria-label="Secondary" className="flex gap-3 font-mono text-[0.7rem] uppercase tracking-[0.08em] text-muted">
+            {(["graph", "stats", "settings"] as const).map((p) => (
+              <Link key={p} href={`/${p}`} aria-current={location === `/${p}` ? "page" : undefined} className={`transition hover:text-text ${location === `/${p}` ? "text-text" : ""}`}>
+                {p}
+              </Link>
+            ))}
+          </nav>
+          <ZoomControl />
+        </div>
       </div>
     </aside>
   );
