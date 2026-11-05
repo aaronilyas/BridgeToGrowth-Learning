@@ -1,3 +1,4 @@
+import "./linuxWebkit.ts";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import Electrobun, { BrowserWindow, Utils } from "electrobun/main";
