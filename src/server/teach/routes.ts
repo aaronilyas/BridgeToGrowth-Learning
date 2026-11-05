@@ -3,7 +3,8 @@ import { ChatRequest, CreateLessonRequest, LessonPlan, type StepPublic } from ".
 import { SETTINGS_LIMITS } from "../../shared/settings.ts";
 import { sql } from "../db.ts";
 import { HttpError, json, route } from "../http.ts";
-import { loadSettings, resolveModel, StoredCitations } from "../learn/core.ts";
+import { loadSettings, resolveModel, StoredChoices, StoredCitations } from "../learn/core.ts";
+import { listLatestAttempts } from "../learn/sql.ts";
 import { retrievePapers } from "../lit/openalex.ts";
 import { filterCitations, toCitations } from "../lit/core.ts";
 import { chatJson, chatStream } from "../llm/gateway.ts";
@@ -12,7 +13,7 @@ import { slugOf } from "../topics/core.ts";
 import { findMasteredSlugs, listMasteredNames, upsertTopics } from "../topics/sql.ts";
 import { gatherSources } from "../sources/collect.ts";
 import { MAX_PDF_BYTES, MAX_SOURCE_FILES } from "../sources/core.ts";
-import { SourcedPlanOut, StepContent, StepOut, StoredPlan, allCitations, buildChatContext, buildPlanPrompt, buildStepPrompt, buildTutorSystem, categoryOfStep, KNOWN_TOPICS_IN_PROMPT, listPrereqs, maxPlanSteps, normalizePlan, normalizeStep, pickLessonModel, toPublicPlan, toStepPublic, unmetPrereqs } from "./core.ts";
+import { SourcedPlanOut, StepContent, StepOut, StoredPlan, allCitations, buildChatContext, buildPlanPrompt, buildStepPrompt, buildTutorSystem, categoryOfStep, KNOWN_TOPICS_IN_PROMPT, listPrereqs, maxPlanSteps, normalizePlan, normalizeStep, pickLessonModel, revealAnswer, toPublicPlan, toStepPublic, tutorCheckBlock, unmetPrereqs } from "./core.ts";
 import { deleteLessonData, ensureConversation, findLesson, insertLesson, insertStep, insertMessagePair, listLessons, listMessages, listPapers, listSteps, type LessonRow, type StepRow } from "./sql.ts";
 
 const IdParams = z.strictObject({ id: z.uuid() });
@@ -52,8 +53,21 @@ function readPlan(lesson: LessonRow): StoredPlan {
   return p.data;
 }
 
-function stepOf(r: StepRow): StepPublic {
-  return toStepPublic(r.idx, StepContent.parse(r.content), r.question);
+// O(steps)
+async function publishSteps(uid: string, rows: StepRow[]): Promise<StepPublic[]> {
+  const latest = await listLatestAttempts(uid, rows.map((r) => r.question.id));
+  const byId = new Map(latest.map((a) => [a.questionId, a]));
+  return rows.map((r) => toStepPublic(r.idx, StepContent.parse(r.content), r.question, byId.get(r.question.id) ?? null));
+}
+
+// O(1)
+// SEC: the answer block is built only when this step exists and the learner has an attempt
+async function stepPrompt(uid: string, idx: number | null, step: StepRow | null): Promise<string | null> {
+  if (idx === null || step === null) return null;
+  const content = StepContent.parse(step.content);
+  const latest = (await listLatestAttempts(uid, [step.question.id]))[0] ?? null;
+  const choices = step.question.choices === null ? null : StoredChoices.parse(step.question.choices);
+  return tutorCheckBlock({ idx, title: content.title, keyIdea: content.keyIdea, stem: step.question.stem, choices, attempt: latest, answer: latest === null ? null : revealAnswer(step.question), explanation: latest === null ? null : step.question.explanation });
 }
 
 // SEC: multipart fields are allowlisted and validated by the same strict schema as JSON; file parts are only accepted under "file"
@@ -113,7 +127,7 @@ const list = route({}, async (c) => {
   const q = ListQuery.safeParse(query(c.req));
   if (!q.success) throw new HttpError(400, "bad_request");
   const rows = await listLessons((await localProfile()).id, q.data.limit);
-  return json(rows.map((l) => ({ id: l.id, title: l.title, createdAt: l.created_at.toISOString() })));
+  return json(rows.map((l) => ({ id: l.id, title: l.title, createdAt: l.created_at.toISOString(), status: l.status, lastActiveAt: l.last_active_at.toISOString() })));
 });
 
 const get = route({}, async (c) => {
@@ -121,7 +135,7 @@ const get = route({}, async (c) => {
   const lesson = await requireLesson(uid, c.params);
   const plan = readPlan(lesson);
   const [papers, steps, mastered] = await Promise.all([listPapers(lesson.paper_ids), listSteps(uid, lesson.id), findMasteredSlugs(uid, listPrereqs(plan).map(slugOf))]);
-  return json({ id: lesson.id, title: lesson.title, plan: toPublicPlan(plan), prerequisites: unmetPrereqs(plan, mastered), steps: steps.map(stepOf), citations: allCitations(papers) });
+  return json({ id: lesson.id, title: lesson.title, plan: toPublicPlan(plan), prerequisites: unmetPrereqs(plan, mastered), steps: await publishSteps(uid, steps), citations: allCitations(papers) });
 });
 
 const makeStep = route({ rate: { key: "step", cap: 30, perMin: 30 } }, async (c) => {
@@ -135,7 +149,11 @@ const makeStep = route({ rate: { key: "step", cap: 30, perMin: 30 } }, async (c)
   const planned = plan.steps[idx];
   if (!planned) throw new HttpError(404, "not_found");
   const have = (await listSteps(uid, lesson.id, idx))[0];
-  if (have) return json(stepOf(have));
+  if (have) {
+    const [pub] = await publishSteps(uid, [have]);
+    if (!pub) throw new HttpError(404, "not_found");
+    return json(pub);
+  }
   const built = await shareStepJob(`${uid}:${lesson.id}:${idx}`, async () => {
     const settings = loadSettings(user);
     const papers = await listPapers(lesson.paper_ids);
@@ -151,7 +169,9 @@ const makeStep = route({ rate: { key: "step", cap: 30, perMin: 30 } }, async (c)
     const step = normalizeStep(r.data, planned.title, settings.bite.maxWordsPerStep, papers, categoryOfStep(idx));
     const row = await insertStep(uid, lesson, idx, step);
     if (!row) throw new HttpError(404, "not_found");
-    return stepOf(row);
+    const [pub] = await publishSteps(uid, [row]);
+    if (!pub) throw new HttpError(404, "not_found");
+    return pub;
   });
   return json(built);
 });
@@ -163,8 +183,14 @@ const chat = route({ body: ChatRequest, rate: { key: "chat", cap: 20, perMin: 20
   const settings = loadSettings(user);
   const plan = readPlan(lesson);
   const model = pickLessonModel(lesson.model, settings);
-  const [papers, convId, recent] = await Promise.all([listPapers(lesson.paper_ids), ensureConversation(uid, lesson.id), listMessages(uid, lesson.id, null, 12)]);
-  const system = buildTutorSystem(settings, plan, papers);
+  const stepIdx = c.body.stepIdx ?? null;
+  const [papers, convId, recent, anchored] = await Promise.all([
+    listPapers(lesson.paper_ids),
+    ensureConversation(uid, lesson.id),
+    listMessages(uid, lesson.id, null, 12),
+    stepIdx === null ? Promise.resolve(null) : listSteps(uid, lesson.id, stepIdx).then((rows) => rows[0] ?? null),
+  ]);
+  const system = buildTutorSystem(settings, plan, papers, await stepPrompt(uid, stepIdx, anchored));
   const stream = await chatStream({
     who: { uid },
     model,
@@ -176,7 +202,7 @@ const chat = route({ body: ChatRequest, rate: { key: "chat", cap: 20, perMin: 20
     onDone: async (text) => {
       const f = filterCitations(text, papers.length);
       const citations = toCitations(f.used, papers);
-      await insertMessagePair(uid, convId, c.body.message, f.text, citations);
+      await insertMessagePair(uid, convId, c.body.message, f.text, citations, stepIdx);
       return { citations };
     },
   });
@@ -195,7 +221,7 @@ const messages = route({}, async (c) => {
   const q = MessagesQuery.safeParse(query(c.req));
   if (!q.success) throw new HttpError(400, "bad_request");
   const rows = await listMessages(uid, lesson.id, q.data.before ?? null, q.data.limit);
-  return json(rows.map((m) => ({ id: m.id, role: m.role, content: m.content, citations: StoredCitations.parse(m.citations), createdAt: m.created_at.toISOString() })));
+  return json(rows.map((m) => ({ id: m.id, role: m.role, content: m.content, citations: StoredCitations.parse(m.citations), createdAt: m.created_at.toISOString(), stepIdx: m.step_idx })));
 });
 
 export const teachRoutes = {

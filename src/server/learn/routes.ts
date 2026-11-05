@@ -39,31 +39,37 @@ const queue = route({}, async (c) => {
 const attempt = route({ body: AttemptRequest, rate: { key: "attempt", cap: 60, perMin: 60 } }, async (c) => {
   const user = await localProfile();
   const uid = user.id;
-  const row = await findQuestion(uid, c.body.questionId);
+  const asked = c.body;
+  const row = await findQuestion(uid, asked.questionId);
   if (!row) throw new HttpError(404, "not_found");
   const stored = StoredAnswer.parse(row.answer);
+  // SEC: "I don't know" is not graded and never reaches a model; client confidence is discarded
+  const skip = asked.dontKnow === true;
+  if (skip && (asked.choice !== undefined || asked.response !== undefined || asked.codeRun !== undefined)) throw new HttpError(400, "bad_request");
   let score = 0;
   let feedback: string | null = null;
   let tests: CodeTestResult[] = [];
-  if (row.kind === "mcq") {
-    if (c.body.choice === undefined || !("index" in stored)) throw new HttpError(400, "bad_request");
-    score = c.body.choice === stored.index ? 1 : 0;
+  if (skip) {
+    score = 0;
+  } else if (row.kind === "mcq") {
+    if (asked.choice === undefined || !("index" in stored)) throw new HttpError(400, "bad_request");
+    score = asked.choice === stored.index ? 1 : 0;
   } else if (row.kind === "code") {
     // SEC: the learner's machine ran these tests. The names must match the stored tests. The server records the reported outcomes and does not run Python. A client can forge a pass; the result is self-assessment.
-    if (!c.body.response?.trim() || !("tests" in stored) || !c.body.codeRun) throw new HttpError(400, "bad_request");
-    if (!sameTestNames(stored.tests, c.body.codeRun.tests)) throw new HttpError(400, "bad_request");
-    tests = [...c.body.codeRun.tests];
+    if (!asked.response?.trim() || !("tests" in stored) || !asked.codeRun) throw new HttpError(400, "bad_request");
+    if (!sameTestNames(stored.tests, asked.codeRun.tests)) throw new HttpError(400, "bad_request");
+    tests = [...asked.codeRun.tests];
     score = scoreTests(tests);
-    feedback = codeFeedback({ stdout: "", stderr: "", error: c.body.codeRun.error, tests });
+    feedback = codeFeedback({ stdout: "", stderr: "", error: asked.codeRun.error, tests });
   } else {
-    if (!c.body.response?.trim() || !("rubric" in stored)) throw new HttpError(400, "bad_request");
-    const p = buildGradePrompt(row.stem, stored, c.body.response);
+    if (!asked.response?.trim() || !("rubric" in stored)) throw new HttpError(400, "bad_request");
+    const p = buildGradePrompt(row.stem, stored, asked.response);
     const g = await chatJson({ who: { uid }, model: { system: "grade" }, kind: "grade", system: p.system, user: p.user, schema: GradeOutput, maxTokens: 400 });
     score = g.data.score;
     feedback = g.data.feedback;
   }
   const now = new Date();
-  const due = await recordAttempt({ uid, topicId: row.topic_id, questionId: row.id, score, confidence: c.body.confidence, latencyMs: c.body.latencyMs, response: row.kind === "mcq" ? null : (c.body.response ?? null), srsEnabled: loadSettings(user).srs.enabled }, now);
+  const due = await recordAttempt({ uid, topicId: row.topic_id, questionId: row.id, score, confidence: skip ? 0 : asked.confidence, latencyMs: asked.latencyMs, response: skip || row.kind === "mcq" ? null : (asked.response ?? null), dontKnow: skip, srsEnabled: loadSettings(user).srs.enabled }, now);
   const body: AttemptResponse = { score, correct: score >= CORRECT_AT, feedback, answer: toAttemptAnswer(row.kind, stored, tests), explanation: row.explanation, citations: StoredCitations.parse(row.citations), nextDueAt: due ? due.toISOString() : null };
   return json(body);
 });

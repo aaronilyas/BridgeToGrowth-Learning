@@ -14,8 +14,11 @@
   --color-on-accent: var(--on-accent);
   --color-danger: var(--danger);
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
+/* Neutral, near-black surfaces in every season; the season lives in the accent and the corner art. */
 :root,
 [data-season="spring"] {
   --d-math: #6f9bff;
@@ -27,15 +30,15 @@
   --d-statistics: #f27fb0;
   --d-earth: #c9a27a;
   --d-other: #a3b0bd;
-  --bg: #0d1413;
-  --panel: #151e1d;
-  --panel-2: #1b2725;
-  --border: #283835;
-  --text: #e7efea;
-  --muted: #94a59f;
-  --accent: #7fd69b;
-  --accent-soft: #7fd69b24;
-  --accent-2: #bfe5c6;
+  --bg: #0e100f;
+  --panel: #151716;
+  --panel-2: #1b1e1c;
+  --border: #2a2e2c;
+  --text: #e9ece9;
+  --muted: #8e9691;
+  --accent: #8fd6a2;
+  --accent-soft: #8fd6a21f;
+  --accent-2: #c9e7cf;
   --on-accent: #0f1f16;
   --danger: #f08a8a;
   --art-1: #f3a6cb;
@@ -45,16 +48,16 @@
 }
 
 [data-season="summer"] {
-  --bg: #0a111e;
-  --panel: #0f192b;
-  --panel-2: #142139;
-  --border: #22314d;
-  --text: #e8eef8;
-  --muted: #8d9cb6;
-  --accent: #2f7ff5;
-  --accent-soft: #2f7ff52b;
-  --accent-2: #f6c21c;
-  --on-accent: #ffffff;
+  --bg: #0f0f0e;
+  --panel: #161615;
+  --panel-2: #1c1c1a;
+  --border: #2c2c29;
+  --text: #ecebe6;
+  --muted: #94928a;
+  --accent: #f0c43a;
+  --accent-soft: #f0c43a1f;
+  --accent-2: #f6dc85;
+  --on-accent: #1a1404;
   --danger: #ff8f8f;
   --art-1: #f6c21c;
   --art-2: #f6c21c;
@@ -63,16 +66,16 @@
 }
 
 [data-season="fall"] {
-  --bg: #121110;
-  --panel: #1a1816;
-  --panel-2: #23201c;
-  --border: #36312b;
-  --text: #f2ebe3;
-  --muted: #a69c91;
-  --accent: #f08a2c;
-  --accent-soft: #f08a2c26;
-  --accent-2: #8c9b5c;
-  --on-accent: #ffffff;
+  --bg: #100f0e;
+  --panel: #171513;
+  --panel-2: #1e1b18;
+  --border: #2f2b27;
+  --text: #f0ebe5;
+  --muted: #9b9188;
+  --accent: #ef9145;
+  --accent-soft: #ef91451f;
+  --accent-2: #a9b77a;
+  --on-accent: #1c0e02;
   --danger: #ff8f80;
   --art-1: #e8792b;
   --art-2: #c9562a;
@@ -81,16 +84,16 @@
 }
 
 [data-season="winter"] {
-  --bg: #0a1322;
-  --panel: #0f1b2f;
-  --panel-2: #14243f;
-  --border: #233759;
-  --text: #e6eef9;
-  --muted: #8ea3c1;
-  --accent: #4b93f2;
-  --accent-soft: #4b93f22b;
-  --accent-2: #ffffff;
-  --on-accent: #ffffff;
+  --bg: #0d0f12;
+  --panel: #14171b;
+  --panel-2: #1a1e23;
+  --border: #2a3038;
+  --text: #e8edf3;
+  --muted: #8d97a5;
+  --accent: #7fb2f5;
+  --accent-soft: #7fb2f51f;
+  --accent-2: #dbe9fb;
+  --on-accent: #06121f;
   --danger: #ff9a9a;
   --art-1: #a9cdf5;
   --art-2: #dcebfb;
@@ -122,8 +125,7 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: var(--font-sans);
-  background: radial-gradient(1200px 600px at 50% -10%, var(--accent-soft), transparent 70%), var(--bg);
-  background-attachment: fixed;
+  background: var(--bg);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -140,7 +142,7 @@ input[type="range"] {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 30;
+  z-index: 5;
 }
 
 [data-season="spring"] .season-art[data-for="spring"],
@@ -191,3 +193,26 @@ input[type="range"] {
 .md :where(h1, h2, h3) { font-weight: 600; margin: 0.8em 0 0.4em; }
 .md :where(blockquote) { border-left: 3px solid var(--accent); padding-left: 0.8em; color: var(--muted); }
 .md .katex-display { overflow-x: auto; overflow-y: hidden; }
+
+/* Small uppercase monospace label, as in section captions ("PREDICTION", "SESSIONS"). */
+.label {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Serif display heading for page and lesson titles. */
+.display {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Thin, quiet scrollbars for the sidebar and transcript. */
+.scroll-quiet { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+
+/* Corner art stays small and quiet so it never competes with controls. */
+.season-art { opacity: 0.5; }
+.season-art svg { zoom: 0.7; }

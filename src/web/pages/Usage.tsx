@@ -92,7 +92,7 @@ export function UsagePage(): JSX.Element {
   return (
     <div className="mx-auto grid max-w-4xl gap-5">
       <header>
-        <h1 className="text-2xl font-semibold">Usage</h1>
+        <h1 className="display text-2xl">Usage</h1>
         <p className="mt-1 text-sm text-muted">Tokens for {monthPeriodLabel(selected)}. {selected === usage.month ? `This month runs until ${usageUntilLabel(usage.month)}.` : ""} USD is shown only when a provider reports it.</p>
       </header>
       <div className="flex flex-wrap gap-2" role="group" aria-label="Month">
@@ -110,7 +110,7 @@ export function UsagePage(): JSX.Element {
       </div>
       {groups.length === 0 ? <Panel><p className="text-sm text-muted">No calls.</p></Panel> : groups.map((group) => (
         <Panel key={group.provider}>
-          <h2 className="mb-3 text-lg font-semibold">{titleOfProvider(group.provider)}</h2>
+          <h2 className="mb-3 display text-lg">{titleOfProvider(group.provider)}</h2>
           <UsageRows rows={group.rows} />
         </Panel>
       ))}

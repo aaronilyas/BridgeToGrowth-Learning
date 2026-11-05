@@ -35,7 +35,7 @@ export function DeleteLessonButton({ lessonId, lessonTitle, onDeleted }: { lesso
           </div>
         </>
       ) : (
-        <Button variant="danger" onClick={() => setConfirming(true)} aria-label={`Delete ${lessonTitle}`}>Delete</Button>
+        <Button variant="danger" className="px-2 py-1 text-xs" onClick={() => setConfirming(true)} aria-label={`Delete ${lessonTitle}`}>Delete</Button>
       )}
       <ErrorBanner error={error} />
     </div>

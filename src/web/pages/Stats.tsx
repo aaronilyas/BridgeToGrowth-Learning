@@ -62,7 +62,7 @@ function Insights(): JSX.Element {
   }, []);
   return (
     <Panel>
-      <h2 className="mb-3 text-lg font-semibold">Trends noted by your tutor</h2>
+      <h2 className="mb-3 display text-lg">Trends noted by your tutor</h2>
       <ErrorBanner error={error} />
       {!data && !error && <Spinner label="Reading your progress" />}
       {data?.trends.length === 0 && <p className="text-sm text-muted">Nothing to report yet. Answer a few questions and check back.</p>}
@@ -98,7 +98,7 @@ export function StatsPage(): JSX.Element {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-semibold">Stats</h1>
+        <h1 className="display text-3xl">Stats</h1>
         <div role="group" aria-label="Time range" className="flex gap-1 rounded-xl border border-border bg-panel p-1">
           {DAYS.map((d) => (
             <button key={d} type="button" aria-pressed={d === days} onClick={() => setDays(d)} className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${d === days ? "bg-accent text-on-accent" : "text-muted hover:text-text"}`}>
@@ -121,17 +121,17 @@ export function StatsPage(): JSX.Element {
           </div>
           <div className="grid gap-4 xl:grid-cols-2">
             <Panel>
-              <h2 className="mb-2 text-lg font-semibold">Daily attempts and accuracy</h2>
+              <h2 className="mb-2 display text-lg">Daily attempts and accuracy</h2>
               <LineChart data={fillDays(stats.daily, days, new Date())} />
             </Panel>
             <Panel>
-              <h2 className="mb-2 text-lg font-semibold">By domain</h2>
+              <h2 className="mb-2 display text-lg">By domain</h2>
               <BarChart data={stats.byDomain.map((d) => ({ label: d.domain, accuracy: d.accuracy, retention: d.retention }))} />
             </Panel>
           </div>
           <Insights />
           <Panel className="overflow-x-auto">
-            <h2 className="mb-3 text-lg font-semibold">Topics</h2>
+            <h2 className="mb-3 display text-lg">Topics</h2>
             {rows.length === 0 ? (
               <p className="text-sm text-muted">No topics yet.</p>
             ) : (

@@ -5,10 +5,18 @@ let t: TestServer;
 let core: typeof import("./core.ts");
 let insertCards: typeof import("./sql.ts")["insertCards"];
 let handlers: { queue: Handler; attempt: Handler };
+let gradeCalls = 0;
 
 beforeAll(async () => {
   t = await bootTestServer();
-  mock.module("../llm/gateway.ts", () => ({ chatStream: async () => { throw new Error("unused"); }, chatJson: async () => ({ data: { score: 0.5, feedback: "ok" }, costMicros: 0n }), assertQuotaHeadroom: async () => {} }));
+  mock.module("../llm/gateway.ts", () => ({
+    chatStream: async () => { throw new Error("unused"); },
+    chatJson: async () => {
+      gradeCalls += 1;
+      return { data: { score: 0.5, feedback: "ok" }, costMicros: 0n };
+    },
+    assertQuotaHeadroom: async () => {},
+  }));
   core = await import("./core.ts");
   insertCards = (await import("./sql.ts")).insertCards;
   const { learnRoutes } = await import("./routes.ts");
@@ -73,6 +81,41 @@ test("queue never exposes answer fields; attempt does, after grading", async () 
   const foreign = await seed(otherId, "mcq");
   const miss = await callRoute(handlers.attempt, "POST", "/api/practice/attempt", { cookie: u.cookie, body: { questionId: foreign.qid, choice: 1, confidence: 50, latencyMs: 5 } });
   expect(miss.status).toBe(404);
+});
+
+test("dontKnow scores zero without grading and rejects an answer beside it", async () => {
+  await t.reset();
+  const u = await createTestUser();
+  const mcq = await seed(u.id, "mcq");
+  const free = await seed(u.id, "free");
+  const blocked = await seed(u.id, "mcq");
+  gradeCalls = 0;
+  const body = { questionId: mcq.qid, confidence: 95, latencyMs: 12, dontKnow: true };
+  const res = await callRoute(handlers.attempt, "POST", "/api/practice/attempt", { cookie: u.cookie, body });
+  expect(res.status).toBe(200);
+  const a = await res.json();
+  expect(a).toMatchObject({ score: 0, correct: false, feedback: null, answer: { kind: "mcq", index: 1 }, explanation: "because" });
+  expect(gradeCalls).toBe(0);
+  const [row] = await t.sql`SELECT score, confidence, latency_ms, response, dont_know FROM attempts WHERE question_id = ${mcq.qid}`;
+  expect([row.score, row.confidence, row.latency_ms, row.response, row.dont_know]).toEqual([0, 0, 12, null, 1]);
+  const [card] = await t.sql`SELECT ef, interval_d, reps, lapses FROM cards WHERE question_id = ${mcq.qid}`;
+  const next = core.scheduleSm2({ ef: 2.5, intervalD: 0, reps: 0, lapses: 0, dueAt: new Date() }, core.qualityOf(0, 0), new Date());
+  expect([card.reps, card.interval_d, card.lapses, Math.round(card.ef * 100) / 100]).toEqual([next.reps, next.intervalD, next.lapses, Math.round(next.ef * 100) / 100]);
+  const [topic] = await t.sql`SELECT attempts, correct FROM topics WHERE id = ${mcq.topicId}`;
+  expect([topic.attempts, topic.correct]).toEqual([1, 0]);
+  const run = { tests: [{ name: "t", passed: false, error: null }], error: null };
+  for (const extra of [{ choice: 0 }, { response: "x" }, { codeRun: run }]) {
+    const bad = await callRoute(handlers.attempt, "POST", "/api/practice/attempt", { cookie: u.cookie, body: { questionId: blocked.qid, confidence: 10, latencyMs: 1, dontKnow: true, ...extra } });
+    expect(bad.status).toBe(400);
+  }
+  const [left] = await t.sql`SELECT count(*) AS n FROM attempts WHERE question_id = ${blocked.qid}`;
+  expect(left.n).toBe(0);
+  const freed = await callRoute(handlers.attempt, "POST", "/api/practice/attempt", { cookie: u.cookie, body: { questionId: free.qid, confidence: 80, latencyMs: 5, dontKnow: true } });
+  expect(freed.status).toBe(200);
+  const freedBody = await freed.json();
+  expect(freedBody).toMatchObject({ score: 0, correct: false, feedback: null, answer: { kind: "free", model: "model answer" } });
+  expect(JSON.stringify(freedBody)).not.toContain("secret rubric");
+  expect(gradeCalls).toBe(0);
 });
 
 test("foldTopicStats replays mastery from zero", () => {

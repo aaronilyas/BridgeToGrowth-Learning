@@ -7,6 +7,7 @@ import m0001 from "../db/migrations/0001_init.sql" with { type: "text" };
 import m0002 from "../db/migrations/0002_provider_models.sql" with { type: "text" };
 import m0003 from "../db/migrations/0003_llm_usage.sql" with { type: "text" };
 import m0004 from "../db/migrations/0004_drop_legacy.sql" with { type: "text" };
+import m0005 from "../db/migrations/0005_chat_steps.sql" with { type: "text" };
 
 // INV: embedded so a packaged app needs no db/ directory; migrations.test.ts checks this list equals db/migrations/*.sql in order
 export const MIGRATIONS: ReadonlyArray<readonly [string, string]> = [
@@ -14,6 +15,7 @@ export const MIGRATIONS: ReadonlyArray<readonly [string, string]> = [
   ["0002_provider_models.sql", m0002],
   ["0003_llm_usage.sql", m0003],
   ["0004_drop_legacy.sql", m0004],
+  ["0005_chat_steps.sql", m0005],
 ];
 
 // O(1)

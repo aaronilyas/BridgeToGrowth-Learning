@@ -21,10 +21,10 @@ function indentOnTab(e: KeyboardEvent<HTMLTextAreaElement>, onChange: (v: string
 // SEC: libraries are shown from the question and cannot be changed here. Python runs on this computer, so the checks are self-assessment.
 function LibraryList({ spec }: { spec: CodeSpec }): JSX.Element {
   return (
-    <div className="mt-3 rounded-xl border border-border bg-panel-2 px-3 py-2 text-xs">
+    <div className="text-xs">
       <p className="flex flex-wrap items-center gap-1.5">
-        <span className="text-muted">Python libraries available:</span>
-        {spec.libraries.length === 0 ? <span className="text-muted">built-ins only</span> : spec.libraries.map((l) => <code key={l} className="rounded-md bg-accent-soft px-1.5 py-0.5 font-mono text-accent">{l}</code>)}
+        <span className="label">Libraries</span>
+        {spec.libraries.length === 0 ? <span className="text-muted">built-ins only</span> : spec.libraries.map((l) => <code key={l} className="rounded-md border border-border px-1.5 py-0.5 font-mono text-text">{l}</code>)}
       </p>
       <p className="mt-1 text-muted">Installing packages and importing anything else is disabled. Your code runs on this computer, offline, with no file or network access. Results are for self-assessment: they are not checked again on a server, and a modified app could skip them.</p>
     </div>
@@ -56,7 +56,7 @@ export function CodeExercise({ spec, value, onChange, disabled }: { spec: CodeSp
     <div className="flex flex-col gap-2">
       <LibraryList spec={spec} />
       <textarea
-        className="min-h-56 w-full rounded-xl border border-border bg-panel-2 p-3 font-mono text-sm leading-relaxed outline-none focus:border-accent"
+        className="min-h-56 w-full rounded-xl border border-border bg-bg p-3 font-mono text-sm leading-relaxed outline-none focus-visible:border-accent"
         aria-label="Your Python code"
         spellCheck={false}
         autoCapitalize="off"
@@ -77,7 +77,7 @@ export function CodeExercise({ spec, value, onChange, disabled }: { spec: CodeSp
           <Button variant="soft" busy={busy} disabled={value.trim() === ""} onClick={() => void run()}>
             ▶ Run
           </Button>
-          <span className="text-xs text-muted">Ctrl+Enter runs your code. Hidden tests run on your computer when you submit.</span>
+          <span className="font-mono text-xs text-muted">ctrl ↵ runs · hidden tests run when you submit</span>
         </div>
       )}
       <ErrorBanner error={error} />
@@ -92,7 +92,7 @@ function RunOutput({ out }: { out: CodeRunResponse }): JSX.Element {
   const empty = out.stdout === "" && out.stderr === "" && out.error === null;
   return (
     <div role="status" aria-label="Run output" className="rounded-xl border border-border bg-bg p-3 font-mono text-xs">
-      <p className="mb-1 font-sans text-muted">Output · {out.durationMs} ms</p>
+      <p className="label mb-1">Output · {out.durationMs} ms</p>
       {empty && <p className="text-muted">(no output)</p>}
       {out.stdout !== "" && <pre className="whitespace-pre-wrap break-words">{out.stdout}</pre>}
       {out.stderr !== "" && <pre className="whitespace-pre-wrap break-words text-muted">{out.stderr}</pre>}
@@ -115,7 +115,7 @@ export function TestResults({ tests, model }: { tests: CodeTestResult[]; model: 
           </li>
         ))}
       </ul>
-      <p className="text-muted">Reference solution</p>
+      <p className="label">Reference solution</p>
       <pre className="overflow-x-auto rounded-xl border border-border bg-bg p-3 font-mono text-xs">{model}</pre>
     </div>
   );

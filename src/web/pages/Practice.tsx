@@ -44,7 +44,7 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }): JSX.Elemen
 
   return (
     <Panel as="aside" className="flex h-fit flex-col gap-3">
-      <h2 className="text-lg font-semibold">Generate a practice set</h2>
+      <h2 className="display text-lg">Generate a practice set</h2>
       <form
         className="flex flex-col gap-3"
         onSubmit={(e) => {
@@ -118,7 +118,7 @@ export function PracticePage(): JSX.Element {
       <div className="flex flex-col gap-3">
         <Panel className="flex flex-col gap-2">
           <div className="flex items-baseline justify-between">
-            <h1 className="text-3xl font-semibold">Practice</h1>
+            <h1 className="display text-3xl">Practice</h1>
             {queue && <span className="text-sm text-muted">{queue.length} due</span>}
           </div>
           {goal && (
@@ -136,7 +136,7 @@ export function PracticePage(): JSX.Element {
         {queue === null && <Spinner label="Loading your queue" />}
         {queue?.length === 0 && (
           <Panel>
-            <h2 className="text-xl font-semibold text-accent">All caught up</h2>
+            <h2 className="display text-xl text-accent">All caught up</h2>
             <p className="mt-1 text-muted">Nothing is due right now. Generate a new practice set to keep going.</p>
           </Panel>
         )}

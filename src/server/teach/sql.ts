@@ -1,5 +1,5 @@
 import type { SQL } from "bun";
-import type { Citation, LessonPlan } from "../../shared/api.ts";
+import type { Citation, LessonPlan, LessonStatus } from "../../shared/api.ts";
 import { sql } from "../db.ts";
 import { insertQuestions } from "../gen/sql.ts";
 import { CORRECT_AT, foldTopicStats, type AttemptScore, type QuestionRow } from "../learn/core.ts";
@@ -7,17 +7,18 @@ import { insertCards } from "../learn/sql.ts";
 import type { Paper } from "../lit/core.ts";
 import { dateFromMs, dayEndMs, dayStartMs, epochOf, jsonText, jsonValue, questionFrom, stringList, utcDayOf } from "../sqlmap.ts";
 import { topicsReleasedByLesson, type TopicUse } from "../topics/core.ts";
-import type { NewStep, StepContent } from "./core.ts";
+import { lessonStatus, type NewStep, type StepContent } from "./core.ts";
 
 export type LessonRow = { id: string; topic_id: string; title: string; plan: unknown; paper_ids: string[]; model: string; created_at: Date };
 export type StepRow = { idx: number; content: unknown; question: QuestionRow };
-export type MessageRow = { id: string; role: "user" | "assistant"; content: string; citations: unknown; created_at: Date };
+export type MessageRow = { id: string; role: "user" | "assistant"; content: string; citations: unknown; created_at: Date; step_idx: number | null };
+export type LessonListRow = { id: string; title: string; created_at: Date; status: LessonStatus; last_active_at: Date };
 
 type LessonRaw = { id: string; topic_id: string; title: string; plan: unknown; paper_ids: unknown; model: string; created_at: number };
-type LessonListRaw = { id: string; title: string; created_at: number };
+type LessonListRaw = { id: string; title: string; created_at: number; planned: number; opened: number; planned_opened: number; planned_attempted: number; newest_attempted: number | null; last_active: number };
 type PaperRaw = { id: string; doi: string | null; title: string; year: number | null; venue: string | null; abstract: string | null };
 type StepJoin = QuestionRow & { idx: number; content: unknown };
-type MessageRaw = { id: string | number; role: "user" | "assistant"; content: string; citations: unknown; created_at: number };
+type MessageRaw = { id: string | number; role: "user" | "assistant"; content: string; citations: unknown; created_at: number; step_idx: number | null };
 
 const LESSON_COLS = sql`l.id, l.topic_id, l.title, l.plan, l.paper_ids, l.model, l.created_at`;
 const REPLAY_LIMIT = 100_000;
@@ -34,7 +35,7 @@ function stepFrom(row: StepJoin): StepRow {
 
 // O(1)
 function messageFrom(row: MessageRaw): MessageRow {
-  return { id: String(row.id), role: row.role, content: row.content, citations: jsonValue(row.citations), created_at: dateFromMs(row.created_at) };
+  return { id: String(row.id), role: row.role, content: row.content, citations: jsonValue(row.citations), created_at: dateFromMs(row.created_at), step_idx: row.step_idx === null ? null : Number(row.step_idx) };
 }
 
 // O(1)
@@ -57,13 +58,27 @@ export async function findLesson(uid: string, id: string): Promise<LessonRow | n
   return row ? lessonFrom(row) : null;
 }
 
-// O(limit)
-// INV: served by lessons(user_id, created_at DESC)
-export async function listLessons(uid: string, limit: number): Promise<{ id: string; title: string; created_at: Date }[]> {
+// O(lessons for this user)
+// INV: one statement; status uses opened steps and their attempts; the page is newest activity first
+export async function listLessons(uid: string, limit: number): Promise<LessonListRow[]> {
   const rows: LessonListRaw[] = await sql`
-    SELECT id, title, created_at FROM lessons
-    WHERE user_id = ${uid} ORDER BY created_at DESC LIMIT ${limit}`;
-  return rows.map((row) => ({ id: row.id, title: row.title, created_at: dateFromMs(row.created_at) }));
+    SELECT id, title, created_at, planned, opened, planned_opened, planned_attempted, newest_attempted, last_active FROM (
+      SELECT l.id AS id, l.title AS title, l.created_at AS created_at,
+        coalesce(json_array_length(l.plan, '$.steps'), 0) AS planned,
+        (SELECT count(*) FROM lesson_steps s WHERE s.lesson_id = l.id) AS opened,
+        (SELECT count(*) FROM lesson_steps s WHERE s.lesson_id = l.id AND s.idx < coalesce(json_array_length(l.plan, '$.steps'), 0)) AS planned_opened,
+        (SELECT count(*) FROM lesson_steps s WHERE s.lesson_id = l.id AND s.idx < coalesce(json_array_length(l.plan, '$.steps'), 0) AND EXISTS (SELECT 1 FROM attempts a WHERE a.user_id = ${uid} AND a.question_id = json_extract(s.content, '$.questionId'))) AS planned_attempted,
+        (SELECT CASE WHEN EXISTS (SELECT 1 FROM attempts a WHERE a.user_id = ${uid} AND a.question_id = json_extract(ns.content, '$.questionId')) THEN 1 ELSE 0 END FROM lesson_steps ns WHERE ns.lesson_id = l.id ORDER BY ns.idx DESC LIMIT 1) AS newest_attempted,
+        max(l.created_at, coalesce((SELECT max(m.created_at) FROM messages m JOIN conversations c ON c.id = m.conv_id WHERE c.lesson_id = l.id AND c.user_id = ${uid}), 0), coalesce((SELECT max(a.created_at) FROM attempts a JOIN questions q ON q.id = a.question_id WHERE a.user_id = ${uid} AND q.user_id = ${uid} AND q.lesson_id = l.id), 0)) AS last_active
+      FROM lessons l WHERE l.user_id = ${uid}
+    ) AS listed ORDER BY last_active DESC LIMIT ${limit}`;
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    created_at: dateFromMs(row.created_at),
+    status: lessonStatus({ planned: Number(row.planned), opened: Number(row.opened), plannedOpened: Number(row.planned_opened), plannedAttempted: Number(row.planned_attempted), newestAttempted: row.newest_attempted === null ? null : Number(row.newest_attempted) === 1 }),
+    last_active_at: dateFromMs(Number(row.last_active)),
+  }));
 }
 
 // O(k)
@@ -134,14 +149,14 @@ export async function ensureConversation(uid: string, lessonId: string): Promise
 
 // O(1)
 // INV: both turns commit together, after the model stream succeeds
-export async function insertMessagePair(uid: string, convId: string, userContent: string, assistantContent: string, citations: Citation[]): Promise<void> {
+export async function insertMessagePair(uid: string, convId: string, userContent: string, assistantContent: string, citations: Citation[], stepIdx: number | null): Promise<void> {
   await sql.begin(async (tx) => {
     await tx`
-      INSERT INTO messages (conv_id, role, content, citations)
-      SELECT c.id, 'user', ${userContent}, '[]' FROM conversations c WHERE c.id = ${convId} AND c.user_id = ${uid}`;
+      INSERT INTO messages (conv_id, role, content, citations, step_idx)
+      SELECT c.id, 'user', ${userContent}, '[]', ${stepIdx} FROM conversations c WHERE c.id = ${convId} AND c.user_id = ${uid}`;
     await tx`
-      INSERT INTO messages (conv_id, role, content, citations)
-      SELECT c.id, 'assistant', ${assistantContent}, ${jsonText(citations)} FROM conversations c WHERE c.id = ${convId} AND c.user_id = ${uid}`;
+      INSERT INTO messages (conv_id, role, content, citations, step_idx)
+      SELECT c.id, 'assistant', ${assistantContent}, ${jsonText(citations)}, ${stepIdx} FROM conversations c WHERE c.id = ${convId} AND c.user_id = ${uid}`;
   });
 }
 
@@ -149,7 +164,7 @@ export async function insertMessagePair(uid: string, convId: string, userContent
 // INV: served by messages(conv_id, id); newest first
 export async function listMessages(uid: string, lessonId: string, before: string | null, limit: number): Promise<MessageRow[]> {
   const rows: MessageRaw[] = await sql`
-    SELECT CAST(m.id AS TEXT) AS id, m.role, m.content, m.citations, m.created_at
+    SELECT CAST(m.id AS TEXT) AS id, m.role, m.content, m.citations, m.created_at, m.step_idx
     FROM messages m JOIN conversations c ON c.id = m.conv_id
     WHERE c.lesson_id = ${lessonId} AND c.user_id = ${uid} AND (${before} IS NULL OR m.id < CAST(${before} AS INTEGER))
     ORDER BY m.id DESC LIMIT ${limit}`;

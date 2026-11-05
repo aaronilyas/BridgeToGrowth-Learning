@@ -47,6 +47,8 @@ export const AttemptRequest = z.strictObject({
   confidence: z.int().min(0).max(100),
   latencyMs: z.int().min(0).max(3_600_000),
   codeRun: CodeAttempt.optional(),
+  // INV: "I don't know" is an honest zero: no choice or response is graded, score is 0 and confidence is stored as 0
+  dontKnow: z.literal(true).optional(),
 });
 export type AttemptRequest = z.infer<typeof AttemptRequest>;
 
@@ -100,10 +102,14 @@ export const MAX_LESSON_URLS = 3;
 export const CreateLessonRequest = z.strictObject({ prompt: z.string().trim().min(2).max(2000), model: z.string().min(1).max(100).optional(), urls: z.array(z.url({ protocol: /^https?$/ }).max(2048)).max(MAX_LESSON_URLS).optional() });
 export type CreateLessonRequest = z.infer<typeof CreateLessonRequest>;
 
-export const ChatRequest = z.strictObject({ message: z.string().trim().min(1).max(4000) });
+// INV: stepIdx anchors the turn to the lesson step on screen, so the transcript can interleave chat with steps and the tutor sees that step's check and the learner's attempt
+export const ChatRequest = z.strictObject({ message: z.string().trim().min(1).max(4000), stepIdx: z.int().min(0).max(63).optional() });
 export type ChatRequest = z.infer<typeof ChatRequest>;
 
-export const StepPublic = z.strictObject({ idx: z.int().min(0), title: z.string(), explanationMd: z.string(), keyIdea: z.string(), example: z.string().nullable(), check: QuestionPublic, citations: z.array(Citation) });
+// INV: lastAttempt is the learner's most recent attempt on this step's check, so a reloaded transcript shows answered checks as answered
+export const StepAttempt = z.strictObject({ score: z.number().min(0).max(1), correct: z.boolean(), confidence: z.int().min(0).max(100).nullable(), dontKnow: z.boolean() });
+export type StepAttempt = z.infer<typeof StepAttempt>;
+export const StepPublic = z.strictObject({ idx: z.int().min(0), title: z.string(), explanationMd: z.string(), keyIdea: z.string(), example: z.string().nullable(), check: QuestionPublic, citations: z.array(Citation), lastAttempt: StepAttempt.nullable() });
 export type StepPublic = z.infer<typeof StepPublic>;
 
 const Rate = z.number().min(0).nullable();
@@ -134,13 +140,17 @@ export type InsightsResponse = z.infer<typeof InsightsResponse>;
 export const LessonCreated = z.strictObject({ lessonId: z.uuid(), plan: LessonPlan, grounded: z.boolean() });
 export type LessonCreated = z.infer<typeof LessonCreated>;
 
-export const LessonSummary = z.strictObject({ id: z.uuid(), title: z.string(), createdAt: z.iso.datetime() });
+// INV: status "waiting" means the newest opened step's check has no attempt; "done" means every planned step has an attempted check; otherwise "active". lastActiveAt is the newest of lesson creation, message and attempt times.
+export const LessonStatus = z.enum(["waiting", "active", "done"]);
+export type LessonStatus = z.infer<typeof LessonStatus>;
+export const LessonSummary = z.strictObject({ id: z.uuid(), title: z.string(), createdAt: z.iso.datetime(), status: LessonStatus, lastActiveAt: z.iso.datetime() });
 export type LessonSummary = z.infer<typeof LessonSummary>;
 
 export const LessonDetail = z.strictObject({ id: z.uuid(), title: z.string(), plan: LessonPlan, prerequisites: z.array(z.string()), steps: z.array(StepPublic), citations: z.array(Citation) });
 export type LessonDetail = z.infer<typeof LessonDetail>;
 
-export const MessageResponse = z.strictObject({ id: z.string(), role: z.enum(["user", "assistant"]), content: z.string(), citations: z.array(Citation), createdAt: z.iso.datetime() });
+// INV: stepIdx is null for messages saved before steps were anchored; the transcript lists those after the last step
+export const MessageResponse = z.strictObject({ id: z.string(), role: z.enum(["user", "assistant"]), content: z.string(), citations: z.array(Citation), createdAt: z.iso.datetime(), stepIdx: z.int().min(0).nullable() });
 export type MessageResponse = z.infer<typeof MessageResponse>;
 
 export const GenerateResponse = z.strictObject({ topicId: z.uuid(), grounded: z.boolean(), questions: z.array(QuestionPublic) });

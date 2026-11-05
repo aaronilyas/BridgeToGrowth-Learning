@@ -34,8 +34,8 @@ export function UsageMeter({ spent, budget = null }: { spent: number | null; bud
   const showBar = budget !== null && spent !== null;
   const pct = showBar && budget !== null && spent !== null ? Math.min(100, budget === 0 ? (spent > 0 ? 100 : 0) : Math.round((spent / budget) * 100)) : 0;
   return (
-    <div className="rounded-2xl border border-border bg-panel p-5">
-      <h2 className="text-lg font-semibold">Monthly usage</h2>
+    <div className="rounded-xl border border-border bg-panel p-5">
+      <h2 className="display text-lg">Monthly usage</h2>
       <p className="mt-2 text-sm text-muted">{headline}</p>
       {showBar && budget !== null && spent !== null && (
         <>
@@ -51,14 +51,14 @@ export function UsageMeter({ spent, budget = null }: { spent: number | null; bud
 }
 
 // O(1)
-function openRouterCardLabel(spent: number | null, budget: number | null): string {
-  if (spent === null) return "No OpenRouter cost reported";
-  if (budget !== null) return `${money.format(spent)} of ${money.format(budget)} OpenRouter`;
-  if (spent === 0) return "No OpenRouter usage this month";
-  return `${money.format(spent)} OpenRouter this month`;
+function usageLine(spent: number | null, budget: number | null): string {
+  if (spent === null) return "No cost reported";
+  if (budget !== null) return `${money.format(spent)} / ${money.format(budget)}`;
+  return `${money.format(spent)} this month`;
 }
 
 // O(1)
+// INV: renders nothing until usage loads, so the sidebar footer never flashes a guessed value
 export function UsageCard(): JSX.Element | null {
   const [location] = useLocation();
   const { settings } = useSettings();
@@ -71,11 +71,10 @@ export function UsageCard(): JSX.Element | null {
     };
   }, [location]);
   if (!usage) return null;
-  const label = openRouterCardLabel(sumOpenRouterUsd(usage.current), settings.budgetUsd);
   return (
-    <Link href="/usage" className="block rounded-xl border border-border bg-panel-2 p-4 transition hover:border-accent/40">
-      <p className="text-sm text-muted">AI usage</p>
-      <p className="mt-2 text-xs text-muted">{label}</p>
+    <Link href="/usage" className="flex items-baseline justify-between gap-2 font-mono text-xs text-muted transition hover:text-text">
+      <span className="label">AI usage</span>
+      <span>{usageLine(sumOpenRouterUsd(usage.current), settings.budgetUsd)}</span>
     </Link>
   );
 }
