@@ -1,9 +1,9 @@
 import { SQL } from "bun";
 import { expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { migrateDatabase } from "../../scripts/migrate.ts";
+import { MIGRATIONS, migrateDatabase } from "../../scripts/migrate.ts";
 
 // O(1)
 async function countMigrationLedger(path: string): Promise<number> {
@@ -27,4 +27,9 @@ test("migrations apply once and reject a changed checksum", async () => {
   await db`UPDATE schema_migrations SET sha256 = '0' WHERE name = '0001_init.sql'`;
   await db.close();
   await expect(migrateDatabase(path)).rejects.toThrow("checksum mismatch: 0001_init.sql");
+});
+
+test("the embedded migration list matches db/migrations in order", () => {
+  const files = readdirSync(join(import.meta.dir, "..", "..", "db", "migrations")).filter((f) => f.endsWith(".sql")).sort();
+  expect(MIGRATIONS.map(([name]) => name)).toEqual(files);
 });

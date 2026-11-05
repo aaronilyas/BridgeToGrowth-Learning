@@ -2,13 +2,19 @@ import { SQL } from "bun";
 import { databasePath } from "./paths.ts";
 import { runMigrations } from "../../scripts/migrate.ts";
 
-let inner: SQL | null = null;
-let boundPath = "";
+let boundPath = databasePath();
+let inner: SQL | null = new SQL(`sqlite://${boundPath}`);
+let migrated = false;
 
 // O(migrations)
+// INV: the connection object exists at import (module-level sql fragments need it); callers (startServer, the test kit) run activateDatabase before the first query. No top-level await: the desktop bundle cannot hoist it
 // INV: user_id stays on every per-user table and stores the single local profile id; dropping the column would rewrite every query, so the predicate remains and the id does not vary
 export async function activateDatabase(path: string = databasePath()): Promise<void> {
-  if (inner && boundPath === path) return;
+  if (inner && boundPath === path) {
+    if (!migrated) await runMigrations(inner);
+    migrated = true;
+    return;
+  }
   const prev = inner;
   const next = new SQL(`sqlite://${path}`);
   try {
@@ -19,10 +25,9 @@ export async function activateDatabase(path: string = databasePath()): Promise<v
   }
   inner = next;
   boundPath = path;
+  migrated = true;
   if (prev) await prev.close();
 }
-
-await activateDatabase();
 
 function live(): SQL {
   if (!inner) throw new Error("database is closed");

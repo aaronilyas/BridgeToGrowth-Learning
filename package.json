@@ -9,10 +9,11 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "migrate": "bun scripts/migrate.ts",
-    "desktop:dev": "cd desktop && bunx electrobun dev --watch",
-    "desktop:build": "cd desktop && bunx electrobun build --env=stable",
-    "package:linux": "bun run desktop:build && bun scripts/package-linux.ts",
-    "smoke": "bun scripts/smoke.ts"
+    "desktop:dev": "bun scripts/build.ts && cd desktop && bunx electrobun dev --watch",
+    "desktop:build": "bun scripts/build.ts && cd desktop && bunx electrobun build --env=stable",
+    "package:linux": "bun scripts/fetch-pyodide.ts && bun run desktop:build && bun scripts/package-linux.ts",
+    "smoke": "bun scripts/smoke.ts",
+    "make": "bun scripts/make-app.ts"
   },
   "dependencies": {
     "bun-plugin-tailwind": "0.1.2",

@@ -5,6 +5,7 @@ export const electrobunConfig = {
   build: {
     mainProcess: "bun",
     bun: { entrypoint: "main.ts" },
+    copy: { "../dist": "bun/server" },
     linux: { bundleCEF: false, defaultRenderer: "native", icon: "icon.png" },
   },
   runtime: { exitOnLastWindowClosed: true },

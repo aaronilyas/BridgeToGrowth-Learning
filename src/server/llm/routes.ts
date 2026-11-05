@@ -1,9 +1,11 @@
 import { z } from "zod";
 import type { UsageModel, UsageResponse } from "../../shared/providers.ts";
-import { ConnectionStatus, LoginState, ProviderId, ProviderKeyBody } from "../../shared/providers.ts";
+import { ConnectionStatus, LoginBody, OpenExternalBody, ProviderId, ProviderKeyBody } from "../../shared/providers.ts";
+import { fixedExternalUrl, openExternalUrl } from "../external.ts";
 import { HttpError, json, route } from "../http.ts";
 import { deleteProviderKey, keyHint, readProviderKey, storeProviderKey } from "../secrets.ts";
-import { beginCodexLogin, readCodexLogin } from "./providers/codex.ts";
+import { beginCodexLogin, cancelCodexLogin, pendingCodexLoginUrl, readCodexLogin, signOutCodex } from "./providers/codexLogin.ts";
+import { beginGrokLogin, cancelGrokLogin, pendingGrokLoginUrl, readGrokLogin, signOutGrok } from "./providers/grokLogin.ts";
 import { probeOpenRouterKey } from "./providers/openrouter.ts";
 import { forgetProviderModels, listConnectedModels, providerAdapter } from "./providers/registry.ts";
 import { probeSpaceXaiKey } from "./providers/spacexai.ts";
@@ -75,18 +77,66 @@ const deleteKey = route({}, async (c) => {
   return new Response(null, { status: 204 });
 });
 
-const startLogin = route({}, async (c) => {
-  const id = IdParams.safeParse(c.params);
-  if (!id.success || id.data.id !== "codex") throw new HttpError(404, "not_found");
-  beginCodexLogin();
-  const body: LoginState = readCodexLogin();
-  return json(body);
+type LoginProvider = "codex" | "spacexai";
+
+// O(1)
+function loginProviderOf(params: Record<string, string>): LoginProvider {
+  const id = IdParams.safeParse(params);
+  if (!id.success || id.data.id === "openrouter") throw new HttpError(404, "not_found");
+  return id.data.id;
+}
+
+// O(1)
+async function subscriptionConnected(id: LoginProvider): Promise<boolean> {
+  const status = await providerAdapter(id).status();
+  return id === "codex" ? status.connected : status.subscription === "ok";
+}
+
+// INV: a new login is refused while the subscription is signed in, because the CLI may discard the saved session as soon as a login starts
+const startLogin = route({ body: LoginBody, rate: { key: "cli-login", cap: 5, perMin: 5 } }, async (c) => {
+  const id = loginProviderOf(c.params);
+  if (await subscriptionConnected(id)) throw new HttpError(409, "bad_request");
+  if (id === "codex") beginCodexLogin(c.body.method);
+  else beginGrokLogin(c.body.method);
+  await forgetProviderModels(id);
+  return json(id === "codex" ? readCodexLogin() : readGrokLogin());
 });
 
 const pollLogin = route({}, async (c) => {
-  const id = IdParams.safeParse(c.params);
-  if (!id.success || id.data.id !== "codex") throw new HttpError(404, "not_found");
-  return json(readCodexLogin());
+  const id = loginProviderOf(c.params);
+  const state = id === "codex" ? readCodexLogin() : readGrokLogin();
+  if (state.state === "ok") await forgetProviderModels(id);
+  return json(state);
+});
+
+const cancelLogin = route({}, async (c) => {
+  const id = loginProviderOf(c.params);
+  if (id === "codex") cancelCodexLogin();
+  else cancelGrokLogin();
+  return new Response(null, { status: 204 });
+});
+
+const logout = route({}, async (c) => {
+  const id = loginProviderOf(c.params);
+  const ok = id === "codex" ? await signOutCodex() : await signOutGrok();
+  if (!ok) throw new HttpError(502, "provider_error");
+  await forgetProviderModels(id);
+  return new Response(null, { status: 204 });
+});
+
+// O(1)
+function externalUrlOf(target: z.infer<typeof OpenExternalBody>["target"]): string | null {
+  if (target === "codex_signin") return pendingCodexLoginUrl();
+  if (target === "spacexai_signin") return pendingGrokLoginUrl();
+  return fixedExternalUrl(target);
+}
+
+// SEC: the renderer names a target, never a URL; a sign-in target opens only the link the official CLI printed for the pending login
+const openExternal = route({ body: OpenExternalBody, rate: { key: "open-external", cap: 10, perMin: 10 } }, async (c) => {
+  const url = externalUrlOf(c.body.target);
+  if (url === null) throw new HttpError(404, "not_found");
+  if (!openExternalUrl(url)) throw new HttpError(502, "provider_error");
+  return new Response(null, { status: 204 });
 });
 
 export const llmRoutes = {
@@ -94,5 +144,7 @@ export const llmRoutes = {
   "/api/usage": { GET: usage },
   "/api/providers": { GET: providers },
   "/api/providers/:id/key": { PUT: putKey, DELETE: deleteKey },
-  "/api/providers/:id/login": { POST: startLogin, GET: pollLogin },
+  "/api/providers/:id/login": { POST: startLogin, GET: pollLogin, DELETE: cancelLogin },
+  "/api/providers/:id/logout": { POST: logout },
+  "/api/open-external": { POST: openExternal },
 };

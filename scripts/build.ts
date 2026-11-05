@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { copyPyodideAssets } from "./fetch-pyodide.ts";
 
 const OUT_DIR = "dist";
-const SERVER_ENTRY = join(OUT_DIR, "index.js");
-const CHUNK_IMPORT = /(\bfrom\s*"|\bimport\(\s*")\/(chunk-[a-z0-9]+\.js)"/g;
+const SERVER_ENTRIES = [join(OUT_DIR, "index.js"), join(OUT_DIR, "boot.js")];
+const CHUNK_IMPORT = /(\bfrom\s*"|\bimport\s*"|\bimport\(\s*")\/(chunk-[a-z0-9]+\.js)"/g;
 const KATEX_CSS = /^katex\/dist\/katex\.min\.css$/;
 const FONT_FACE = /@font-face\{[^}]*\}/g;
 const INLINED_FONT = "url(data:font";
@@ -32,7 +32,7 @@ async function findInlinedFonts(paths: string[]): Promise<string[]> {
 // INV: splitting shares runtime chunks between the server and the browser, and publicPath "/" makes every chunk import a filesystem-absolute path. Those imports are rewritten to "./" through the whole graph the server loads. A browser module at /chunk-*.js resolves "./" to the same URL, and the embedded asset manifest is left untouched.
 async function relinkServerChunks(): Promise<number> {
   const seen = new Set<string>();
-  const queue = [SERVER_ENTRY];
+  const queue = [...SERVER_ENTRIES];
   while (queue.length > 0) {
     const path = queue.pop();
     if (!path || seen.has(path)) continue;
@@ -48,9 +48,10 @@ async function relinkServerChunks(): Promise<number> {
 
 // O(bundle size)
 // INV: the Tailwind plugin from bunfig [serve.static] applies only to the dev server, so the production build passes it explicitly
+// INV: boot.js is the entry the desktop shell imports at runtime, so the app ships this exact bundle rather than a second build of the renderer
 // INV: splitting is required for the lazy page and markdown imports in src/web to become separate chunks; without it Bun inlines them into the entry
 async function buildApp(): Promise<number> {
-  const out = await Bun.build({ entrypoints: ["src/server/index.ts"], outdir: OUT_DIR, target: "bun", splitting: true, minify: true, publicPath: "/", sourcemap: "linked", plugins: [katexFontsAsFiles, tailwind], define: { "process.env.NODE_ENV": JSON.stringify("production") } });
+  const out = await Bun.build({ entrypoints: ["src/server/index.ts", "src/server/boot.ts"], outdir: OUT_DIR, target: "bun", splitting: true, minify: true, publicPath: "/", sourcemap: "linked", plugins: [katexFontsAsFiles, tailwind], define: { "process.env.NODE_ENV": JSON.stringify("production") } });
   for (const log of out.logs) console.error(log.message);
   if (!out.success) return 1;
   const inlined = await findInlinedFonts(out.outputs.map((o) => o.path));

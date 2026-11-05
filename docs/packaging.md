@@ -4,7 +4,9 @@ BridgeToGrowth Learning ships as an Electrobun app. The window loads the Bun ser
 
 ## Build
 
-From a checkout with Bun 1.4.4:
+One command builds for the current OS: `./make-app.sh` (macOS, Linux) or `make-app.cmd` (Windows). Both run `bun install --frozen-lockfile` and then `scripts/make-app.ts`, which checks the Bun version and Linux libraries, fetches the pinned Pyodide assets, runs the stable Electrobun build, wraps Linux x64 output as an AppImage and .deb, and copies the installer into `artifacts/<os>-<arch>/`. Electrobun cannot cross-compile, so each OS builds its own app.
+
+The individual steps, from a checkout with Bun 1.4.4:
 
 ```sh
 bun install --frozen-lockfile

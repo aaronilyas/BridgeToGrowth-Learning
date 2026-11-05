@@ -15,8 +15,8 @@ export function FirstRunPage(): JSX.Element {
       <Panel>
         <h2 className="text-lg font-semibold">How you pay</h2>
         <ul className="mt-3 grid gap-3 text-sm text-muted">
-          <li><span className="font-medium text-text">API key.</span> OpenRouter and SpaceXAI bill your own provider account for each use.</li>
-          <li><span className="font-medium text-text">Subscription.</span> Codex uses your ChatGPT plan limits. The official Codex CLI must be installed and signed in.</li>
+          <li><span className="font-medium text-text">API key.</span> OpenRouter, and SpaceXAI when connected with a key, bill your own provider account for each use.</li>
+          <li><span className="font-medium text-text">Subscription.</span> Codex uses your ChatGPT plan limits and SpaceXAI can use your Grok subscription. The official Codex or grok CLI must be installed and signed in.</li>
         </ul>
       </Panel>
       <ConnectionCards />
