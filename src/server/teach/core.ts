@@ -3,7 +3,7 @@ import { LessonPlan, QUESTION_CATEGORIES, type Citation, type QuestionCategory, 
 import { MATH_DELIM_RULE, wrapBareMath } from "../../shared/math.ts";
 import { SETTINGS_LIMITS, type Settings } from "../../shared/settings.ts";
 import { HttpError } from "../http.ts";
-import { toQuestionPublic, resolveModel, type QuestionRow } from "../learn/core.ts";
+import { toQuestionPublic, type QuestionRow } from "../learn/core.ts";
 import { wrapUserData, type Turn } from "../llm/core.ts";
 import { ATTACHMENT_RULES, MAX_NOTE_CHARS } from "../sources/core.ts";
 import { slugOf } from "../topics/core.ts";
@@ -197,12 +197,6 @@ function stripPrereqLine(md: string): string {
 // SEC: the stored content never holds the answer; the check is reduced to its public shape
 export function toStepPublic(idx: number, c: StepContent, q: QuestionRow): StepPublic {
   return { idx, title: c.title, explanationMd: idx === 0 ? stripPrereqLine(c.explanationMd) : c.explanationMd, keyIdea: c.keyIdea, example: c.example, check: toQuestionPublic(q), citations: c.citations };
-}
-
-// O(1)
-// INV: later steps and chat read settings.models; this string is only the lesson's recorded id
-export function pickLessonModel(stored: string, settings: Settings): string {
-  return stored.length > 0 ? stored : resolveModel(settings);
 }
 
 // O(k)

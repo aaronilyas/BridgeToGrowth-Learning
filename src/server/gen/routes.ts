@@ -2,7 +2,7 @@ import { GenerateRequest, PRACTICE_SET_SIZE, type QuestionPublic } from "../../s
 import { CODE_LIBRARIES } from "../../shared/code.ts";
 import { HttpError, json, route } from "../http.ts";
 import { sql } from "../db.ts";
-import { loadSettings, resolveModel, toQuestionPublic } from "../learn/core.ts";
+import { loadSettings, toQuestionPublic } from "../learn/core.ts";
 import { insertCards } from "../learn/sql.ts";
 import { retrievePapers } from "../lit/openalex.ts";
 import { chatJson } from "../llm/gateway.ts";
@@ -18,12 +18,11 @@ const generate = route({ body: GenerateRequest, rate: { key: "gen", cap: 10, per
   const settings = loadSettings(user);
   const style = c.body.styleId ? await findStyleProfile(uid, c.body.styleId) : null;
   if (c.body.styleId && !style) throw new HttpError(404, "not_found");
-  const model = resolveModel(settings, c.body.model);
   const papers = await retrievePapers(c.body.topic, 3);
   const codeLibs = CODE_LIBRARIES;
   const r = await chatJson({
     who: { uid },
-    model,
+    model: { pick: c.body.model },
     kind: "gen",
     system: buildGenPrompt(settings, papers, style, codeLibs),
     user: c.body.topic,

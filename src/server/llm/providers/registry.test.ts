@@ -28,7 +28,7 @@ function adapter(connected, stream) {
 async function failCode(connected, stream) {
   const restore = installProviderForTest("openrouter", adapter(connected, stream));
   try {
-    await chatJson({ who: { uid: LOCAL_USER_ID }, model: "unit", kind: "lesson", system: "s", user: "u", schema: Out, maxTokens: 20 });
+    await chatJson({ who: { uid: LOCAL_USER_ID }, model: { pick: "unit" }, kind: "lesson", system: "s", user: "u", schema: Out, maxTokens: 20 });
     return "resolved";
   } catch (error) {
     return error instanceof HttpError ? error.code : "other";

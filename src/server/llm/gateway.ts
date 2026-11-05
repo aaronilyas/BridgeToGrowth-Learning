@@ -5,14 +5,15 @@ import { HttpError } from "../http.ts";
 import { loadSettings } from "../learn/core.ts";
 import { localProfile } from "../profile.ts";
 import { buildMessages, completionBudget, parseJsonOutput, type ContentPart, type FilePart, type Turn } from "./core.ts";
-import { providerAdapter, resolveModelRef } from "./providers/registry.ts";
-import type { ChatMessage as ProviderMessage, ImagePart, LlmErrorCode, LlmRequest, ReasoningLevel } from "./providers/types.ts";
+import { listConnectedModels, providerAdapter, resolveModelRef } from "./providers/registry.ts";
+import type { ChatMessage as ProviderMessage, ImagePart, LlmErrorCode, LlmRequest, ModelRef, ReasoningLevel } from "./providers/types.ts";
 import { insertLlmUsage, openRouterMonthMicros } from "./sql.ts";
 import { JSON_TIMEOUT_MS, STREAM_TIMEOUT_MS } from "./timeouts.ts";
 
 export type Who = { uid: string };
 export type SystemModelKey = "grade" | "extract" | "insight";
-export type ModelChoice = string | { system: SystemModelKey };
+// INV: pick is a model id the user chose for this one request; recorded is the id stored on a lesson, used only when the task has no default
+export type ModelChoice = { system: SystemModelKey } | { pick?: string | undefined; recorded?: string };
 export type ModelTask = "lesson" | "chat" | "practice" | "system";
 export type JsonCall<T> = { who: Who; model: ModelChoice; kind: string; system: string; user: string; schema: z.ZodType<T>; maxTokens: number; files?: FilePart[]; signal?: AbortSignal };
 export type StreamCall = { who: Who; model: ModelChoice; kind: string; system: string; messages: Turn[]; maxTokens: number; signal: AbortSignal; onDone: (text: string) => Promise<{ citations?: Citation[] } | void> };
@@ -36,7 +37,7 @@ type UsageSeen = { inputTokens: number; outputTokens: number; costUsd: number | 
 // O(1)
 // INV: no reasoning setting exists, so every call uses the constant high effort
 function taskForKind(kind: string, model: ModelChoice): ModelTask {
-  if (typeof model !== "string") return "system";
+  if ("system" in model) return "system";
   if (kind === "chat") return "chat";
   if (kind === "gen") return "practice";
   return "lesson";
@@ -94,12 +95,28 @@ async function assertOpenRouterBudget(settings: Settings, provider: string): Pro
   if (spent >= BigInt(Math.floor(settings.budgetUsd * 1_000_000))) throw new HttpError(402, "quota_exhausted");
 }
 
+// O(n) in connected catalogs
+// INV: order is the request's pick, then the task default from settings, then the lesson's recorded id, then the first connected model
+// INV: an unknown or stale id is skipped, never an error; not_connected only when no provider is connected (or the saved default's provider is not)
+async function selectModel(choice: ModelChoice, task: ModelTask, settings: Settings): Promise<ModelRef> {
+  const saved = settings.models[task];
+  const pick = "pick" in choice ? choice.pick : undefined;
+  const recorded = "recorded" in choice ? choice.recorded : undefined;
+  if (pick === undefined && saved !== null) return resolveModelRef(saved);
+  const connected = await listConnectedModels();
+  const byId = (id: string | undefined): ModelRef | undefined => (id === undefined || id === "" ? undefined : connected.find((m) => m.id === id && m.provider === saved?.provider) ?? connected.find((m) => m.id === id));
+  const picked = byId(pick);
+  if (picked !== undefined) return picked;
+  if (saved !== null) return resolveModelRef(saved);
+  const fallback = byId(recorded) ?? connected[0];
+  if (fallback === undefined) throw new HttpError(409, "not_connected");
+  return fallback;
+}
+
 // O(n) in the prompt
-async function prepare(task: ModelTask, system: string, turns: Turn[], files: FilePart[], maxTokens: number, schema: Record<string, unknown> | null, signal: AbortSignal): Promise<{ req: LlmRequest; provider: string; modelId: string }> {
+async function prepare(choice: ModelChoice, task: ModelTask, system: string, turns: Turn[], files: FilePart[], maxTokens: number, schema: Record<string, unknown> | null, signal: AbortSignal): Promise<{ req: LlmRequest; provider: string; modelId: string }> {
   const settings = loadSettings(await localProfile());
-  const choice = settings.models[task];
-  if (choice === null) throw new HttpError(409, "not_connected");
-  const model = await resolveModelRef(choice);
+  const model = await selectModel(choice, task, settings);
   await assertOpenRouterBudget(settings, model.provider);
   const built = providerMessages(buildMessages(system, turns, files));
   const native = schema !== null && model.structured === "native";
@@ -141,18 +158,18 @@ async function record(kind: string, provider: string, model: string, usage: Usag
 }
 
 // O(n) in the prompt and response
-// INV: one retry after bad JSON, then bad_output; other provider errors are not retried
-export async function chatJson<T>(o: JsonCall<T>): Promise<{ data: T; costMicros: bigint }> {
+// INV: one retry after bad JSON, then bad_output; other provider errors are not retried. JSON_TIMEOUT_MS bounds both attempts together
+export async function chatJson<T>(o: JsonCall<T>): Promise<{ data: T; costMicros: bigint; modelId: string }> {
   const schema = z.toJSONSchema(o.schema) as unknown as Record<string, unknown>;
   const timeout = AbortSignal.timeout(JSON_TIMEOUT_MS);
-  const prepared = await prepare(taskForKind(o.kind, o.model), o.system, [{ role: "user", content: o.user }], o.files ?? [], o.maxTokens, schema, o.signal ? AbortSignal.any([o.signal, timeout]) : timeout);
+  const prepared = await prepare(o.model, taskForKind(o.kind, o.model), o.system, [{ role: "user", content: o.user }], o.files ?? [], o.maxTokens, schema, o.signal ? AbortSignal.any([o.signal, timeout]) : timeout);
   let total = 0n;
   for (let attempt = 0; attempt < 2; attempt++) {
     const result = await collect(prepared.req);
     total += await record(o.kind, prepared.provider, prepared.modelId, result.usage);
     if (result.error !== null && result.error !== "bad_output") throw mapLlmError(result.error);
     const data = result.error === null ? parseJsonOutput(result.text, o.schema) : null;
-    if (data !== null) return { data, costMicros: total };
+    if (data !== null) return { data, costMicros: total, modelId: prepared.modelId };
   }
   throw mapLlmError("bad_output");
 }
@@ -166,7 +183,7 @@ function frameEvent(event: { t: "d"; v: string } | { t: "end"; citations?: Citat
 // INV: a missing or disconnected model throws before the stream starts, so the route can answer with a status
 export async function chatStream(o: StreamCall): Promise<ReadableStream<Uint8Array>> {
   const upstream = new AbortController();
-  const prepared = await prepare(taskForKind(o.kind, o.model), o.system, o.messages, [], o.maxTokens, null, AbortSignal.any([upstream.signal, o.signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)]));
+  const prepared = await prepare(o.model, taskForKind(o.kind, o.model), o.system, o.messages, [], o.maxTokens, null, AbortSignal.any([upstream.signal, o.signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)]));
   let closed = false;
   const send = (ctrl: ReadableStreamDefaultController<Uint8Array>, chunk: Uint8Array): void => {
     if (closed) return;

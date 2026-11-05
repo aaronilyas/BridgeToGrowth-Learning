@@ -91,13 +91,6 @@ export function loadSettings(user: { settings: Record<string, unknown> }): Setti
 }
 
 // O(1)
-// INV: the id is stored on the lesson row; provider calls use settings.models for the task
-export function resolveModel(settings: Settings, requested?: string): string {
-  if (requested !== undefined && requested.length > 0) return requested;
-  return settings.models.lesson?.id ?? settings.model ?? "local";
-}
-
-// O(1)
 // INV: the model answer and rubric stay stored. A code question also includes its hidden test source so the learner's machine can run it.
 export function toQuestionPublic(row: QuestionRow): QuestionPublic {
   const choices = row.choices === null ? null : StoredChoices.parse(row.choices);
