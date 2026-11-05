@@ -16,6 +16,8 @@ bun run package:linux    # stable Linux build, then AppImage and .deb
 bun run smoke            # headless /api/health: 200 with the token, 401 without
 ```
 
+`desktop:dev` runs `scripts/desktop-dev.ts`. It builds `dist/`, starts `electrobun dev`, and on any change in `src/` or `desktop/*.ts` it rebuilds and restarts the window. It does not use `electrobun dev --watch`: in Hutch 0.28.2 that watcher rebuilds in an endless loop after the first change it sees, so the window keeps closing and reopening, and `watchIgnore` does not stop it.
+
 Linux builds need GTK 3 and WebKitGTK 4.1 headers (`libgtk-3-dev`, `libwebkit2gtk-4.1-dev`). The icon is `desktop/icon.svg`, the same mark as the in-app logo, plus `desktop/icon.png` at 256×256.
 
 `package:linux` downloads appimagetool 1.9.1, checks SHA-256 `ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0`, and caches it under `scripts/cache/appimagetool/` (gitignored). It runs the tool with `APPIMAGE_EXTRACT_AND_RUN=1`, so FUSE is not required to build. A `.deb` is built with `dpkg-deb` when that binary is on `PATH`. Otherwise the script writes an `ar` archive of `debian-binary`, `control.tar.gz`, and `data.tar.gz` itself.
