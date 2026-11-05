@@ -81,6 +81,7 @@ async function makeApp(): Promise<void> {
   checkBunVersion();
   await checkLinuxLibraries();
   await runStep("Fetching pinned Pyodide assets", [process.execPath, join("scripts", "fetch-pyodide.ts")]);
+  await runStep("Building the backend and interface", [process.execPath, join("scripts", "build.ts")]);
   await rm(join(ROOT, "desktop", "artifacts"), { recursive: true, force: true });
   await runStep("Building the desktop app", [process.execPath, "x", "electrobun", "build", "--env=stable"], join(ROOT, "desktop"));
   const outputs = await collectElectrobunArtifacts();

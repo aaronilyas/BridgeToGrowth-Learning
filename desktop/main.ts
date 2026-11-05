@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
+import { join } from "node:path";
 import Electrobun, { BrowserWindow, Utils } from "electrobun/main";
-import { startServer } from "../src/server/boot.ts";
-import { setExternalOpener } from "../src/server/external.ts";
+
+type Boot = typeof import("../src/server/boot.ts");
 
 // O(1)
 // SEC: the preload value is inline JavaScript, never a URL, and the token stays out of logs
@@ -18,9 +19,19 @@ async function stopDesktopServer(stop: () => Promise<void>, state: { stopping: b
   await stop();
 }
 
-setExternalOpener((url) => Utils.openExternal(url));
+// O(1)
+// INV: the backend and renderer come from scripts/build.ts (copied to server/), not from this bundle, so the app runs the same split, Tailwind-processed bundle as production
+// INV: Bun resolves a bundled HTML import's files against the cwd, and the launcher starts in bin/, so the cwd moves to the server bundle first
+async function loadBoot(): Promise<Boot> {
+  const dir = join(import.meta.dir, "server");
+  process.chdir(dir);
+  const mod: Boot = await import(join(dir, "boot.js"));
+  return mod;
+}
+
+const { startServer } = await loadBoot();
 const token = randomBytes(32).toString("hex");
-const server = await startServer({ token });
+const server = await startServer({ token, openExternal: (url) => Utils.openExternal(url) });
 const appWindow = new BrowserWindow({
   title: "BridgeToGrowth Learning",
   url: server.url,

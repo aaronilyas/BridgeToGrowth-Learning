@@ -5,7 +5,7 @@ export const electrobunConfig = {
   build: {
     mainProcess: "bun",
     bun: { entrypoint: "main.ts" },
-    copy: { "../.cache/pyodide": "bun/pyodide" },
+    copy: { "../dist": "bun/server" },
     linux: { bundleCEF: false, defaultRenderer: "native", icon: "icon.png" },
   },
   runtime: { exitOnLastWindowClosed: true },

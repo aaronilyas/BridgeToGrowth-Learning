@@ -57,11 +57,10 @@ export async function migrateDatabase(path: string = databasePath()): Promise<vo
   }
 }
 
+// INV: no top-level await, so bundling the server (which imports this module) stays synchronous
 if (import.meta.main) {
-  try {
-    await migrateDatabase(process.argv[2]);
-  } catch (error) {
+  migrateDatabase(process.argv[2]).catch((error: unknown) => {
     console.error(`migration failed: ${error instanceof Error ? error.message : "unknown"}`);
     process.exitCode = 1;
-  }
+  });
 }
