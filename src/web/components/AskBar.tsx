@@ -53,6 +53,7 @@ export function AskBar(): JSX.Element {
         const r = await api("/api/lessons", LessonCreated, { method: "POST", body: lessonBody(topic, chosen, attached) });
         finishAskJob(id);
         setAttached({ files: [], urls: [] });
+        window.dispatchEvent(new Event("btg:lessons-changed"));
         navigate(`/lesson/${r.lessonId}`);
       } else {
         await api("/api/questions/generate", GenerateResponse, { method: "POST", body: { topic, ...(chosen ? { model: chosen } : {}) } });
@@ -64,41 +65,55 @@ export function AskBar(): JSX.Element {
     }
   };
 
+  const submit = (mode: "teach" | "practice"): void => {
+    void run(mode);
+  };
+  const disabled = topic.length < 2 || busy !== null;
   return (
     <form
-      className="flex flex-col gap-3 rounded-2xl border border-border bg-panel p-4"
+      className="flex flex-col gap-3"
       onSubmit={(e) => {
         e.preventDefault();
-        void run("teach");
+        submit("teach");
       }}
     >
-      <div className="flex flex-wrap items-center gap-3">
-        <input
-          className="min-w-64 flex-1 rounded-xl border border-border bg-panel-2 px-4 py-3 text-base outline-none focus:border-accent"
-          placeholder="What do you want to learn?"
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-panel p-3 focus-within:border-accent">
+        <textarea
+          className="scroll-quiet max-h-60 min-h-20 w-full resize-none bg-transparent px-1 text-base text-text outline-none placeholder:text-muted"
+          placeholder="Describe a topic, a question, or a paper…"
           aria-label="What do you want to learn?"
           maxLength={2000}
+          rows={3}
           value={text}
           disabled={busy !== null}
           onChange={(e) => setText(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              if (!disabled) submit("teach");
+            }
+          }}
         />
-        <select className="rounded-xl border border-border bg-panel-2 px-3 py-3 text-sm outline-none focus:border-accent" aria-label="Model" value={chosen} disabled={busy !== null} onChange={(e) => setModel(e.currentTarget.value)}>
-          {models.map((m) => (
-            <option key={`${m.provider}:${m.id}`} value={m.id}>
-              {m.label}
-            </option>
-          ))}
-        </select>
-        <Button type="submit" busy={busy === "teach"} disabled={topic.length < 2 || busy !== null}>
-          Teach
-        </Button>
-        <Button variant="soft" busy={busy === "practice"} disabled={topic.length < 2 || busy !== null} onClick={() => void run("practice")}>
-          Practice
-        </Button>
+        <AttachSources value={attached} onChange={setAttached} disabled={busy !== null} />
+        <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+          <select className="max-w-48 truncate rounded-full border border-border bg-bg px-2.5 py-1 font-mono text-xs text-muted outline-none focus:border-accent" aria-label="Model" value={chosen} disabled={busy !== null} onChange={(e) => setModel(e.currentTarget.value)}>
+            {models.map((m) => (
+              <option key={`${m.provider}:${m.id}`} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+          <span className="ml-auto" />
+          <Button variant="soft" busy={busy === "practice"} disabled={disabled} onClick={() => submit("practice")}>
+            Practice set
+          </Button>
+          <Button type="submit" busy={busy === "teach"} disabled={disabled}>
+            Start
+          </Button>
+        </div>
       </div>
-      <AttachSources value={attached} onChange={setAttached} disabled={busy !== null} />
-      {busy && <p className="text-sm text-muted">{busy === "teach" ? `${attached.files.length + attached.urls.length > 0 ? "Reading your attachments, finding papers" : "Finding papers"} and planning "${job?.text ?? text}"…` : "Writing practice questions…"}</p>}
-      <ErrorBanner error={error} onRetry={() => void run(job?.mode ?? "teach")} />
+      {busy && <p className="font-mono text-xs text-muted">{busy === "teach" ? `${attached.files.length + attached.urls.length > 0 ? "Reading your attachments, finding papers" : "Finding papers"} and planning "${job?.text ?? text}"…` : "Writing practice questions…"}</p>}
+      <ErrorBanner error={error} onRetry={() => submit(job?.mode ?? "teach")} />
     </form>
   );
 }

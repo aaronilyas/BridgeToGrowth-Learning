@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beginAskJob, failAskJob, finishAskJob, generatingLessonPrompt, getAskJob, resetAskJob, subscribeAskJob } from "./askJob.ts";
-import { GeneratingLesson } from "./pages/Teach.tsx";
+import { GeneratingLesson } from "./components/Sidebar.tsx";
 
 beforeEach(() => {
   resetAskJob();
@@ -51,7 +51,7 @@ test("the teach page lists the lesson still being planned", () => {
   expect(requested).toBe("separable differential equations");
   const html = renderToStaticMarkup(createElement(GeneratingLesson, { prompt: requested ?? "" }));
   expect(html).toContain("separable differential equations");
-  expect(html).toContain("Finding papers and planning your lesson…");
+  expect(html).toContain("Planning…");
   expect(html).toContain('aria-busy="true"');
   if (id === null) throw new Error("expected a job id");
   finishAskJob(id);

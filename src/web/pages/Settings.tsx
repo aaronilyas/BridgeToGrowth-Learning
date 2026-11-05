@@ -69,12 +69,12 @@ export function SettingsPage(): JSX.Element {
   return (
     <div className="mx-auto grid max-w-3xl gap-5">
       <header>
-        <h1 className="text-2xl font-semibold">Settings</h1>
+        <h1 className="display text-2xl">Settings</h1>
         <p className="mt-1 text-sm text-muted">Connect a provider, pick default models, and tune learning.</p>
       </header>
       <section className="grid gap-3">
         <div>
-          <h2 className="text-lg font-semibold">AI connections</h2>
+          <h2 className="display text-lg">AI connections</h2>
           <p className="mt-1 text-sm text-muted">A key is checked when you save it, then stored in the system keychain. It is not shown again.</p>
         </div>
         <ConnectionCards onChanged={loadModels} />

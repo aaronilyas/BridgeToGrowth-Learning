@@ -43,16 +43,16 @@ export function AttachSources({ value, onChange, disabled }: { value: Attachment
     if (!value.urls.includes(url)) onChange({ ...value, urls: [...value.urls, url] });
   };
 
-  const chip = "flex max-w-full items-center gap-2 rounded-full border border-border bg-panel-2 px-3 py-1 text-xs";
+  const chip = "flex max-w-full items-center gap-2 rounded-full border border-border bg-bg px-3 py-1 text-xs";
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" disabled={disabled || value.files.length >= MAX_ATTACH_FILES} onClick={() => input.current?.click()} className="rounded-xl border border-border px-3 py-2 text-sm text-muted transition hover:text-text disabled:opacity-50">
-          Attach PDF
+        <button type="button" disabled={disabled || value.files.length >= MAX_ATTACH_FILES} onClick={() => input.current?.click()} className="rounded-lg border border-border px-2.5 py-1 font-mono text-xs uppercase tracking-[0.08em] text-muted transition hover:text-text disabled:opacity-50">
+          + PDF
         </button>
         <input ref={input} type="file" multiple accept=".pdf,application/pdf" className="sr-only" aria-label="Attach PDFs" onChange={(e) => addFiles(e.currentTarget.files)} />
         <input
-          className="min-w-48 flex-1 rounded-xl border border-border bg-panel-2 px-3 py-2 text-sm outline-none focus:border-accent"
+          className="min-w-40 flex-1 rounded-lg border border-border bg-bg px-2.5 py-1 text-xs outline-none placeholder:text-muted focus:border-accent"
           placeholder="Add a link for context (https://…)"
           aria-label="Add a link for context"
           type="url"
@@ -67,8 +67,8 @@ export function AttachSources({ value, onChange, disabled }: { value: Attachment
             }
           }}
         />
-        <button type="button" disabled={disabled || link.trim() === ""} onClick={addLink} className="rounded-xl border border-border px-3 py-2 text-sm text-muted transition hover:text-text disabled:opacity-50">
-          Add link
+        <button type="button" disabled={disabled || link.trim() === ""} onClick={addLink} className="rounded-lg border border-border px-2.5 py-1 font-mono text-xs uppercase tracking-[0.08em] text-muted transition hover:text-text disabled:opacity-50">
+          Add
         </button>
       </div>
       {(value.files.length > 0 || value.urls.length > 0) && (

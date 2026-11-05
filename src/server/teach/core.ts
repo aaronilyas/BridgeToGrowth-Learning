@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { LessonPlan, QUESTION_CATEGORIES, type Citation, type QuestionCategory, type StepPublic } from "../../shared/api.ts";
+import { LessonPlan, QUESTION_CATEGORIES, type Citation, type LessonStatus, type QuestionCategory, type StepAttempt, type StepPublic } from "../../shared/api.ts";
 import { MATH_DELIM_RULE, wrapBareMath } from "../../shared/math.ts";
 import { SETTINGS_LIMITS, type Settings } from "../../shared/settings.ts";
 import { HttpError } from "../http.ts";
-import { toQuestionPublic, resolveModel, type QuestionRow } from "../learn/core.ts";
+import { CORRECT_AT, StoredAnswer, StoredChoices, toQuestionPublic, resolveModel, type QuestionRow } from "../learn/core.ts";
 import { wrapUserData, type Turn } from "../llm/core.ts";
 import { ATTACHMENT_RULES, MAX_NOTE_CHARS } from "../sources/core.ts";
 import { slugOf } from "../topics/core.ts";
@@ -193,10 +193,70 @@ function stripPrereqLine(md: string): string {
   return md.replace(/^\s*\*\*Prerequisites:\*\*[^\n]*?\.(?:\s+|$)/, "");
 }
 
+export type LessonActivity = { planned: number; opened: number; plannedOpened: number; plannedAttempted: number; newestAttempted: boolean | null };
+
+// O(1)
+// INV: zero opened steps is active; waiting means the newest opened step has no attempt; done means every planned step is opened and attempted
+export function lessonStatus(a: LessonActivity): LessonStatus {
+  if (a.opened === 0) return "active";
+  if (a.newestAttempted !== true) return "waiting";
+  if (a.planned > 0 && a.plannedOpened >= a.planned && a.plannedAttempted >= a.planned) return "done";
+  return "active";
+}
+
+// O(1)
+export function toPublicAttempt(a: { score: number; confidence: number | null; dontKnow: boolean } | null): StepAttempt | null {
+  if (a === null) return null;
+  return { score: a.score, correct: a.score >= CORRECT_AT, confidence: a.confidence, dontKnow: a.dontKnow };
+}
+
 // O(1)
 // SEC: the stored content never holds the answer; the check is reduced to its public shape
-export function toStepPublic(idx: number, c: StepContent, q: QuestionRow): StepPublic {
-  return { idx, title: c.title, explanationMd: idx === 0 ? stripPrereqLine(c.explanationMd) : c.explanationMd, keyIdea: c.keyIdea, example: c.example, check: toQuestionPublic(q), citations: c.citations };
+export function toStepPublic(idx: number, c: StepContent, q: QuestionRow, last: { score: number; confidence: number | null; dontKnow: boolean } | null): StepPublic {
+  return { idx, title: c.title, explanationMd: idx === 0 ? stripPrereqLine(c.explanationMd) : c.explanationMd, keyIdea: c.keyIdea, example: c.example, check: toQuestionPublic(q), citations: c.citations, lastAttempt: toPublicAttempt(last) };
+}
+
+// O(1)
+// SEC: the tutor prompt receives this only after an attempt; the rubric stays out
+export function revealAnswer(q: QuestionRow): string {
+  const stored = StoredAnswer.parse(q.answer);
+  if (q.kind === "mcq" && "index" in stored) {
+    const choices = q.choices === null ? null : StoredChoices.parse(q.choices);
+    const text = choices?.[stored.index];
+    return text !== undefined ? `${stored.index}. ${text}` : String(stored.index);
+  }
+  if ("model" in stored) return stored.model;
+  return "";
+}
+
+export type TutorCheck = {
+  idx: number;
+  title: string;
+  keyIdea: string;
+  stem: string;
+  choices: string[] | null;
+  attempt: { score: number; confidence: number | null; dontKnow: boolean; response: string | null } | null;
+  answer: string | null;
+  explanation: string | null;
+};
+
+// O(n) in the check text
+// SEC: the learner's response is wrapped as data; the answer and explanation are omitted unless an attempt exists
+export function tutorCheckBlock(step: TutorCheck): string {
+  const lines = [`The learner is looking at step ${step.idx + 1}: "${step.title}".`, `Key idea: ${step.keyIdea}`, `Check: ${step.stem}`];
+  if (step.choices !== null && step.choices.length > 0) lines.push(`Choices: ${step.choices.map((c, i) => `${i}. ${c}`).join("; ")}`);
+  const a = step.attempt;
+  if (a === null) {
+    lines.push("The learner has not attempted this check.");
+    lines.push("Never reveal or confirm the answer to this check. Guide with questions instead.");
+    return lines.join("\n");
+  }
+  const conf = a.confidence === null ? "unrecorded" : String(a.confidence);
+  lines.push(`Latest attempt: score ${a.score}, ${a.score >= CORRECT_AT ? "correct" : "incorrect"}, confidence ${conf}, dontKnow ${a.dontKnow ? "true" : "false"}.`);
+  if (a.response !== null && a.response !== "") lines.push(`Their response:\n${wrapUserData(a.response)}`);
+  if (step.answer) lines.push(`Correct answer: ${step.answer}`);
+  if (step.explanation) lines.push(`Explanation: ${step.explanation}`);
+  return lines.join("\n");
 }
 
 // O(1)
@@ -211,9 +271,10 @@ export function allCitations(papers: Paper[]): Citation[] {
 }
 
 // O(n) in plan size
-export function buildTutorSystem(settings: Settings, plan: LessonPlan, papers: Paper[]): string {
+export function buildTutorSystem(settings: Settings, plan: LessonPlan, papers: Paper[], checkBlock: string | null = null): string {
   const rules = fill(TUTOR_RULES, { level: settings.level, levelRule: LEVEL_RULES[settings.level], maxWords: String(settings.bite.maxWordsPerStep) });
   const parts = [rules, GROUNDING_RULES, describePlan(plan)];
+  if (checkBlock) parts.push(checkBlock);
   if (papers.length > 0) parts.push(buildSourcesBlock(papers));
   return parts.join("\n");
 }

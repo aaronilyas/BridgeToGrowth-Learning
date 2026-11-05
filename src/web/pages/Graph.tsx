@@ -19,7 +19,7 @@ function Overview({ graph }: { graph: GraphResponse }): JSX.Element {
   ];
   return (
     <Panel as="aside" className="flex w-52 shrink-0 flex-col gap-1 self-start">
-      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">Overview</h2>
+      <h2 className="label mb-2">Overview</h2>
       {rows.map(([k, v]) => (
         <div key={k} className="border-t border-border py-3 first:border-t-0">
           <p className="text-sm text-muted">{k}</p>
@@ -68,7 +68,7 @@ export function GraphPage(): JSX.Element {
   if (graph.nodes.length === 0) {
     return (
       <Panel className="mx-auto mt-16 flex max-w-3xl flex-col gap-4">
-        <h1 className="text-3xl font-semibold">Learn your first topic</h1>
+        <h1 className="display text-3xl">Learn your first topic</h1>
         <p className="text-muted">Your knowledge graph grows with every lesson. Ask for a topic to plant the first node.</p>
         <AskBar />
       </Panel>

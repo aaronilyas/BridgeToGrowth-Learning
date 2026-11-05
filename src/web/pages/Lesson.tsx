@@ -1,158 +1,239 @@
-import { useCallback, useEffect, useRef, useState, type JSX } from "react";
-import { useLocation, useParams } from "wouter";
-import { LessonDetail, StepPublic } from "../../shared/api.ts";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
+import { Link, useLocation, useParams } from "wouter";
+import { LessonDetail, StepPublic, type AttemptResponse } from "../../shared/api.ts";
 import { api } from "../api.ts";
-import { ChatPanel } from "../components/ChatPanel.tsx";
 import { ErrorBanner } from "../components/ErrorBanner.tsx";
-import { Panel } from "../components/Panel.tsx";
 import { Spinner } from "../components/Spinner.tsx";
-import { Button } from "../components/Button.tsx";
-import { DeleteLessonButton } from "../components/DeleteLessonButton.tsx";
 import { StepSkeleton, StepView } from "../components/StepView.tsx";
+import { lessonsChanged, useLessonChat } from "../lesson/chatStore.ts";
+import { Composer, type Seed } from "../lesson/Composer.tsx";
+import { Messages } from "../lesson/Messages.tsx";
+import { PlanPanel } from "../lesson/PlanPanel.tsx";
+import { attemptMessage, groupRows, stepStatus, type SentAttempt } from "../lesson/transcript.ts";
 
-type StepStatus = "done" | "current" | "todo";
+const PLAN_KEY = "btg:lesson-plan-open";
+const NEAR_BOTTOM_PX = 96;
 
-// O(n) in steps
-// INV: steps before the furthest opened one count as done; the open step is answered-or-current
+// O(1)
+function readPlanOpen(): boolean {
+  try {
+    return localStorage.getItem(PLAN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+// O(1)
+function StatusBadge({ teaching }: { teaching: boolean }): JSX.Element {
+  return (
+    <span role="status" className="label flex items-center gap-2 text-text">
+      <span aria-hidden="true" className={`inline-block size-3 rounded-full border-[1.5px] ${teaching ? "animate-spin border-muted border-t-transparent motion-reduce:animate-none" : "border-accent"}`} />
+      {teaching ? "Teaching" : "Your turn"}
+    </span>
+  );
+}
+
+// O(s + m) per render in opened steps and chat rows; steps are memoised, so a streamed delta re-renders only the streaming row
+// INV: steps open strictly in order; the newest opened step anchors composer turns
+// INV: a check result immediately sends one chat turn anchored to that step (the Socratic reply); if a turn is already streaming the reply is left in the composer
 export function LessonPage(): JSX.Element {
   const { id = "" } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
   const [lesson, setLesson] = useState<LessonDetail | null>(null);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [steps, setSteps] = useState<Record<number, StepPublic>>({});
-  const [current, setCurrent] = useState(0);
-  const [answered, setAnswered] = useState<ReadonlySet<number>>(new Set());
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<unknown>(null);
+  const [generating, setGenerating] = useState<number | null>(null);
+  const [stepError, setStepError] = useState<{ idx: number; error: unknown } | null>(null);
+  const [planOpen, setPlanOpen] = useState(readPlanOpen);
+  const [seed, setSeed] = useState<Seed | null>(null);
+  const chat = useLessonChat(id);
+  const { send } = chat;
   const inflight = useRef<number | null>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  const stick = useRef(true);
+  const jumpTo = useRef<number | null>(null);
 
+  // O(1) plus one request
   const openStep = useCallback(async (idx: number): Promise<void> => {
     if (inflight.current === idx) return;
     inflight.current = idx;
-    setCurrent(idx);
-    setError(null);
-    setLoading(true);
+    setGenerating(idx);
+    setStepError(null);
     try {
       const s = await api(`/api/lessons/${id}/steps/${idx}`, StepPublic, { method: "POST" });
+      if (inflight.current !== idx) return;
+      jumpTo.current = idx;
       setSteps((m) => ({ ...m, [idx]: s }));
+      lessonsChanged();
     } catch (e) {
-      setError(e);
+      if (inflight.current === idx) setStepError({ idx, error: e });
     } finally {
-      if (inflight.current === idx) inflight.current = null;
-      setLoading(false);
+      if (inflight.current === idx) {
+        inflight.current = null;
+        setGenerating(null);
+      }
     }
   }, [id]);
 
   useEffect(() => {
     let live = true;
+    inflight.current = null;
+    stick.current = true;
     setLesson(null);
+    setLoadError(null);
     setSteps({});
-    setAnswered(new Set());
-    setError(null);
+    setGenerating(null);
+    setStepError(null);
     api(`/api/lessons/${id}`, LessonDetail).then(
       (l) => {
         if (!live) return;
         setLesson(l);
         setSteps(Object.fromEntries(l.steps.map((s) => [s.idx, s])));
-        const last = l.steps.length;
-        if (last === 0) void openStep(0);
-        else setCurrent(last - 1);
+        if (l.steps.length === 0 && l.plan.steps.length > 0) void openStep(0);
       },
-      (e: unknown) => live && setError(e),
+      (e: unknown) => live && setLoadError(e),
     );
     return () => {
       live = false;
     };
   }, [id, openStep]);
 
+  // A failed turn comes back to the composer so it can be edited or resent.
+  useEffect(() => {
+    if (chat.error && chat.retry) setSeed({ text: chat.retry.text, n: Date.now() });
+  }, [chat.error, chat.retry]);
+
+  // O(1)
+  const onResult = useCallback((idx: number, r: AttemptResponse, sent: SentAttempt): void => {
+    setSteps((m) => {
+      const s = m[idx];
+      return s ? { ...m, [idx]: { ...s, lastAttempt: { score: r.score, correct: r.correct, confidence: sent.confidence, dontKnow: sent.dontKnow } } } : m;
+    });
+    lessonsChanged();
+    const text = attemptMessage(sent);
+    stick.current = true;
+    if (!send({ text, stepIdx: idx })) setSeed({ text, n: Date.now() });
+  }, [send]);
+
+  // INV: follow new content only while the reader is already near the bottom; a newly opened step scrolls to its start instead
+  const loaded = lesson !== null;
+  useEffect(() => {
+    const el = scroller.current;
+    const inner = content.current;
+    if (!loaded || !el || !inner) return;
+    const onScroll = (): void => {
+      stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+    };
+    const ro = new ResizeObserver(() => {
+      const j = jumpTo.current;
+      const target = j === null ? null : document.getElementById(`step-${j}`);
+      if (target) {
+        jumpTo.current = null;
+        stick.current = false;
+        target.scrollIntoView({ block: "start" });
+      } else if (stick.current) el.scrollTop = el.scrollHeight;
+    });
+    el.addEventListener("scroll", onScroll, { passive: true });
+    ro.observe(inner);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+    };
+  }, [loaded]);
+
+  const newest = useMemo(() => Math.max(-1, ...Object.keys(steps).map(Number)), [steps]);
+  const groups = useMemo(() => groupRows(chat.rows, newest), [chat.rows, newest]);
+
   if (!lesson) {
-    return <Panel>{error ? <ErrorBanner error={error} /> : <Spinner label="Loading lesson" />}</Panel>;
+    return <div className="grid flex-1 place-items-center">{loadError ? <ErrorBanner error={loadError} /> : <Spinner label="Loading lesson" />}</div>;
   }
 
   const total = lesson.plan.steps.length;
-  const opened = Math.max(-1, ...Object.keys(steps).map(Number));
-  const statusOf = (i: number): StepStatus => (i === current ? "current" : answered.has(i) || i < opened ? "done" : "todo");
-  const doneCount = lesson.plan.steps.filter((_, i) => statusOf(i) === "done" || (i === current && answered.has(i))).length;
-  const pct = total === 0 ? 0 : Math.round((doneCount / total) * 100);
-  const step = steps[current];
-  const planned = lesson.plan.steps[current];
+  const answered = new Set(Object.values(steps).filter((s) => s.lastAttempt !== null).map((s) => s.idx));
+  const statusOf = (i: number) => stepStatus(i, newest, answered);
+  const teaching = generating !== null || chat.streaming;
+  const canContinue = newest >= 0 && answered.has(newest) && !teaching;
+  const togglePlan = (): void => {
+    const next = !planOpen;
+    setPlanOpen(next);
+    try {
+      localStorage.setItem(PLAN_KEY, next ? "1" : "0");
+    } catch {
+      // storage unavailable: the toggle still works for this visit
+    }
+  };
 
   return (
-    <div className="grid grid-cols-1 gap-3 xl:grid-cols-[14rem_minmax(0,1fr)_21rem]">
-      <Panel as="aside" className="h-fit">
-        <h2 className="mb-3 text-sm font-medium text-muted">Today's Session</h2>
-        <ol className="flex flex-col gap-1">
-          {lesson.plan.steps.map((s, i) => {
-            const st = statusOf(i);
-            const label = st === "done" ? "Done" : st === "current" ? "In progress" : "Not started";
-            return (
-              <li key={`${i}-${s.title}`}>
-                <button
-                  type="button"
-                  disabled={i > Object.keys(steps).length}
-                  aria-current={st === "current" ? "step" : undefined}
-                  onClick={() => void openStep(i)}
-                  className={`flex w-full flex-col rounded-xl border px-3 py-2.5 text-left text-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${st === "current" ? "border-accent/40 bg-accent-soft" : "border-transparent hover:bg-panel-2"}`}
-                >
-                  <span className="font-medium">
-                    {i + 1}. {s.title}
-                  </span>
-                  <span className={`text-xs ${st === "done" ? "text-accent" : "text-muted"}`}>{label}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-      </Panel>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <header className="flex items-center gap-4 border-b border-border px-8 py-4">
+        <h1 className="display min-w-0 flex-1 truncate text-3xl">{lesson.title}</h1>
+        <button
+          type="button"
+          aria-pressed={planOpen}
+          aria-controls="lesson-plan"
+          onClick={togglePlan}
+          className={`label rounded-full border px-3 py-1 transition hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${planOpen ? "border-muted text-text" : "border-border"}`}
+        >
+          Plan
+        </button>
+        <StatusBadge teaching={teaching} />
+      </header>
 
-      <Panel className="min-w-0">
-        <div className="mb-4 flex justify-end">
-          <DeleteLessonButton lessonId={lesson.id} lessonTitle={lesson.title} onDeleted={() => navigate("/teach")} />
-        </div>
-        {step && planned ? (
-          <>
-            <StepView key={step.idx} step={step} total={total} summary={planned.summary} onResult={() => setAnswered((a) => new Set(a).add(step.idx))} />
-            {answered.has(step.idx) && (
-              <div className="mt-5 flex justify-end">
-                {current + 1 < total ? (
-                  <Button onClick={() => void openStep(current + 1)}>Next step →</Button>
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div ref={scroller} className="scroll-quiet min-h-0 flex-1 overflow-y-auto">
+            <div ref={content} aria-live="polite" aria-relevant="additions" aria-busy={teaching} aria-label="Lesson transcript" className="mx-auto flex max-w-[52rem] flex-col gap-10 px-8 py-8 leading-relaxed">
+              {Array.from({ length: newest + 1 }, (_, i) => {
+                const s = steps[i];
+                return (
+                  <Fragment key={i}>
+                    {s && <StepView step={s} total={total} onResult={onResult} />}
+                    <Messages rows={groups.byStep.get(i)} />
+                  </Fragment>
+                );
+              })}
+              <Messages rows={groups.tail} />
+              {generating !== null && <StepSkeleton />}
+              {stepError && <ErrorBanner error={stepError.error} onRetry={() => void openStep(stepError.idx)} />}
+              {total === 0 && <p className="text-sm text-muted">This lesson has no steps.</p>}
+            </div>
+          </div>
+
+          <div className="mx-auto flex w-full max-w-[52rem] flex-col gap-2 px-8 pt-2 pb-4">
+            {canContinue && (
+              <div className="flex justify-center">
+                {newest + 1 < total ? (
+                  <button type="button" onClick={() => void openStep(newest + 1)} className="rounded-lg px-3 py-1.5 font-mono text-xs text-muted transition hover:bg-panel-2 hover:text-text focus-visible:outline-2 focus-visible:outline-accent">
+                    Continue to step {newest + 2} →
+                  </button>
                 ) : (
-                  <p className="text-sm font-semibold text-accent">Lesson complete. Head to Practice to lock it in.</p>
+                  <p className="font-mono text-xs text-muted">
+                    Lesson complete —{" "}
+                    <Link href="/practice" className="text-accent underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-accent">
+                      practice it later
+                    </Link>
+                  </p>
                 )}
               </div>
             )}
-          </>
-        ) : loading ? (
-          <StepSkeleton />
-        ) : null}
-        <div className="mt-4">
-          <ErrorBanner error={error} onRetry={() => void openStep(current)} />
-        </div>
-      </Panel>
-
-      <Panel as="aside" className="flex h-fit flex-col gap-4">
-        <h2 className="text-lg font-semibold">Lesson Plan</h2>
-        <div>
-          <p className="text-sm text-muted">
-            {doneCount} of {total} completed
-          </p>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-border" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label="Lesson progress">
-            <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${pct}%` }} />
+            <ErrorBanner error={chat.error} onRetry={() => chat.retry && send(chat.retry)} />
+            <Composer streaming={chat.streaming} onSend={(text) => send({ text, stepIdx: newest >= 0 ? newest : null })} onStop={chat.stop} seed={seed} />
           </div>
         </div>
-        {lesson.prerequisites.length > 0 && (
-          <div className="rounded-xl border border-border bg-panel-2 p-3 text-sm">
-            <h3 className="font-semibold">Before you start</h3>
-            <ul className="mt-1 list-disc pl-5 text-muted">
-              {lesson.prerequisites.map((p) => <li key={p}>{p}</li>)}
-            </ul>
-          </div>
+        {planOpen && (
+          <PlanPanel
+            lesson={lesson}
+            statusOf={statusOf}
+            opened={(i) => steps[i] !== undefined}
+            onJump={(i) => document.getElementById(`step-${i}`)?.scrollIntoView({ block: "start", behavior: "smooth" })}
+            onDeleted={() => {
+              lessonsChanged();
+              navigate("/teach");
+            }}
+          />
         )}
-        <div className="rounded-xl border border-border bg-panel-2 p-3 text-sm">
-          <p className="font-semibold text-accent">Keep going!</p>
-          <p className="text-muted">{lesson.title}</p>
-        </div>
-        <ChatPanel lessonId={lesson.id} />
-      </Panel>
+      </div>
     </div>
   );
 }

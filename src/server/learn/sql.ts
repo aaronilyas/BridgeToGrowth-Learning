@@ -4,7 +4,8 @@ import { sql } from "../db.ts";
 import { bitOf, dateFromMs, epochOf, jsonText, jsonValue, questionFrom, utcDayOf } from "../sqlmap.ts";
 import { CORRECT_AT, nextMastery, qualityOf, scheduleSm2, type Card, type QuestionRow } from "./core.ts";
 
-export type AttemptIn = { uid: string; topicId: string; questionId: string; score: number; confidence: number; latencyMs: number; response: string | null; srsEnabled: boolean };
+export type AttemptIn = { uid: string; topicId: string; questionId: string; score: number; confidence: number; latencyMs: number; response: string | null; dontKnow: boolean; srsEnabled: boolean };
+export type LatestAttempt = { questionId: string; score: number; confidence: number | null; dontKnow: boolean; response: string | null };
 type CardRow = { ef: number; interval_d: number; reps: number; lapses: number; due_at: number };
 
 const QUESTION_COLS = sql`q.id, q.topic_id, q.lesson_id, q.kind, q.category, q.stem, q.choices, q.code_spec, q.answer, q.explanation, q.citations`;
@@ -58,8 +59,8 @@ export async function recordAttempt(a: AttemptIn, now: Date): Promise<Date | nul
     const correct = a.score >= CORRECT_AT;
     const confErr = Math.abs(a.confidence / 100 - a.score);
     await tx`
-      INSERT INTO attempts (user_id, question_id, topic_id, score, confidence, latency_ms, response, is_review, created_at)
-      VALUES (${a.uid}, ${a.questionId}, ${a.topicId}, ${a.score}, ${a.confidence}, ${a.latencyMs}, ${a.response}, ${bitOf(isReview)}, ${at})`;
+      INSERT INTO attempts (user_id, question_id, topic_id, score, confidence, latency_ms, response, is_review, dont_know, created_at)
+      VALUES (${a.uid}, ${a.questionId}, ${a.topicId}, ${a.score}, ${a.confidence}, ${a.latencyMs}, ${a.response}, ${bitOf(isReview)}, ${bitOf(a.dontKnow)}, ${at})`;
     let dueAt: Date | null = prev ? dateFromMs(prev.due_at) : null;
     if (a.srsEnabled) {
       const base: Card = prev ? { ef: prev.ef, intervalD: prev.interval_d, reps: prev.reps, lapses: prev.lapses, dueAt: dateFromMs(prev.due_at) } : { ef: 2.5, intervalD: 0, reps: 0, lapses: 0, dueAt: now };
@@ -80,6 +81,18 @@ export async function recordAttempt(a: AttemptIn, now: Date): Promise<Date | nul
         review_correct = daily_activity.review_correct + excluded.review_correct, conf_err_sum = daily_activity.conf_err_sum + excluded.conf_err_sum`;
     return dueAt;
   });
+}
+
+// O(k) for k question ids, one statement
+// INV: the newest scored attempt per question, by created_at then id; at most 64 ids
+export async function listLatestAttempts(uid: string, questionIds: string[]): Promise<LatestAttempt[]> {
+  if (questionIds.length === 0) return [];
+  const rows: { question_id: string; score: number; confidence: number | null; dont_know: number; response: string | null }[] = await sql`
+    SELECT a.question_id, a.score, a.confidence, a.dont_know, a.response FROM attempts a
+    WHERE a.user_id = ${uid} AND a.question_id IN ${sql(questionIds)} AND a.score IS NOT NULL
+      AND a.id = (SELECT a2.id FROM attempts a2 WHERE a2.user_id = ${uid} AND a2.question_id = a.question_id AND a2.score IS NOT NULL ORDER BY a2.created_at DESC, a2.id DESC LIMIT 1)
+    LIMIT 64`;
+  return rows.map((row) => ({ questionId: row.question_id, score: Number(row.score), confidence: row.confidence === null ? null : Number(row.confidence), dontKnow: Number(row.dont_know) === 1, response: row.response }));
 }
 
 // O(1)

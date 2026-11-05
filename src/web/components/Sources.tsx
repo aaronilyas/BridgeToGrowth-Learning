@@ -11,16 +11,16 @@ function doiUrl(doi: string): string {
 export function Sources({ citations, title = "Sources" }: { citations: Citation[]; title?: string }): JSX.Element | null {
   if (citations.length === 0) return null;
   return (
-    <section aria-label={title} className="text-sm">
-      <h3 className="mb-1 font-semibold text-muted">{title}</h3>
-      <ol className="flex flex-col gap-1">
+    <section aria-label={title} className="text-xs leading-relaxed">
+      <h3 className="label mb-1">{title}</h3>
+      <ol className="flex flex-col gap-0.5">
         {citations.map((c) => {
           const label = `${c.title}${c.year === null ? "" : ` (${c.year})`}`;
           return (
             <li key={`${c.n}-${c.paperId}`} className="text-muted">
-              <span className="text-accent">[{c.n}]</span>{" "}
+              <span className="font-mono">[{c.n}]</span>{" "}
               {c.doi ? (
-                <a className="text-text underline hover:text-accent" href={doiUrl(c.doi)} target="_blank" rel="noopener noreferrer">
+                <a className="text-muted underline decoration-border underline-offset-2 hover:text-text focus-visible:outline-2 focus-visible:outline-accent" href={doiUrl(c.doi)} target="_blank" rel="noopener noreferrer">
                   {label}
                 </a>
               ) : (
