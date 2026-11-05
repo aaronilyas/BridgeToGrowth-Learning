@@ -35,11 +35,16 @@ function extraBinDirs(): string[] {
 
 // O(d) in searched directories
 // INV: a window opened from a desktop launcher often has a minimal PATH, so the usual per-user install dirs are searched too
-export function findCodexBin(): string | null {
-  const found = Bun.which("codex");
+export function findCliBin(name: string): string | null {
+  const found = Bun.which(name);
   if (found !== null) return found;
   const path = [process.env.PATH ?? "", ...extraBinDirs()].filter((part) => part !== "").join(delimiter);
-  return Bun.which("codex", { PATH: path });
+  return Bun.which(name, { PATH: path });
+}
+
+// O(d) in searched directories
+export function findCodexBin(): string | null {
+  return findCliBin("codex");
 }
 
 // O(n) in text length

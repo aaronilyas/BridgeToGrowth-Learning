@@ -21,12 +21,26 @@ Verified on the build machine (Linux x64, Bun 1.4.4, codex-cli 0.166.0, grok 1.0
 
 **Terms note.** OpenAI documents Sign in with ChatGPT, with "ChatGPT plan usage", for "open-source and locally hosted apps". There the app obtains its own OAuth token and passes it to `codex app-server` (https://developers.openai.com/siwc/token-sharing-open-source, .../codex-app-server). The docs neither permit nor forbid spawning the user's own signed-in official CLI. `codex exec` "reuses saved CLI authentication by default" (non-interactive-mode doc). We follow the pivot Decision: the app only spawns the user's installed CLI. It never reads `~/.codex`, never refreshes tokens, and never calls ChatGPT endpoints. **Residual risk:** OpenAI may later require apps to use their own Sign in with ChatGPT registration instead.
 
-## 2. SpaceXAI (xAI / Grok): FALLBACK TAKEN, API KEY ONLY
+## 2. SpaceXAI (xAI / Grok): SUBSCRIPTION VIA THE GROK CLI, API KEY AS FALLBACK
+
+Re-verified 2026-11-05 against grok 1.0.70 on Linux x64.
 
 | Fact | Result | Source |
 |---|---|---|
-| Subscription mechanism | The official Grok Build CLI (`grok`, npm `@xai-official`) supports `grok login` (browser OIDC / device code), headless `grok -p --output-format streaming-json`, and ACP (`grok agent stdio`) "in other apps". The docs never tie `grok login` to a SuperGrok subscription and never say subscription use in third-party apps is permitted. The consumer terms (https://x.ai/legal/terms-of-service) returned 403 and could not be read. They recommend `XAI_API_KEY` for "scripts, CI/CD, headless automation". | https://docs.x.ai/build/cli/headless-scripting, https://docs.x.ai/build/enterprise, https://docs.x.ai/build/overview |
-| **Decision** | No permitted subscription mechanism was confirmed, so we use the **API-key fallback**. The `spacexai` adapter is `auth: "api_key"`. If xAI documents the permission later, the ACP path can be added as another adapter. | |
+| Subscription mechanism | The official Grok Build CLI (`grok`) signs in with a grok.com account (`grok login`) and runs headless with `grok --prompt-file <F> --output-format streaming-json`. The app spawns only the user's installed CLI, never reads `~/.grok`, and never calls grok.com endpoints itself. | `grok --help`; local runs |
+| **Decision** | 2026-11-05: at the owner's request, SpaceXAI can use the user's Grok subscription through the CLI. **A signed-in subscription wins over a stored API key.** The key path (below) is the fallback. Terms caveat: xAI's docs do not say subscription use in third-party apps is permitted, and recommend `XAI_API_KEY` for headless automation. | https://docs.x.ai/build/cli/headless-scripting |
+| Login status | No `login status` command. `grok models` **exits 0 even when signed out**. Signed in, it prints `You are logged in with grok.com.`; signed out, `You are not authenticated.` It then lists `  * <id> (default)` / `  - <id>` lines. That list is the subscription model catalog. ~0.4 s per call, so status is cached for 30 s. | local runs (real and throwaway HOME) |
+| Login | `grok login --device-auth` prints on **stderr** `https://accounts.x.ai/oauth2/device?user_code=XXXX-XXXX` and `Confirm this code in your browser:` + the code. `grok login --oauth` prints `https://auth.x.ai/oauth2/authorize?...` (loopback redirect). `grok logout` clears credentials. Whether starting a login discards an existing session is unverified, so the app refuses to start one while signed in (409). | throwaway-HOME runs |
+| Events | NDJSON: `available_commands`, `thought` (reasoning deltas), `text` `{data}` (token deltas), `usage` `{usage:{input_tokens,cache_read_input_tokens,output_tokens,...}}`, `end` `{stopReason,...,structuredOutput?}`, `error` `{message}`, `tool_call`, `tool_call_update`. The adapter allowlists the first six; **anything else (any tool call) aborts**. | captured runs |
+| No tools | `--disallowed-tools <every built-in>` empties the local tool list; plus `--disable-web-search --no-subagents --no-plan --max-turns 1 --permission-mode dontAsk --sandbox strict --system-prompt-override <fixed> --cwd <empty tmp dir>`. `--tools ""` does **not** remove tools. xAI **server-side** X search (`x_keyword_search` etc.) cannot be disabled by flag; it surfaces as `tool_call`, which aborts the call. | captured runs |
+| Structured output | `--json-schema '<schema JSON>'`: text deltas carry the JSON; `end.structuredOutput` repeats it. | captured run |
+| Images | `--prompt-json` with an ACP image block was rejected ("rejected for size"), and the model then tried a shell command (blocked by `dontAsk`). Subscription models are therefore listed `vision: false` and images are not sent. | captured run |
+| Errors | Signed out: `{"type":"error","message":"Not signed in..."}`, exit 1. Unknown model: `error` with `unknown model id`. Mapped with the Codex failure mapper. | captured runs |
+
+API-key path (fallback):
+
+| Fact | Result | Source |
+|---|---|---|
 | Endpoint | `https://api.x.ai/v1`, OpenAI-compatible `POST /chat/completions` (the Responses API `/v1/responses` is "primary"). The docs brand the vendor "SpaceXSI". The host is still `api.x.ai`. | https://docs.x.ai/docs/api-reference, https://docs.x.ai/docs/guides/streaming-response |
 | JSON mode | `response_format: {type:"json_schema", json_schema:{name,schema,strict:true}}`. `additionalProperties` defaults to false. | https://docs.x.ai/docs/guides/structured-outputs |
 | Vision | Image parts as `data:` URLs (jpg/png, ≤20 MiB). | https://docs.x.ai/docs/guides/image-understanding |
@@ -56,6 +70,7 @@ Verified on the build machine (Linux x64, Bun 1.4.4, codex-cli 0.166.0, grok 1.0
 
 - **Codex tool execution.** A prompt-injected model could still try a tool call. Tool features are disabled, the sandbox is read-only, the network is off, the cwd is an empty temp dir, approvals are never granted, and any tool or command item aborts the call. A CLI update could re-enable a tool under a new feature name. The adapter's abort-on-unknown-item rule is the backstop: anything other than `agent_message`, `reasoning` or `error` aborts.
 - **Codex terms.** See the terms note above.
+- **Grok subscription terms.** xAI does not document subscription use in third-party apps (section 2). A CLI update could add a tool under a new name; the abort-on-unknown-event rule is the backstop.
 - **Codex streaming is coarse.** `exec --json` delivers whole messages, so Codex chat appears all at once rather than token by token.
 - **Codex quota.** A ChatGPT plan's usage limit surfaces as `quota_exhausted`. This was verified on 2026-11-02 against a real exhausted account.
 - **Pyodide is advisory.** Hidden tests reach the renderer, so a learner can forge a pass. Generation no longer executes the reference solution, so a wrong reference can be stored.

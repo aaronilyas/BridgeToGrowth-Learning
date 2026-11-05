@@ -11,6 +11,8 @@ const fieldClass = "w-full rounded-lg border border-border bg-panel-2 px-3 py-2 
 
 // O(1)
 function keyStatusLine(status: ConnectionRow): string {
+  if (status.auth === "subscription" && status.connected) return status.last4 ? `Saved key ••••${status.last4} (used only while signed out of the subscription)` : "No API key saved";
+  if (status.auth === "subscription") return "No API key saved";
   if (status.connected) return status.last4 ? `Connected · ••••${status.last4}` : "Connected";
   if (status.detail === "unreachable") return "The provider could not be reached.";
   if (status.last4) return `Saved key was rejected · ••••${status.last4}`;
@@ -19,6 +21,18 @@ function keyStatusLine(status: ConnectionRow): string {
 
 // O(1)
 export function KeyCard({ status, onChanged }: { status: ConnectionRow; onChanged: () => Promise<void> }): JSX.Element {
+  const title = titleOfProvider(status.provider);
+  return (
+    <Panel>
+      <h3 className="text-base font-semibold">{title}</h3>
+      <p className="mt-1 text-sm text-muted">API key. {title} bills your own provider account for each use. {keyNoteOf(status.provider)}</p>
+      <KeyFields status={status} onChanged={onChanged} />
+    </Panel>
+  );
+}
+
+// O(1)
+export function KeyFields({ status, onChanged }: { status: ConnectionRow; onChanged: () => Promise<void> }): JSX.Element {
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState<"save" | "remove" | null>(null);
   const [error, setError] = useState("");
@@ -56,9 +70,7 @@ export function KeyCard({ status, onChanged }: { status: ConnectionRow; onChange
   }
 
   return (
-    <Panel>
-      <h3 className="text-base font-semibold">{title}</h3>
-      <p className="mt-1 text-sm text-muted">API key. {title} bills your own provider account for each use. {keyNoteOf(status.provider)}</p>
+    <div>
       <div className="mt-3">
         <Button variant="soft" onClick={() => void openExternalTarget(status.provider === "spacexai" ? "spacexai_keys" : "openrouter_keys").catch((cause: unknown) => setError(describeError(cause)))}>
           Get a {title} key
@@ -89,6 +101,6 @@ export function KeyCard({ status, onChanged }: { status: ConnectionRow; onChange
           </Button>
         </div>
       )}
-    </Panel>
+    </div>
   );
 }

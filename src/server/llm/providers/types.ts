@@ -27,11 +27,13 @@ export type LlmEvent =
   | { type: "usage"; inputTokens: number; outputTokens: number; costUsd: number | null }
   | { type: "done" }
   | { type: "error"; code: LlmErrorCode };
+export type SubscriptionDetail = "ok" | "cli_missing" | "logged_out";
 export type ConnectionStatus = {
   provider: ProviderId;
   auth: AuthKind;
   connected: boolean;
   detail: "ok" | "cli_missing" | "logged_out" | "key_invalid" | "unreachable";
+  subscription?: SubscriptionDetail;
 };
 export type ProviderAdapter = {
   id: ProviderId;
