@@ -1,0 +1,7 @@
+{"type":"available_commands","tools":[],"commands":["compact","context"]}
+{"type":"thought","data":"Answer directly."}
+{"type":"text","data":"{\""}
+{"type":"text","data":"city"}
+{"type":"text","data":"\":\"Paris\"}"}
+{"type":"usage","usage":{"input_tokens":12783,"output_tokens":66,"cache_read_input_tokens":1152,"cache_creation_input_tokens":0,"reasoning_tokens":60},"signature":"5yVZ1yrAGv4E"}
+{"type":"end","stopReason":"end_turn","sessionId":"01a1abf5-e460-7e63-87a5-be80912f54b1","num_turns":1,"structuredOutput":{"city":"Paris"}}
