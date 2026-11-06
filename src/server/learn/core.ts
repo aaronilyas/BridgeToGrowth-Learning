@@ -44,7 +44,27 @@ export function qualityOf(score: number, confidence: number): Quality {
   return confidence >= 40 ? 1 : 2;
 }
 
+// Review gaps in days after each successful answer: 1 day, 1 week, 1 month, then 3, 6 and 12 months, then doubling.
+// Expanding gaps follow Cepeda et al. 2008 (Psychol Sci 19:1095), where the best gap grows with how long the
+// memory must last, and the 1-day / 1-week / 1-month pattern Kang 2016 (Policy Insights Behav Brain Sci 3:12) recommends.
+export const REVIEW_LADDER_D = [1, 7, 30, 90, 180, 365] as const;
+const BASE_EF = 2.5;
+
 // O(1)
+// INV: reps counts successful answers since the last lapse; the first is the initial learning, the rest are reviews
+export function ladderDays(reps: number): number {
+  const i = Math.max(0, reps - 1);
+  return REVIEW_LADDER_D[i] ?? 365 * 2 ** (i - REVIEW_LADDER_D.length + 1);
+}
+
+// O(1)
+// INV: a card is retired after the initial learning plus `repetitions` successful reviews
+export function isRetired(reps: number, repetitions: number): boolean {
+  return reps > repetitions;
+}
+
+// O(1)
+// INV: SM-2 ease and lapse rules; successful gaps follow REVIEW_LADDER_D scaled by ease relative to 2.5
 export function scheduleSm2(c: Card, q: number, now: Date): Card {
   const d = 5 - q;
   const ef = Math.max(MIN_EF, c.ef + 0.1 - d * (0.08 + d * 0.02));
@@ -54,7 +74,7 @@ export function scheduleSm2(c: Card, q: number, now: Date): Card {
   if (q >= 3) {
     reps = c.reps + 1;
     lapses = c.lapses;
-    intervalD = reps === 1 ? 1 : reps === 2 ? 6 : Math.round(c.intervalD * ef);
+    intervalD = Math.max(1, Math.round(ladderDays(reps) * (ef / BASE_EF)));
   }
   return { ef, intervalD, reps, lapses, dueAt: new Date(now.getTime() + intervalD * DAY_MS) };
 }

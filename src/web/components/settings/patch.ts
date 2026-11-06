@@ -23,11 +23,12 @@ export function settingsPatchOf(draft: Settings, saved: Settings): SettingsPatch
     modelCount += 1;
   }
   if (modelCount > 0) patch.models = models;
-  if (draft.srs.enabled !== saved.srs.enabled || draft.srs.newPerDay !== saved.srs.newPerDay || draft.srs.maxReviewsPerDay !== saved.srs.maxReviewsPerDay) {
+  if (draft.srs.enabled !== saved.srs.enabled || draft.srs.newPerDay !== saved.srs.newPerDay || draft.srs.maxReviewsPerDay !== saved.srs.maxReviewsPerDay || draft.srs.repetitions !== saved.srs.repetitions) {
     const srs: NonNullable<SettingsPatch["srs"]> = {};
     if (draft.srs.enabled !== saved.srs.enabled) srs.enabled = draft.srs.enabled;
     if (draft.srs.newPerDay !== saved.srs.newPerDay) srs.newPerDay = draft.srs.newPerDay;
     if (draft.srs.maxReviewsPerDay !== saved.srs.maxReviewsPerDay) srs.maxReviewsPerDay = draft.srs.maxReviewsPerDay;
+    if (draft.srs.repetitions !== saved.srs.repetitions) srs.repetitions = draft.srs.repetitions;
     patch.srs = srs;
   }
   if (draft.recall.freeResponseRatio !== saved.recall.freeResponseRatio || draft.recall.confidencePrompt !== saved.recall.confidencePrompt) {

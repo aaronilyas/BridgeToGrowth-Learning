@@ -1,4 +1,5 @@
 import { beforeAll, expect, mock, test } from "bun:test";
+import { Settings } from "../../shared/settings.ts";
 import { bootTestServer, callRoute, createTestUser, insertFixtureUser, type Handler, type TestServer } from "../testkit.ts";
 
 let t: TestServer;
@@ -45,12 +46,12 @@ test("qualityOf + scheduleSm2 table", () => {
   const card = { ef: 2.5, intervalD: 0, reps: 0, lapses: 0, dueAt: now };
   const rows: { name: string; card: typeof card; s: number; c: number; q: number; reps: number; interval: number; lapses: number; ef: number }[] = [
     { name: "first success", card, s: 1, c: 50, q: 4, reps: 1, interval: 1, lapses: 0, ef: 2.5 },
-    { name: "second success", card: { ...card, reps: 1, intervalD: 1 }, s: 1, c: 80, q: 5, reps: 2, interval: 6, lapses: 0, ef: 2.6 },
-    { name: "third success", card: { ...card, reps: 2, intervalD: 6 }, s: 0.7, c: 50, q: 3, reps: 3, interval: 14, lapses: 0, ef: 2.36 },
-    { name: "lapse", card: { ...card, reps: 3, intervalD: 14 }, s: 0.2, c: 20, q: 2, reps: 0, interval: 1, lapses: 1, ef: 2.18 },
+    { name: "second success", card: { ...card, reps: 1, intervalD: 1 }, s: 1, c: 80, q: 5, reps: 2, interval: 7, lapses: 0, ef: 2.6 },
+    { name: "third success", card: { ...card, reps: 2, intervalD: 7 }, s: 0.7, c: 50, q: 3, reps: 3, interval: 28, lapses: 0, ef: 2.36 },
+    { name: "lapse", card: { ...card, reps: 3, intervalD: 28 }, s: 0.2, c: 20, q: 2, reps: 0, interval: 1, lapses: 1, ef: 2.18 },
     { name: "unsure error", card, s: 0, c: 50, q: 1, reps: 0, interval: 1, lapses: 1, ef: 1.96 },
     { name: "confident error", card, s: 0, c: 90, q: 0, reps: 0, interval: 1, lapses: 1, ef: 1.7 },
-    { name: "ef floor", card: { ...card, ef: 1.3, reps: 2, intervalD: 6 }, s: 0.6, c: 10, q: 3, reps: 3, interval: 8, lapses: 0, ef: 1.3 },
+    { name: "ef floor", card: { ...card, ef: 1.3, reps: 2, intervalD: 7 }, s: 0.6, c: 10, q: 3, reps: 3, interval: 16, lapses: 0, ef: 1.3 },
     { name: "boundary .85", card, s: 0.85, c: 69, q: 4, reps: 1, interval: 1, lapses: 0, ef: 2.5 },
   ];
   for (const r of rows) {
@@ -59,6 +60,19 @@ test("qualityOf + scheduleSm2 table", () => {
     expect([r.name, q, n.reps, n.intervalD, n.lapses, Math.round(n.ef * 100) / 100]).toEqual([r.name, r.q, r.reps, r.interval, r.lapses, r.ef]);
     expect(n.dueAt.getTime()).toBe(now.getTime() + r.interval * 86_400_000);
   }
+});
+
+test("default schedule: three reviews at 1 day, 1 week, 1 month, then retired", () => {
+  const repetitions = Settings.parse({}).srs.repetitions;
+  expect(repetitions).toBe(3);
+  let card = core.scheduleSm2({ ef: 2.5, intervalD: 0, reps: 0, lapses: 0, dueAt: new Date(0) }, 4, new Date(0));
+  const gaps: number[] = [];
+  while (!core.isRetired(card.reps, repetitions)) {
+    gaps.push(card.intervalD);
+    card = core.scheduleSm2(card, 4, new Date(0));
+  }
+  expect(gaps).toEqual([1, 7, 30]);
+  expect([core.ladderDays(6), core.ladderDays(7), core.ladderDays(8)]).toEqual([365, 730, 1460]);
 });
 
 test("queue never exposes answer fields; attempt does, after grading", async () => {

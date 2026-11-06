@@ -6,7 +6,7 @@ const SEASONS = ["auto", "spring", "summer", "fall", "winter"] as const;
 
 // O(1)
 export function LearningFields({ draft, setDraft, onSeason }: { draft: Settings; setDraft: Dispatch<SetStateAction<Settings>>; onSeason: (season: Settings["season"]) => void }): JSX.Element {
-  function setSrsNumber(key: "newPerDay" | "maxReviewsPerDay", value: number): void {
+  function setSrsNumber(key: "newPerDay" | "maxReviewsPerDay" | "repetitions", value: number): void {
     setDraft((old) => ({ ...old, srs: { ...old.srs, [key]: value } }));
   }
   return (
@@ -15,6 +15,7 @@ export function LearningFields({ draft, setDraft, onSeason }: { draft: Settings;
         <SettingsToggle label="Enable spaced repetition" checked={draft.srs.enabled} onChange={(value) => setDraft((old) => ({ ...old, srs: { ...old.srs, enabled: value } }))} />
         <SettingsNumber label="New cards per day" value={draft.srs.newPerDay} min={SETTINGS_LIMITS.srs.newPerDay.min} max={SETTINGS_LIMITS.srs.newPerDay.max} onChange={(value) => setSrsNumber("newPerDay", value)} />
         <SettingsNumber label="Maximum reviews per day" value={draft.srs.maxReviewsPerDay} min={SETTINGS_LIMITS.srs.maxReviewsPerDay.min} max={SETTINGS_LIMITS.srs.maxReviewsPerDay.max} onChange={(value) => setSrsNumber("maxReviewsPerDay", value)} />
+        <SettingsNumber label="Reviews per question" value={draft.srs.repetitions} min={SETTINGS_LIMITS.srs.repetitions.min} max={SETTINGS_LIMITS.srs.repetitions.max} onChange={(value) => setSrsNumber("repetitions", value)} />
       </SettingsSection>
       <SettingsSection title="Active recall">
         <SettingsToggle label="Ask for confidence after each answer" checked={draft.recall.confidencePrompt} onChange={(value) => setDraft((old) => ({ ...old, recall: { ...old.recall, confidencePrompt: value } }))} />

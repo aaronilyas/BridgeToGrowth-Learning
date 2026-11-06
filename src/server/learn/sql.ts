@@ -2,9 +2,9 @@ import type { SQL } from "bun";
 import type { Settings } from "../../shared/settings.ts";
 import { sql } from "../db.ts";
 import { bitOf, dateFromMs, epochOf, jsonText, jsonValue, questionFrom, utcDayOf } from "../sqlmap.ts";
-import { CORRECT_AT, nextMastery, qualityOf, scheduleSm2, type Card, type QuestionRow } from "./core.ts";
+import { CORRECT_AT, isRetired, nextMastery, qualityOf, scheduleSm2, type Card, type QuestionRow } from "./core.ts";
 
-export type AttemptIn = { uid: string; topicId: string; questionId: string; score: number; confidence: number; latencyMs: number; response: string | null; dontKnow: boolean; srsEnabled: boolean };
+export type AttemptIn = { uid: string; topicId: string; questionId: string; score: number; confidence: number; latencyMs: number; response: string | null; dontKnow: boolean; srs: { enabled: boolean; repetitions: number } };
 export type LatestAttempt = { questionId: string; score: number; confidence: number | null; dontKnow: boolean; response: string | null };
 type CardRow = { ef: number; interval_d: number; reps: number; lapses: number; due_at: number };
 
@@ -24,11 +24,11 @@ export async function countReviewsToday(uid: string): Promise<number> {
 }
 
 // O(log n + limit)
-// INV: served by cards(user_id, due_at); due_at order
-export async function listDueQuestions(uid: string, limit: number): Promise<QuestionRow[]> {
+// INV: served by cards(user_id, due_at); due_at order; retired cards (reps > repetitions) are skipped
+export async function listDueQuestions(uid: string, limit: number, repetitions: number): Promise<QuestionRow[]> {
   const rows: QuestionRow[] = await sql`
     SELECT ${QUESTION_COLS} FROM cards c JOIN questions q ON q.id = c.question_id
-    WHERE c.user_id = ${uid} AND q.user_id = ${uid} AND c.due_at <= ${Date.now()}
+    WHERE c.user_id = ${uid} AND q.user_id = ${uid} AND c.due_at <= ${Date.now()} AND c.reps <= ${repetitions}
     ORDER BY c.due_at LIMIT ${limit}`;
   return rows.map(questionFrom);
 }
@@ -62,10 +62,10 @@ export async function recordAttempt(a: AttemptIn, now: Date): Promise<Date | nul
       INSERT INTO attempts (user_id, question_id, topic_id, score, confidence, latency_ms, response, is_review, dont_know, created_at)
       VALUES (${a.uid}, ${a.questionId}, ${a.topicId}, ${a.score}, ${a.confidence}, ${a.latencyMs}, ${a.response}, ${bitOf(isReview)}, ${bitOf(a.dontKnow)}, ${at})`;
     let dueAt: Date | null = prev ? dateFromMs(prev.due_at) : null;
-    if (a.srsEnabled) {
+    if (a.srs.enabled) {
       const base: Card = prev ? { ef: prev.ef, intervalD: prev.interval_d, reps: prev.reps, lapses: prev.lapses, dueAt: dateFromMs(prev.due_at) } : { ef: 2.5, intervalD: 0, reps: 0, lapses: 0, dueAt: now };
       const next = scheduleSm2(base, qualityOf(a.score, a.confidence), now);
-      dueAt = next.dueAt;
+      dueAt = isRetired(next.reps, a.srs.repetitions) ? null : next.dueAt;
       await tx`
         INSERT INTO cards (question_id, user_id, ef, interval_d, reps, lapses, due_at)
         VALUES (${a.questionId}, ${a.uid}, ${next.ef}, ${next.intervalD}, ${next.reps}, ${next.lapses}, ${epochOf(next.dueAt)})

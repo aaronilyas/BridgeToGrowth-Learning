@@ -4,7 +4,7 @@ import { ProviderId } from "./providers.ts";
 const int = (min: number, max: number) => z.int().min(min).max(max);
 
 export const SETTINGS_LIMITS = {
-  srs: { newPerDay: { min: 0, max: 50 }, maxReviewsPerDay: { min: 0, max: 500 } },
+  srs: { newPerDay: { min: 0, max: 50 }, maxReviewsPerDay: { min: 0, max: 500 }, repetitions: { min: 1, max: 10 } },
   recall: { freeResponseRatio: { min: 0, max: 1 } },
   bite: { stepsPerLesson: { min: 2, max: 16 }, maxWordsPerStep: { min: 60, max: 400 }, questionsPerSession: { min: 3, max: 20 } },
   practice: { dailyGoal: { min: 1, max: 100 } },
@@ -24,7 +24,7 @@ const taskModels = {
   practice: modelChoice.default(null),
   system: modelChoice.default(null),
 };
-const srs = { enabled: z.boolean(), newPerDay: int(SETTINGS_LIMITS.srs.newPerDay.min, SETTINGS_LIMITS.srs.newPerDay.max), maxReviewsPerDay: int(SETTINGS_LIMITS.srs.maxReviewsPerDay.min, SETTINGS_LIMITS.srs.maxReviewsPerDay.max) };
+const srs = { enabled: z.boolean(), newPerDay: int(SETTINGS_LIMITS.srs.newPerDay.min, SETTINGS_LIMITS.srs.newPerDay.max), maxReviewsPerDay: int(SETTINGS_LIMITS.srs.maxReviewsPerDay.min, SETTINGS_LIMITS.srs.maxReviewsPerDay.max), repetitions: int(SETTINGS_LIMITS.srs.repetitions.min, SETTINGS_LIMITS.srs.repetitions.max) };
 const recall = { freeResponseRatio: z.number().min(SETTINGS_LIMITS.recall.freeResponseRatio.min).max(SETTINGS_LIMITS.recall.freeResponseRatio.max), confidencePrompt: z.boolean() };
 const bite = { stepsPerLesson: int(SETTINGS_LIMITS.bite.stepsPerLesson.min, SETTINGS_LIMITS.bite.stepsPerLesson.max), maxWordsPerStep: int(SETTINGS_LIMITS.bite.maxWordsPerStep.min, SETTINGS_LIMITS.bite.maxWordsPerStep.max), questionsPerSession: int(SETTINGS_LIMITS.bite.questionsPerSession.min, SETTINGS_LIMITS.bite.questionsPerSession.max) };
 const practice = { dailyGoal: int(SETTINGS_LIMITS.practice.dailyGoal.min, SETTINGS_LIMITS.practice.dailyGoal.max) };
@@ -40,7 +40,7 @@ export const Settings = z.strictObject({
   staleModels: z.array(modelTask).default([]),
   season: season.default("auto"),
   openalexMailto: z.string().max(254).default(""),
-  srs: z.strictObject({ enabled: srs.enabled.default(true), newPerDay: srs.newPerDay.default(10), maxReviewsPerDay: srs.maxReviewsPerDay.default(50) }).prefault({}),
+  srs: z.strictObject({ enabled: srs.enabled.default(true), newPerDay: srs.newPerDay.default(10), maxReviewsPerDay: srs.maxReviewsPerDay.default(50), repetitions: srs.repetitions.default(3) }).prefault({}),
   recall: z.strictObject({ freeResponseRatio: recall.freeResponseRatio.default(0.3), confidencePrompt: recall.confidencePrompt.default(true) }).prefault({}),
   bite: z.strictObject({ stepsPerLesson: bite.stepsPerLesson.default(4), maxWordsPerStep: bite.maxWordsPerStep.default(180), questionsPerSession: bite.questionsPerSession.default(8) }).prefault({}),
   practice: z.strictObject({ dailyGoal: practice.dailyGoal.default(10) }).prefault({}),
@@ -55,7 +55,7 @@ export const SettingsPatch = z.strictObject({
   budgetUsd: z.number().min(0).max(1_000_000).nullable().optional(),
   season: season.optional(),
   openalexMailto: z.string().max(254).optional(),
-  srs: z.strictObject({ enabled: srs.enabled.optional(), newPerDay: srs.newPerDay.optional(), maxReviewsPerDay: srs.maxReviewsPerDay.optional() }).optional(),
+  srs: z.strictObject({ enabled: srs.enabled.optional(), newPerDay: srs.newPerDay.optional(), maxReviewsPerDay: srs.maxReviewsPerDay.optional(), repetitions: srs.repetitions.optional() }).optional(),
   recall: z.strictObject({ freeResponseRatio: recall.freeResponseRatio.optional(), confidencePrompt: recall.confidencePrompt.optional() }).optional(),
   bite: z.strictObject({ stepsPerLesson: bite.stepsPerLesson.optional(), maxWordsPerStep: bite.maxWordsPerStep.optional(), questionsPerSession: bite.questionsPerSession.optional() }).optional(),
   practice: z.strictObject({ dailyGoal: practice.dailyGoal.optional() }).optional(),

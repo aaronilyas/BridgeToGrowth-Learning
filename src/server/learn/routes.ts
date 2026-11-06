@@ -33,7 +33,7 @@ const queue = route({}, async (c) => {
   if (!settings.srs.enabled) return json([]);
   const limit = queueLimit(settings, await countReviewsToday(user.id), q.data.limit);
   if (limit === 0) return json([]);
-  return json((await listDueQuestions(user.id, limit)).map(toQuestionPublic));
+  return json((await listDueQuestions(user.id, limit, settings.srs.repetitions)).map(toQuestionPublic));
 });
 
 const attempt = route({ body: AttemptRequest, rate: { key: "attempt", cap: 60, perMin: 60 } }, async (c) => {
@@ -69,7 +69,7 @@ const attempt = route({ body: AttemptRequest, rate: { key: "attempt", cap: 60, p
     feedback = g.data.feedback;
   }
   const now = new Date();
-  const due = await recordAttempt({ uid, topicId: row.topic_id, questionId: row.id, score, confidence: skip ? 0 : asked.confidence, latencyMs: asked.latencyMs, response: skip || row.kind === "mcq" ? null : (asked.response ?? null), dontKnow: skip, srsEnabled: loadSettings(user).srs.enabled }, now);
+  const due = await recordAttempt({ uid, topicId: row.topic_id, questionId: row.id, score, confidence: skip ? 0 : asked.confidence, latencyMs: asked.latencyMs, response: skip || row.kind === "mcq" ? null : (asked.response ?? null), dontKnow: skip, srs: loadSettings(user).srs }, now);
   const body: AttemptResponse = { score, correct: score >= CORRECT_AT, feedback, answer: toAttemptAnswer(row.kind, stored, tests), explanation: row.explanation, citations: StoredCitations.parse(row.citations), nextDueAt: due ? due.toISOString() : null };
   return json(body);
 });
