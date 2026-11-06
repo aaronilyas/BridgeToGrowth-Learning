@@ -5,6 +5,13 @@ import { Button } from "./Button.tsx";
 import { stopLessonChat } from "./ChatPanel.tsx";
 import { ErrorBanner } from "./ErrorBanner.tsx";
 
+// O(1) plus one request
+// INV: stops any streaming chat for the lesson once the server has removed it
+export async function deleteLesson(lessonId: string): Promise<void> {
+  await api(`/api/lessons/${lessonId}`, z.void(), { method: "DELETE" });
+  stopLessonChat(lessonId);
+}
+
 // O(1)
 export function DeleteLessonButton({ lessonId, lessonTitle, onDeleted }: { lessonId: string; lessonTitle: string; onDeleted: () => void }): JSX.Element {
   const [confirming, setConfirming] = useState(false);
@@ -15,8 +22,7 @@ export function DeleteLessonButton({ lessonId, lessonTitle, onDeleted }: { lesso
     setBusy(true);
     setError(null);
     try {
-      await api(`/api/lessons/${lessonId}`, z.void(), { method: "DELETE" });
-      stopLessonChat(lessonId);
+      await deleteLesson(lessonId);
       onDeleted();
     } catch (e) {
       setError(e);

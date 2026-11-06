@@ -4,6 +4,10 @@ import { z } from "zod";
 import { LessonSummary, StatsResponse } from "../../shared/api.ts";
 import { api } from "../api.ts";
 import { generatingLessonPrompt, useAskJob } from "../askJob.ts";
+import { lessonsChanged } from "../lesson/chatStore.ts";
+import { Button } from "./Button.tsx";
+import { deleteLesson } from "./DeleteLessonButton.tsx";
+import { ErrorBanner } from "./ErrorBanner.tsx";
 import { Logo } from "./Logo.tsx";
 import { Spinner } from "./Spinner.tsx";
 import { UsageCard } from "./UsageMeter.tsx";
@@ -57,6 +61,81 @@ export function GeneratingLesson({ prompt }: { prompt: string }): JSX.Element {
     <li className="flex flex-col gap-0.5 rounded-lg bg-panel-2 px-3 py-2" aria-busy="true" aria-live="polite">
       <span className="truncate text-sm text-text">{prompt}</span>
       <Spinner size={11} label="Planning…" />
+    </li>
+  );
+}
+
+// O(1)
+// INV: the ⋯ button opens an inline menu under the row (not a popover, so the scrolling list never clips it); Delete asks once more before removing
+// INV: deleting the lesson that is open sends the user to /teach
+function SessionRow({ lesson, current }: { lesson: LessonSummary; current: boolean }): JSX.Element {
+  const [, navigate] = useLocation();
+  const [menu, setMenu] = useState<"closed" | "open" | "confirm">("closed");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const close = (): void => {
+    setMenu("closed");
+    setError(null);
+  };
+
+  async function remove(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteLesson(lesson.id);
+      if (current) navigate("/teach");
+      lessonsChanged();
+    } catch (e) {
+      setError(e);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <li className="group relative" onKeyDown={(e) => e.key === "Escape" && menu !== "closed" && !busy && close()}>
+      <Link href={`/lesson/${lesson.id}`} aria-current={current ? "page" : undefined} className={`flex flex-col gap-0.5 rounded-lg py-2 pr-9 pl-3 transition hover:bg-panel-2 ${current || menu !== "closed" ? "bg-panel-2" : ""}`}>
+        <span className="truncate text-sm text-text">{lesson.title}</span>
+        <span className="truncate font-mono text-[0.68rem] text-muted">
+          {STATUS_TEXT[lesson.status]} · {relativeTime(lesson.lastActiveAt)}
+        </span>
+      </Link>
+      <button
+        type="button"
+        aria-label={`Options for ${lesson.title}`}
+        aria-expanded={menu !== "closed"}
+        aria-controls={`session-menu-${lesson.id}`}
+        title="Options"
+        onClick={() => (menu === "closed" ? setMenu("open") : close())}
+        className={`absolute top-2 right-1.5 rounded-md p-1 text-muted transition hover:bg-bg hover:text-text focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent group-hover:opacity-100 ${menu !== "closed" ? "opacity-100" : "opacity-0"}`}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <circle cx="5" cy="12" r="1.8" />
+          <circle cx="12" cy="12" r="1.8" />
+          <circle cx="19" cy="12" r="1.8" />
+        </svg>
+      </button>
+      {menu !== "closed" && (
+        <div id={`session-menu-${lesson.id}`} className="mx-1 mt-1 mb-1 flex flex-col gap-2 rounded-lg border border-border bg-bg p-2">
+          {menu === "open" ? (
+            <button type="button" autoFocus onClick={() => setMenu("confirm")} className="rounded-md px-2 py-1 text-left text-sm text-danger transition hover:bg-danger/10 focus-visible:outline-2 focus-visible:outline-accent">
+              Delete lesson
+            </button>
+          ) : (
+            <>
+              <p className="text-xs text-muted">This removes the lesson, its chat, its checks, and the mastery and daily progress that came from them.</p>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="danger" className="px-2 py-1 text-xs" busy={busy} autoFocus onClick={() => void remove()}>
+                  Delete
+                </Button>
+                <Button variant="ghost" className="px-2 py-1 text-xs" disabled={busy} onClick={close}>
+                  Cancel
+                </Button>
+              </div>
+            </>
+          )}
+          <ErrorBanner error={error} />
+        </div>
+      )}
     </li>
   );
 }
@@ -152,14 +231,7 @@ export function Sidebar({ onCollapse }: { onCollapse: () => void }): JSX.Element
       <ul className="scroll-quiet mt-2 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
         {generating && <GeneratingLesson prompt={generating} />}
         {shown.map((l) => (
-          <li key={l.id}>
-            <Link href={`/lesson/${l.id}`} aria-current={here === l.id ? "page" : undefined} className={`flex flex-col gap-0.5 rounded-lg px-3 py-2 transition hover:bg-panel-2 ${here === l.id ? "bg-panel-2" : ""}`}>
-              <span className="truncate text-sm text-text">{l.title}</span>
-              <span className="truncate font-mono text-[0.68rem] text-muted">
-                {STATUS_TEXT[l.status]} · {relativeTime(l.lastActiveAt)}
-              </span>
-            </Link>
-          </li>
+          <SessionRow key={l.id} lesson={l} current={here === l.id} />
         ))}
         {lessons !== null && shown.length === 0 && !generating && <li className="px-3 py-2 text-xs text-muted">{lessons.length === 0 ? "No sessions yet." : "No matching sessions."}</li>}
       </ul>
