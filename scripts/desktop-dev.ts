@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { type FSWatcher, watch } from "node:fs";
 import { join } from "node:path";
+import { ensureLinuxRuntime } from "./linux-runtime";
 
 // INV: Hutch 0.28.2 `electrobun dev --watch` restarts the app in an endless loop after the first change it sees, whatever watchIgnore says, so this runner owns watching and restarts instead
 // INV: src/ is watched too, because the window loads the dist/ bundle and Hutch only watched desktop/
@@ -79,6 +80,7 @@ async function shutdown(): Promise<void> {
   process.exit(0);
 }
 
+if (!(await ensureLinuxRuntime())) process.exit(1);
 if (!(await buildDist())) process.exit(1);
 launchApp();
 const watchers: FSWatcher[] = WATCHED.map(({ dir, recursive, skip }) => watch(dir, { recursive }, (_event, file) => onChange(skip, file)));

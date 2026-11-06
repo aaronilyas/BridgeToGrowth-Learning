@@ -18,7 +18,7 @@ bun run smoke            # headless /api/health: 200 with the token, 401 without
 
 `desktop:dev` runs `scripts/desktop-dev.ts`. It builds `dist/`, starts `electrobun dev`, and on any change in `src/` or `desktop/*.ts` it rebuilds and restarts the window. It does not use `electrobun dev --watch`: in Hutch 0.28.2 that watcher rebuilds in an endless loop after the first change it sees, so the window keeps closing and reopening, and `watchIgnore` does not stop it.
 
-Linux builds need GTK 3 and WebKitGTK 4.1 headers (`libgtk-3-dev`, `libwebkit2gtk-4.1-dev`). The icon is `desktop/icon.svg`, the same mark as the in-app logo, plus `desktop/icon.png` at 256×256.
+Linux builds need GTK 3 and WebKitGTK 4.1 headers (`libgtk-3-dev`, `libwebkit2gtk-4.1-dev`). Running the window also needs the runtime libraries that Electrobun's `libNativeWrapper.so` links against: `libgtk-3.so.0`, `libwebkit2gtk-4.1.so.0`, `libjavascriptcoregtk-4.1.so.0`, `libsoup-3.0.so.0` and `libayatana-appindicator3.so.1`. If one is missing, the launcher only reports `Failed to open native wrapper ... FileNotFound`. `scripts/linux-runtime.ts` checks them before `desktop:dev` starts. It is also available as `bun run setup:linux`. It detects Debian, Fedora, Arch and openSUSE families, picks package names that exist (for example `libgtk-3-0t64` on Ubuntu 24.04 and later), and installs them after a prompt. Set `BTG_SKIP_INSTALL_PROMPT=1` to only print the command, or `BTG_SKIP_RUNTIME_CHECK=1` to skip the check. The NEEDS list there must match `readelf -d libNativeWrapper.so` when Electrobun is upgraded. A built wrapper is also checked with `ldd`. The icon is `desktop/icon.svg`, the same mark as the in-app logo, plus `desktop/icon.png` at 256×256.
 
 `package:linux` downloads appimagetool 1.9.1, checks SHA-256 `ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0`, and caches it under `scripts/cache/appimagetool/` (gitignored). It runs the tool with `APPIMAGE_EXTRACT_AND_RUN=1`, so FUSE is not required to build. A `.deb` is built with `dpkg-deb` when that binary is on `PATH`. Otherwise the script writes an `ar` archive of `debian-binary`, `control.tar.gz`, and `data.tar.gz` itself.
 
@@ -30,7 +30,7 @@ Linux builds need GTK 3 and WebKitGTK 4.1 headers (`libgtk-3-dev`, `libwebkit2gt
 | `artifacts/BridgeToGrowthLearning_0.1.0_amd64.deb` | Debian package (`/opt/BridgeToGrowthLearning`, `/usr/bin/bridgetogrowth-learning`) |
 | `desktop/build/`, `desktop/artifacts/` | Electrobun intermediates (gitignored) |
 
-The `.deb` depends on `libgtk-3-0` (or `libgtk-3-0t64`) and `libwebkit2gtk-4.1-0`. Both packages install a `.desktop` entry named BridgeToGrowth Learning and the logo icon.
+The `.deb` depends on `libgtk-3-0t64` (or `libgtk-3-0`), `libwebkit2gtk-4.1-0`, `libjavascriptcoregtk-4.1-0`, `libsoup-3.0-0` and `libayatana-appindicator3-1`, so `apt install ./BridgeToGrowthLearning_*.deb` pulls them in. The AppImage does not bundle WebKitGTK. Its `AppRun` checks the wrapper with `ldd` and names any missing libraries, on the terminal and with `notify-send`, instead of failing silently. Both packages install a `.desktop` entry named BridgeToGrowth Learning and the logo icon.
 
 Launch an AppImage on a machine without FUSE with:
 

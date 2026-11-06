@@ -201,7 +201,7 @@ async function listTree(root: string): Promise<TarEntry[]> {
 
 // O(1)
 function debControlText(): string {
-  return `Package: bridgetogrowth-learning\nVersion: ${VERSION}\nSection: education\nPriority: optional\nArchitecture: amd64\nMaintainer: BridgeToGrowth <ops@example.com>\nDepends: libgtk-3-0 | libgtk-3-0t64, libwebkit2gtk-4.1-0\nDescription: BridgeToGrowth Learning desktop app\n Local lessons, practice, and a knowledge graph.\n`;
+  return `Package: bridgetogrowth-learning\nVersion: ${VERSION}\nSection: education\nPriority: optional\nArchitecture: amd64\nMaintainer: BridgeToGrowth <ops@example.com>\nDepends: libgtk-3-0t64 | libgtk-3-0, libwebkit2gtk-4.1-0, libjavascriptcoregtk-4.1-0, libsoup-3.0-0, libayatana-appindicator3-1\nDescription: BridgeToGrowth Learning desktop app\n Local lessons, practice, and a knowledge graph.\n`;
 }
 
 // O(n) in package size
@@ -257,6 +257,29 @@ async function buildDeb(bundle: string, bin: string): Promise<string> {
   return output;
 }
 
+// O(1)
+// INV: an AppImage does not bundle WebKitGTK, so AppRun names the missing system libraries (terminal and desktop notification) instead of letting the launcher fail silently from a menu
+function appRunScript(bin: string): string {
+  const binDir = `$HERE/usr/lib/${APP_NAME}/${dirname(bin)}`;
+  return `#!/bin/sh
+HERE="$(dirname "$(readlink -f "$0")")"
+WRAPPER="${binDir}/libNativeWrapper.so"
+if [ -f "$WRAPPER" ] && command -v ldd >/dev/null 2>&1; then
+  MISSING="$(LD_LIBRARY_PATH="${binDir}" ldd "$WRAPPER" 2>/dev/null | awk '/not found/ {print $1}' | tr '\\n' ' ')"
+  if [ -n "$MISSING" ]; then
+    MSG="BridgeToGrowth Learning needs these system libraries: $MISSING
+Debian/Ubuntu: sudo apt install libgtk-3-0t64 libwebkit2gtk-4.1-0 libayatana-appindicator3-1
+Fedora/RHEL:   sudo dnf install gtk3 webkit2gtk4.1 libayatana-appindicator-gtk3
+Arch/Manjaro:  sudo pacman -S gtk3 webkit2gtk-4.1 libayatana-appindicator"
+    echo "$MSG" >&2
+    command -v notify-send >/dev/null 2>&1 && notify-send "BridgeToGrowth Learning cannot start" "$MSG" 2>/dev/null
+    exit 1
+  fi
+fi
+exec "$HERE/usr/lib/${APP_NAME}/${bin}" "$@"
+`;
+}
+
 // O(n) in app bundle size
 async function packageLinux(): Promise<void> {
   await mkdir(OUTPUT, { recursive: true });
@@ -272,7 +295,7 @@ async function packageLinux(): Promise<void> {
   await cp(join(ROOT, "desktop", "icon.png"), join(appDir, "bridgetogrowth-learning.png"));
   const desktop = `[Desktop Entry]\nType=Application\nName=BridgeToGrowth Learning\nExec=AppRun\nIcon=bridgetogrowth-learning\nCategories=Education;\nTerminal=false\nStartupWMClass=${APP_NAME}\n`;
   await writeFile(join(appDir, "bridgetogrowth-learning.desktop"), desktop, { mode: 0o755 });
-  await writeFile(join(appDir, "AppRun"), `#!/bin/sh\nHERE="$(dirname "$(readlink -f "$0")")"\nexec "$HERE/usr/lib/${APP_NAME}/${bin}" "$@"\n`, { mode: 0o755 });
+  await writeFile(join(appDir, "AppRun"), appRunScript(bin), { mode: 0o755 });
   const tool = await ensureAppImageTool();
   const image = join(OUTPUT, `${APP_NAME}-x86_64.AppImage`);
   await runCommand([tool, appDir, image], { ARCH: "x86_64", APPIMAGE_EXTRACT_AND_RUN: "1" });
