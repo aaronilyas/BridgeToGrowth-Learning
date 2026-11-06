@@ -5,7 +5,7 @@ import { HttpError } from "../http.ts";
 import { loadSettings } from "../learn/core.ts";
 import { localProfile } from "../profile.ts";
 import { buildMessages, completionBudget, parseJsonOutput, type ContentPart, type FilePart, type Turn } from "./core.ts";
-import { providerAdapter, resolveModelRef } from "./providers/registry.ts";
+import { providerAdapter, resolveTaskModel } from "./providers/registry.ts";
 import type { ChatMessage as ProviderMessage, ImagePart, LlmErrorCode, LlmRequest, ReasoningLevel } from "./providers/types.ts";
 import { insertLlmUsage, openRouterMonthMicros } from "./sql.ts";
 import { JSON_TIMEOUT_MS, STREAM_TIMEOUT_MS } from "./timeouts.ts";
@@ -95,11 +95,10 @@ async function assertOpenRouterBudget(settings: Settings, provider: string): Pro
 }
 
 // O(n) in the prompt
-async function prepare(task: ModelTask, system: string, turns: Turn[], files: FilePart[], maxTokens: number, schema: Record<string, unknown> | null, signal: AbortSignal): Promise<{ req: LlmRequest; provider: string; modelId: string }> {
+// INV: an unset task model falls back to the requested id, the legacy default id, then any connected model
+async function prepare(task: ModelTask, requested: string | null, system: string, turns: Turn[], files: FilePart[], maxTokens: number, schema: Record<string, unknown> | null, signal: AbortSignal): Promise<{ req: LlmRequest; provider: string; modelId: string }> {
   const settings = loadSettings(await localProfile());
-  const choice = settings.models[task];
-  if (choice === null) throw new HttpError(409, "not_connected");
-  const model = await resolveModelRef(choice);
+  const model = await resolveTaskModel(settings.models[task], [requested, settings.model]);
   await assertOpenRouterBudget(settings, model.provider);
   const built = providerMessages(buildMessages(system, turns, files));
   const native = schema !== null && model.structured === "native";
@@ -145,7 +144,7 @@ async function record(kind: string, provider: string, model: string, usage: Usag
 export async function chatJson<T>(o: JsonCall<T>): Promise<{ data: T; costMicros: bigint }> {
   const schema = z.toJSONSchema(o.schema) as unknown as Record<string, unknown>;
   const timeout = AbortSignal.timeout(JSON_TIMEOUT_MS);
-  const prepared = await prepare(taskForKind(o.kind, o.model), o.system, [{ role: "user", content: o.user }], o.files ?? [], o.maxTokens, schema, o.signal ? AbortSignal.any([o.signal, timeout]) : timeout);
+  const prepared = await prepare(taskForKind(o.kind, o.model), typeof o.model === "string" ? o.model : null, o.system, [{ role: "user", content: o.user }], o.files ?? [], o.maxTokens, schema, o.signal ? AbortSignal.any([o.signal, timeout]) : timeout);
   let total = 0n;
   for (let attempt = 0; attempt < 2; attempt++) {
     const result = await collect(prepared.req);
@@ -166,7 +165,7 @@ function frameEvent(event: { t: "d"; v: string } | { t: "end"; citations?: Citat
 // INV: a missing or disconnected model throws before the stream starts, so the route can answer with a status
 export async function chatStream(o: StreamCall): Promise<ReadableStream<Uint8Array>> {
   const upstream = new AbortController();
-  const prepared = await prepare(taskForKind(o.kind, o.model), o.system, o.messages, [], o.maxTokens, null, AbortSignal.any([upstream.signal, o.signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)]));
+  const prepared = await prepare(taskForKind(o.kind, o.model), typeof o.model === "string" ? o.model : null, o.system, o.messages, [], o.maxTokens, null, AbortSignal.any([upstream.signal, o.signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)]));
   let closed = false;
   const send = (ctrl: ReadableStreamDefaultController<Uint8Array>, chunk: Uint8Array): void => {
     if (closed) return;

@@ -93,6 +93,22 @@ export async function listConnectedModels(): Promise<ModelRef[]> {
   return out;
 }
 
+// O(n) in connected catalogs
+// INV: order is the configured task model, then each candidate id in order, then the first connected model
+// INV: an unset task model, or one whose provider has since disconnected, never blocks another connected provider; not_connected only when none is connected
+// INV: a configured model that its connected provider no longer lists still fails with model_unavailable rather than being swapped silently
+export async function resolveTaskModel(configured: { provider: ProviderId; id: string } | null, candidates: readonly (string | null | undefined)[]): Promise<ModelRef> {
+  if (configured !== null && (await adapters[configured.provider].status()).connected) return resolveModelRef(configured);
+  const available = await listConnectedModels();
+  if (available.length === 0) throw (await connectedProviderIds()).size > 0 ? new HttpError(404, "model_unavailable") : new HttpError(409, "not_connected");
+  for (const id of candidates) {
+    if (id === null || id === undefined || id.length === 0) continue;
+    const found = available.find((model) => model.id === id);
+    if (found !== undefined) return found;
+  }
+  return available[0] as ModelRef;
+}
+
 // O(n) in that provider's catalog
 // INV: a disconnected provider fails with not_connected before a model id is accepted
 export async function resolveModelRef(choice: { provider: ProviderId; id: string }): Promise<ModelRef> {
