@@ -2,6 +2,45 @@
 
 BridgeToGrowth Learning is a desktop learning app. It offers grounded lessons, Socratic chat, active recall, spaced repetition, Python exercises and progress insights. It runs entirely on your computer with your own AI provider. It has no account, no subscription to us, and no server to host.
 
+## Install
+
+The installer sets up everything the app needs, then builds the app for your computer. Each OS builds its own app; there is no prebuilt download yet.
+
+**Windows 10 or 11 (64-bit):** download [install.cmd](https://github.com/aaronilyas/BridgeToGrowth-Learning/releases/download/installers/install.cmd) and double-click it. If SmartScreen warns about the downloaded file, choose **More info → Run anyway**. Or paste this into PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/aaronilyas/BridgeToGrowth-Learning/main/install.ps1 | iex"
+```
+
+**macOS or Linux:** paste this into a terminal:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/aaronilyas/BridgeToGrowth-Learning/main/install.sh | sh
+```
+
+Or download [install.sh](https://github.com/aaronilyas/BridgeToGrowth-Learning/releases/download/installers/install.sh) and run `sh ~/Downloads/install.sh`.
+
+All three installers are also attached to the [Installers release](https://github.com/aaronilyas/BridgeToGrowth-Learning/releases/tag/installers), which `.github/workflows/installers.yml` refreshes whenever they change on `main`.
+
+What the installer does:
+
+| Step | Windows ([install.ps1](install.ps1)) | macOS / Linux ([install.sh](install.sh)) |
+|---|---|---|
+| System prerequisites | Microsoft Edge WebView2 runtime, if missing | Linux: GTK 3, WebKitGTK 4.1, libsoup 3, Ayatana AppIndicator 3, pkg-config, zstd, git, curl and unzip, via apt, dnf, pacman or zypper. It shows the command and asks before using `sudo`. macOS: nothing extra. |
+| Bun | Installs Bun 1.4.4 if Bun 1.4 or newer is missing | same |
+| Source | Uses the folder the script is in if it is a checkout. Otherwise it clones (or downloads a zip of) this repository into `%USERPROFILE%\BridgeToGrowth-Learning`, or updates an earlier copy there. | same, into `~/BridgeToGrowth-Learning` |
+| Build | `bun install`, then `scripts/make-app.ts` | same |
+
+The finished app lands in the `artifacts/` folder of the source folder. The installer prints the paths, and on Windows it opens the folder.
+
+- **Windows:** the Electrobun installer in `artifacts\windows-x64\`. Builds are unsigned: if SmartScreen warns, choose **More info → Run anyway**.
+- **macOS:** the Electrobun app archive in `artifacts/macos-<arch>/`. Builds are unsigned: open the app once with right-click → **Open**.
+- **Linux x64:** `BridgeToGrowthLearning-x86_64.AppImage`, which runs as is, and a `.deb` you can add to the app menu with `sudo apt install ./artifacts/BridgeToGrowthLearning_*_amd64.deb`. Other Linux CPUs get the Electrobun archive in `artifacts/linux-<arch>/`.
+
+Run the installer again to update: it pulls the latest source and rebuilds. Optional settings are environment variables. `BTG_DIR` sets where the source goes, `BTG_BRANCH` picks a branch, `BTG_YES=1` installs Linux packages without asking, and `BTG_SKIP_SYSTEM=1` skips the system package step.
+
+If Bun is already installed and you are in a checkout, `./make-app.sh` (macOS, Linux) or `make-app.cmd` (Windows) runs only the build. `bun run package:linux` builds only the AppImage and .deb. There is no auto-update yet. See [docs/packaging.md](docs/packaging.md).
+
 ## How AI is paid for
 
 On first launch the app asks you to connect at least one AI source. You can connect several and pick a default model for each task (lessons, chat, practice generation, and system work such as grading, extraction and insights).
@@ -44,19 +83,6 @@ bun run smoke                  # /api/health: 200 with the launch token, 401 wit
 The backend binds `127.0.0.1` on a random port. Every `/api` request must carry the per-launch token in `x-btg-token`, so a plain browser tab cannot use the API. The desktop shell injects the token into its window. For headless debugging, use the printed token with `curl -H "x-btg-token: …"`.
 
 Migrations in `db/migrations/` run automatically when the database opens. `bun run migrate [path]` applies them to another file.
-
-## Build the app
-
-Install [Bun](https://bun.sh) 1.4 or newer, then run the script for your system from the project folder:
-
-```sh
-./make-app.sh        # macOS or Linux
-make-app.cmd         # Windows (or double-click it)
-```
-
-The finished app lands in `artifacts/`: an AppImage and a .deb on Linux x64, plus the Electrobun installer for the current platform. A build targets the machine it runs on, so build on each OS you want to ship (CI does all three). Linux also needs GTK 3 and WebKitGTK 4.1 headers; the script names the packages if they are missing.
-
-`bun run package:linux` builds only the AppImage and .deb. Builds are unsigned, and there is no auto-update yet. See [docs/packaging.md](docs/packaging.md).
 
 ## Further reading
 

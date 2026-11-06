@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 
 if ! command -v bun >/dev/null 2>&1; then
   echo "Bun is required but was not found."
-  echo "Install it from https://bun.sh (curl -fsSL https://bun.sh/install | bash), open a new terminal, then run ./make-app.sh again."
+  echo "Run ./install.sh instead: it installs Bun and the other prerequisites, then builds the app."
   exit 1
 fi
 

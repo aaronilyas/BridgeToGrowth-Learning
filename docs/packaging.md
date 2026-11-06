@@ -4,7 +4,9 @@ BridgeToGrowth Learning ships as an Electrobun app. The window loads the Bun ser
 
 ## Build
 
-One command builds for the current OS: `./make-app.sh` (macOS, Linux) or `make-app.cmd` (Windows). Both run `bun install --frozen-lockfile` and then `scripts/make-app.ts`, which checks the Bun version and Linux libraries, fetches the pinned Pyodide assets, runs the stable Electrobun build, wraps Linux x64 output as an AppImage and .deb, and copies the installer into `artifacts/<os>-<arch>/`. Electrobun cannot cross-compile, so each OS builds its own app.
+On a fresh machine, `install.sh` (macOS, Linux) or `install.cmd`/`install.ps1` (Windows) installs the prerequisites first. On Linux that means the GTK 3, WebKitGTK 4.1, libsoup 3 and Ayatana AppIndicator 3 packages, pkg-config, zstd, git, curl and unzip. On Windows it means the WebView2 runtime. Both install Bun 1.4.4 if Bun 1.4 or newer is missing. When the script is not inside a checkout, it clones or downloads `main` into `~/BridgeToGrowth-Learning` (`BTG_DIR` overrides that). Then it runs the build below. `.github/workflows/installers.yml` checks the scripts' syntax and attaches them to the `installers` release on every change on `main`; the README links to those assets.
+
+With Bun already installed, one command builds for the current OS: `./make-app.sh` (macOS, Linux) or `make-app.cmd` (Windows). Both run `bun install --frozen-lockfile` and then `scripts/make-app.ts`, which checks the Bun version and Linux libraries, fetches the pinned Pyodide assets, runs the stable Electrobun build, wraps Linux x64 output as an AppImage and .deb, and copies the installer into `artifacts/<os>-<arch>/`. Electrobun cannot cross-compile, so each OS builds its own app.
 
 The individual steps, from a checkout with Bun 1.4.4:
 

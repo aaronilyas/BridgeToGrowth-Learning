@@ -7,7 +7,7 @@ cd /d "%~dp0"
 where bun >nul 2>nul
 if errorlevel 1 (
   echo Bun is required but was not found.
-  echo Install it from https://bun.sh ^(powershell -c "irm bun.sh/install.ps1 ^| iex"^), open a new terminal, then run make-app.cmd again.
+  echo Run install.cmd instead: it installs Bun and the other prerequisites, then builds the app.
   pause
   exit /b 1
 )
