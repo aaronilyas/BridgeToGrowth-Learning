@@ -1,6 +1,5 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { SeasonArt } from "./components/SeasonArt.tsx";
 import { ConnectionsProvider } from "./connections.tsx";
 import { AppRouter } from "./router.tsx";
 import { SessionProvider } from "./session.tsx";
@@ -14,7 +13,6 @@ if (root)
     <StrictMode>
       <SessionProvider>
         <ConnectionsProvider>
-          <SeasonArt />
           <AppRouter />
         </ConnectionsProvider>
       </SessionProvider>

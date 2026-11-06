@@ -55,17 +55,21 @@ function Flake(): JSX.Element {
   );
 }
 
+// Art is drawn at 70% of its viewBox-ish design size, in rem so it follows app zoom (1rem = 12px at 100%).
+const size = (w: number, h: number) => ({ width: `${(w * 0.7) / 12}rem`, aspectRatio: `${w} / ${h}` });
+
 const sway = { transformBox: "fill-box", transformOrigin: "bottom left" } as const;
 const spin = { transformBox: "fill-box", transformOrigin: "center" } as const;
 
 // O(1)
 // INV: all four seasons are mounted; CSS keyed on <html data-season> shows one, so switching is a single attribute change
+// INV: mounted inside <main> behind its content; theme.css keeps each piece inside the empty side gutter, so art never sits under text or controls
 // SEC: inline SVG only, no external assets
 export function SeasonArt(): JSX.Element {
   return (
     <>
       <div className="season-art" data-for="spring" aria-hidden="true">
-        <svg style={{ left: 0, top: 0 }} width="58" height="72" viewBox="0 0 96 120">
+        <svg data-corner="tl" style={{ ...size(58, 72) }} viewBox="0 0 96 120">
           <g className="art-sway" style={{ ...sway, transformOrigin: "top left" }}>
             <path d="M-4 -4C18 20 22 52 10 112" stroke="var(--art-leaf)" strokeWidth="2" fill="none" />
             <Leaf x={12} y={22} a={10} s={0.9} />
@@ -75,7 +79,7 @@ export function SeasonArt(): JSX.Element {
             <Leaf x={11} y={98} a={30} s={0.7} />
           </g>
         </svg>
-        <svg style={{ right: 4, bottom: 4 }} width="132" height="112" viewBox="0 0 132 112">
+        <svg data-corner="br" style={{ ...size(132, 112) }} viewBox="0 0 132 112">
           <g className="art-sway" style={sway}>
             <path d="M12 108C40 92 70 78 104 30" stroke="var(--art-leaf)" strokeWidth="2" fill="none" />
             <Leaf x={40} y={92} a={-150} s={0.8} />
@@ -89,38 +93,38 @@ export function SeasonArt(): JSX.Element {
         </svg>
       </div>
       <div className="season-art" data-for="summer" aria-hidden="true">
-        <svg style={{ left: 2, top: 2 }} width="32" height="32" viewBox="-28 -28 56 56">
+        <svg data-corner="tl" style={{ ...size(32, 32) }} viewBox="-28 -28 56 56">
           <g className="art-spin" style={spin}><Sun /></g>
         </svg>
-        <svg style={{ right: 14, top: 10 }} width="48" height="48" viewBox="-28 -28 56 56">
+        <svg data-corner="tr" style={{ ...size(48, 48) }} viewBox="-28 -28 56 56">
           <g className="art-spin" style={spin}><Sun /></g>
         </svg>
       </div>
       <div className="season-art" data-for="fall" aria-hidden="true">
-        <svg style={{ left: 2, top: 2, transform: "scaleY(-1)" }} width="34" height="52" viewBox="0 0 56 86">
+        <svg data-corner="tl" style={{ ...size(34, 52), transform: "scaleY(-1)" }} viewBox="0 0 56 86">
           <g className="art-sway" style={sway}><Sprig fill="var(--art-1)" vein="var(--art-1)" /></g>
         </svg>
-        <svg style={{ right: 2, top: 2, transform: "scale(-1,-1)" }} width="34" height="52" viewBox="0 0 56 86">
+        <svg data-corner="tr" style={{ ...size(34, 52), transform: "scale(-1,-1)" }} viewBox="0 0 56 86">
           <g className="art-sway" style={sway}><Sprig fill="var(--art-1)" vein="var(--art-1)" /></g>
         </svg>
-        <svg style={{ left: 2, bottom: 2 }} width="34" height="52" viewBox="0 0 56 86">
+        <svg data-corner="bl" style={{ ...size(34, 52) }} viewBox="0 0 56 86">
           <g className="art-sway" style={sway}><Sprig fill="var(--art-leaf)" vein="var(--art-leaf)" /></g>
         </svg>
-        <svg style={{ right: 2, bottom: 2, transform: "scaleX(-1)" }} width="34" height="52" viewBox="0 0 56 86">
+        <svg data-corner="br" style={{ ...size(34, 52), transform: "scaleX(-1)" }} viewBox="0 0 56 86">
           <g className="art-sway" style={sway}><Sprig fill="var(--art-2)" vein="var(--art-2)" /></g>
         </svg>
       </div>
       <div className="season-art" data-for="winter" aria-hidden="true">
-        <svg style={{ left: 2, top: 2 }} width="32" height="32" viewBox="-24 -24 48 48">
+        <svg data-corner="tl" style={{ ...size(32, 32) }} viewBox="-24 -24 48 48">
           <g className="art-drift" style={spin}><Flake /></g>
         </svg>
-        <svg style={{ right: 6, top: 6 }} width="32" height="32" viewBox="-24 -24 48 48">
+        <svg data-corner="tr" style={{ ...size(32, 32) }} viewBox="-24 -24 48 48">
           <g className="art-drift" style={spin}><Flake /></g>
         </svg>
-        <svg style={{ left: 2, bottom: 2 }} width="24" height="24" viewBox="-24 -24 48 48">
+        <svg data-corner="bl" style={{ ...size(24, 24) }} viewBox="-24 -24 48 48">
           <g className="art-drift" style={spin}><Flake /></g>
         </svg>
-        <svg style={{ right: 8, bottom: 8 }} width="44" height="44" viewBox="-24 -24 48 48">
+        <svg data-corner="br" style={{ ...size(44, 44) }} viewBox="-24 -24 48 48">
           <g className="art-drift" style={spin}><Flake /></g>
         </svg>
       </div>

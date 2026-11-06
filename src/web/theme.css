@@ -139,12 +139,25 @@ input[type="range"] {
   background: var(--accent-soft);
 }
 
+/* Season art sits behind <main>'s content (main is `isolate`), confined to the empty gutters either side of the
+   centred content column. Each piece shrinks to fit its gutter and vanishes when there is none, so it never
+   lies under text or controls. --art-content is the widest content column on the route (incl. its padding). */
 .season-art {
   display: none;
-  position: fixed;
+  position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 5;
+  z-index: -1;
+  --art-content: 64rem; /* AppShell's max-w-5xl column */
+}
+
+[data-route="lesson"] .season-art {
+  --art-content: 52rem; /* Lesson transcript and composer column */
+}
+
+/* The lesson header row spans the full width, so the top corners have no free gutter there. */
+[data-route="lesson"] .season-art svg[data-corner^="t"] {
+  display: none;
 }
 
 [data-season="spring"] .season-art[data-for="spring"],
@@ -157,7 +170,14 @@ input[type="range"] {
 .season-art svg {
   position: absolute;
   overflow: visible;
+  height: auto;
+  max-width: max(0px, calc((100% - var(--art-content)) / 2 - 1rem));
 }
+
+.season-art svg[data-corner^="t"] { top: 0.5rem; }
+.season-art svg[data-corner^="b"] { bottom: 0.5rem; }
+.season-art svg[data-corner$="l"] { left: 0.5rem; }
+.season-art svg[data-corner$="r"] { right: 0.75rem; } /* clear of the scrollbar */
 
 @media (prefers-reduced-motion: no-preference) {
   .art-sway {
@@ -215,6 +235,5 @@ input[type="range"] {
 /* Thin, quiet scrollbars for the sidebar and transcript. */
 .scroll-quiet { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 
-/* Corner art stays small and quiet so it never competes with controls. */
+/* Corner art stays quiet so it never competes with content. */
 .season-art { opacity: 0.5; }
-.season-art svg { zoom: 0.7; }
