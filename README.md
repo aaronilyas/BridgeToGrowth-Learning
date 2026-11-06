@@ -2,6 +2,28 @@
 
 BridgeToGrowth Learning is a desktop learning app. It offers grounded lessons, Socratic chat, active recall, spaced repetition, Python exercises and progress insights. It runs entirely on your computer with your own AI provider. It has no account, no subscription to us, and no server to host.
 
+## Install
+
+Download the installer for your computer from the [latest release](https://github.com/aaronilyas/BridgeToGrowth-Learning/releases/latest):
+
+| Your computer | Download | How to install |
+|---|---|---|
+| Windows 10 or 11 (64-bit) | [BridgeToGrowthLearning-Setup-x64.exe](https://github.com/aaronilyas/BridgeToGrowth-Learning/releases/latest/download/BridgeToGrowthLearning-Setup-x64.exe) | Run it and follow the setup wizard. |
+| macOS (Apple silicon) | [BridgeToGrowthLearning-macOS-arm64.dmg](https://github.com/aaronilyas/BridgeToGrowth-Learning/releases/latest/download/BridgeToGrowthLearning-macOS-arm64.dmg) | Open it and drag the app into Applications. |
+| Ubuntu, Debian, Linux Mint (64-bit) | [BridgeToGrowthLearning-amd64.deb](https://github.com/aaronilyas/BridgeToGrowth-Learning/releases/latest/download/BridgeToGrowthLearning-amd64.deb) | Double-click it to open it in your software center, then choose Install. |
+| Other Linux (64-bit) | [BridgeToGrowthLearning-x86_64.AppImage](https://github.com/aaronilyas/BridgeToGrowth-Learning/releases/latest/download/BridgeToGrowthLearning-x86_64.AppImage) | Portable, nothing to install. Mark it executable (right-click → Properties → Allow executing, or `chmod +x`), then double-click it. |
+
+Nothing else needs to be installed first.
+- **Windows:** the setup wizard adds a Start menu entry and an optional desktop shortcut. It also installs the Microsoft Edge WebView2 runtime if the computer lacks it (Windows 11 already has it). It asks whether to install for you only, which needs no administrator rights, or for everyone. Uninstall from **Settings → Apps**.
+- **Linux .deb:** installs the app into the app menu and pulls in the GTK and WebKitGTK libraries the window uses. From a terminal: `sudo apt install ~/Downloads/BridgeToGrowthLearning-amd64.deb`. Remove it with your software center or `sudo apt remove bridgetogrowth-learning`.
+- **Linux AppImage:** uses the WebKitGTK 4.1 libraries already on your system. If one is missing, it names the package to install.
+
+The installers are not code-signed yet, so the first launch needs one extra confirmation:
+- **Windows:** if SmartScreen says "Windows protected your PC", choose **More info → Run anyway**.
+- **macOS:** if macOS says it cannot verify the app, choose **Done**. Then open **System Settings → Privacy & Security**, scroll down, and choose **Open Anyway** next to the app's name. On macOS 14 and earlier, right-click the app in Applications and choose **Open**.
+
+Intel Macs, ARM Linux and other systems can build the app from source; see [Build the app](#build-the-app).
+
 ## How AI is paid for
 
 On first launch the app asks you to connect at least one AI source. You can connect several and pick a default model for each task (lessons, chat, practice generation, and system work such as grading, extraction and insights).
@@ -54,9 +76,14 @@ Install [Bun](https://bun.sh) 1.4 or newer, then run the script for your system 
 make-app.cmd         # Windows (or double-click it)
 ```
 
-The finished app lands in `artifacts/`: an AppImage and a .deb on Linux x64, plus the Electrobun installer for the current platform. A build targets the machine it runs on, so build on each OS you want to ship (CI does all three). Linux also needs GTK 3 and WebKitGTK 4.1 headers; the script names the packages if they are missing.
+The script builds the app and its installer for the computer it runs on, into `artifacts/`:
+- **Windows:** the setup wizard, if [Inno Setup](https://jrsoftware.org/isinfo.php) 6.3 or newer is installed (`winget install JRSoftware.InnoSetup`).
+- **macOS:** the disk image.
+- **Linux x64:** the AppImage and .deb.
 
-`bun run package:linux` builds only the AppImage and .deb. Builds are unsigned, and there is no auto-update yet. See [docs/packaging.md](docs/packaging.md).
+Each OS builds its own app, so build on each OS you want to ship. CI builds all three on every pull request. Linux also needs the GTK 3 and WebKitGTK 4.1 headers; the script names the packages if they are missing.
+
+To publish a release, set the version in `desktop/electrobun.config.ts`, then push a matching tag (`git tag v0.1.0 && git push origin v0.1.0`). CI builds the three installers and attaches them to a GitHub Release, and the download links above always point at the newest one. There is no auto-update yet. See [docs/packaging.md](docs/packaging.md).
 
 ## Further reading
 

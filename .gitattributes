@@ -1,0 +1,6 @@
+# Windows batch files are stored with CRLF so cmd.exe parses them reliably, including when downloaded raw from GitHub.
+*.cmd -text
+# Shell scripts must keep LF, even in a Windows checkout with core.autocrlf.
+*.sh text eol=lf
+# Inno Setup scripts use Windows line endings.
+*.iss text eol=crlf

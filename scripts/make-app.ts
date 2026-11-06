@@ -70,9 +70,9 @@ async function collectElectrobunArtifacts(): Promise<string[]> {
 }
 
 // O(n) in artifact count
-async function listLinuxPackages(): Promise<string[]> {
+async function listInstallers(): Promise<string[]> {
   const entries = await readdir(OUTPUT, { withFileTypes: true }).catch(() => []);
-  return entries.filter((entry) => entry.isFile() && /\.(AppImage|deb)$/.test(entry.name)).map((entry) => join(OUTPUT, entry.name));
+  return entries.filter((entry) => entry.isFile() && /\.(AppImage|deb|dmg|exe)$/.test(entry.name)).map((entry) => join(OUTPUT, entry.name));
 }
 
 // O(1) plus the build
@@ -87,11 +87,15 @@ async function makeApp(): Promise<void> {
   const outputs = await collectElectrobunArtifacts();
   if (process.platform === "linux" && process.arch === "x64") {
     await runStep("Packaging AppImage and .deb", [process.execPath, join("scripts", "package-linux.ts")]);
-    outputs.push(...await listLinuxPackages());
+  } else if (process.platform === "win32") {
+    await runStep("Building the setup wizard", [process.execPath, join("scripts", "package-windows.ts"), "--optional"]);
+  } else if (process.platform === "darwin") {
+    await runStep("Building the disk image", [process.execPath, join("scripts", "package-macos.ts")]);
   }
+  outputs.push(...await listInstallers());
   console.log("\nDone. Your app:");
   for (const path of outputs) console.log(`  ${path}`);
-  if (process.platform === "darwin") console.log("\nThe app is unsigned: open it once with right-click > Open.");
+  if (process.platform === "darwin") console.log("\nThe app is not notarized: the first time it is opened, allow it in System Settings > Privacy & Security > Open Anyway.");
   if (process.platform === "win32") console.log("\nThe app is unsigned: if SmartScreen warns, choose More info > Run anyway.");
 }
 

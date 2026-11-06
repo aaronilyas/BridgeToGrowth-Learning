@@ -4,7 +4,7 @@ BridgeToGrowth Learning ships as an Electrobun app. The window loads the Bun ser
 
 ## Build
 
-One command builds for the current OS: `./make-app.sh` (macOS, Linux) or `make-app.cmd` (Windows). Both run `bun install --frozen-lockfile` and then `scripts/make-app.ts`, which checks the Bun version and Linux libraries, fetches the pinned Pyodide assets, runs the stable Electrobun build, wraps Linux x64 output as an AppImage and .deb, and copies the installer into `artifacts/<os>-<arch>/`. Electrobun cannot cross-compile, so each OS builds its own app.
+One command builds for the current OS: `./make-app.sh` (macOS, Linux) or `make-app.cmd` (Windows). Both run `bun install --frozen-lockfile` and then `scripts/make-app.ts`, which checks the Bun version and Linux libraries, fetches the pinned Pyodide assets, runs the stable Electrobun build, copies Electrobun's own output into `artifacts/<os>-<arch>/`, and then builds that OS's installers into `artifacts/` (see Installers). Electrobun cannot cross-compile, so each OS builds its own app.
 
 The individual steps, from a checkout with Bun 1.4.4:
 
@@ -13,6 +13,8 @@ bun install --frozen-lockfile
 bun run desktop:dev      # Bun main process, one window, reload on change
 bun run desktop:build    # current platform, stable channel
 bun run package:linux    # stable Linux build, then AppImage and .deb
+bun scripts/package-windows.ts  # after desktop:build on Windows: setup wizard
+bun scripts/package-macos.ts    # after desktop:build on macOS: disk image
 bun run smoke            # headless /api/health: 200 with the token, 401 without
 ```
 
@@ -21,6 +23,23 @@ bun run smoke            # headless /api/health: 200 with the token, 401 without
 Linux builds need GTK 3 and WebKitGTK 4.1 headers (`libgtk-3-dev`, `libwebkit2gtk-4.1-dev`). Running the window also needs the runtime libraries that Electrobun's `libNativeWrapper.so` links against: `libgtk-3.so.0`, `libwebkit2gtk-4.1.so.0`, `libjavascriptcoregtk-4.1.so.0`, `libsoup-3.0.so.0` and `libayatana-appindicator3.so.1`. If one is missing, the launcher only reports `Failed to open native wrapper ... FileNotFound`. `scripts/linux-runtime.ts` checks them before `desktop:dev` starts. It is also available as `bun run setup:linux`. It detects Debian, Fedora, Arch and openSUSE families, picks package names that exist (for example `libgtk-3-0t64` on Ubuntu 24.04 and later), and installs them after a prompt. Set `BTG_SKIP_INSTALL_PROMPT=1` to only print the command, or `BTG_SKIP_RUNTIME_CHECK=1` to skip the check. The NEEDS list there must match `readelf -d libNativeWrapper.so` when Electrobun is upgraded. A built wrapper is also checked with `ldd`. The icon is `desktop/icon.svg`, the same mark as the in-app logo, plus `desktop/icon.png` at 256×256.
 
 `package:linux` downloads appimagetool 1.9.1, checks SHA-256 `ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0`, and caches it under `scripts/cache/appimagetool/` (gitignored). It runs the tool with `APPIMAGE_EXTRACT_AND_RUN=1`, so FUSE is not required to build. A `.deb` is built with `dpkg-deb` when that binary is on `PATH`. Otherwise the script writes an `ar` archive of `debian-binary`, `control.tar.gz`, and `data.tar.gz` itself.
+
+## Installers
+
+`.github/workflows/desktop.yml` builds these on every push and pull request and keeps them as workflow artifacts. A pushed `v*` tag that matches `app.version` in `desktop/electrobun.config.ts` also publishes them as a GitHub Release. The README links to `releases/latest/download/<file>`, so the file names must not change.
+
+| File | Built by | What it is |
+|---|---|---|
+| `BridgeToGrowthLearning-Setup-x64.exe` | `scripts/package-windows.ts` | Inno Setup wizard from `installer/windows-setup.iss` |
+| `BridgeToGrowthLearning-macOS-arm64.dmg` | `scripts/package-macos.ts` | disk image with the app and an Applications link |
+| `BridgeToGrowthLearning-amd64.deb` | `scripts/package-linux.ts` | the `.deb` below, renamed by CI |
+| `BridgeToGrowthLearning-x86_64.AppImage` | `scripts/package-linux.ts` | the AppImage below |
+
+A stable Electrobun build is a self-extractor: `bin/launcher` plus `Resources/<hash>.tar.zst`, which it unpacks into the user's profile on first launch. The Windows and Linux installers ship the runnable app from inside that archive instead (`bin/launcher`, `bin/bun`, `Resources/main.js`). So the program lives in the install folder, and uninstalling removes all of it. `scripts/bundle.ts` finds it and unpacks the archive with `Bun.zstdDecompressSync`, so no `zstd` tool is needed. WebView2 keeps its profile under `%LOCALAPPDATA%`, so a read-only Program Files install works. The macOS disk image ships Electrobun's `.app` as built, with an ad-hoc signature, because Apple silicon will not run unsigned code.
+
+The Windows wizard runs per user by default, with no administrator prompt, and offers a per-machine install. It adds Start menu and optional desktop shortcuts and an uninstaller. If the WebView2 runtime is missing, it runs Microsoft's bootstrapper, which is bundled in the setup. `package-windows.ts` downloads that bootstrapper to `scripts/cache/webview2/` and accepts it only with a valid Authenticode signature from Microsoft Corporation. The `AppId` GUID in the `.iss` lets a newer setup upgrade an older install in place. Never change it. CI installs Inno Setup with Chocolatey if the runner lacks it. `make-app.ts` skips the wizard with a note when Inno Setup is not installed.
+
+`desktop/icon.ico` (16 to 256 px) and `desktop/icon.iconset/` (16 to 1024 px, with Apple's icon margin) are generated from `desktop/icon.svg` by `bun scripts/make-icons.ts`, which has its own small rasterizer. Run it after changing the SVG and commit the output.
 
 ## Artifacts
 
