@@ -1,4 +1,4 @@
-export type ProviderId = "openrouter" | "codex" | "spacexai";
+export type ProviderId = "openrouter" | "codex" | "spacexai" | "claude";
 export type AuthKind = "api_key" | "subscription";
 export type ReasoningLevel = "low" | "high" | "max";
 export type ImagePart = { mime: string; dataUrl: string };

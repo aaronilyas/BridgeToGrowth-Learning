@@ -1,0 +1,7 @@
+{"sessionUpdate":"usage_update","used":1181,"size":1000000,"_meta":{"_claude/model":"claude-haiku-5-5"}}
+{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Here is a cat."}}
+{"sessionUpdate":"tool_call","toolCallId":"toolu_01Q48E1Pjs4MiYEksLvrwCun","title":"StructuredOutput","kind":"other","status":"pending","content":[],"rawInput":{},"_meta":{"claudeCode":{"toolName":"StructuredOutput"}}}
+{"sessionUpdate":"tool_call_update","toolCallId":"toolu_01Q48E1Pjs4MiYEksLvrwCun","rawInput":{"name":"Whiskers Thornberry"},"_meta":{"claudeCode":{"toolName":"StructuredOutput"}}}
+{"sessionUpdate":"tool_call_update","toolCallId":"toolu_01Q48E1Pjs4MiYEksLvrwCun","rawInput":{"name":"Whiskers Thornberry","age":7},"_meta":{"claudeCode":{"toolName":"StructuredOutput"}}}
+{"sessionUpdate":"tool_call_update","toolCallId":"toolu_01Q48E1Pjs4MiYEksLvrwCun","_meta":{"claudeCode":{"toolResponse":"Structured output provided successfully","toolName":"StructuredOutput"}}}
+{"sessionUpdate":"tool_call_update","toolCallId":"toolu_01Q48E1Pjs4MiYEksLvrwCun","status":"completed","content":[{"type":"content","content":{"type":"text","text":"Structured output provided successfully"}}],"_meta":{"claudeCode":{"toolName":"StructuredOutput"}}}

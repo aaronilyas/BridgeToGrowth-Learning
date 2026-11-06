@@ -57,7 +57,7 @@ const providers = route({}, async () => {
 const putKey = route({ body: ProviderKeyBody }, async (c) => {
   const id = IdParams.safeParse(c.params);
   if (!id.success) throw new HttpError(404, "not_found");
-  if (id.data.id === "codex") throw new HttpError(400, "bad_request");
+  if (id.data.id === "codex" || id.data.id === "claude") throw new HttpError(400, "bad_request");
   const probe = id.data.id === "openrouter" ? await probeOpenRouterKey(c.body.key) : await probeSpaceXaiKey(c.body.key);
   if (probe === "invalid") throw new HttpError(422, "bad_request");
   if (probe === "unreachable") throw new HttpError(502, "upstream");
@@ -71,7 +71,7 @@ const putKey = route({ body: ProviderKeyBody }, async (c) => {
 
 const deleteKey = route({}, async (c) => {
   const id = IdParams.safeParse(c.params);
-  if (!id.success || id.data.id === "codex") throw new HttpError(404, "not_found");
+  if (!id.success || id.data.id === "codex" || id.data.id === "claude") throw new HttpError(404, "not_found");
   await deleteProviderKey(id.data.id);
   await forgetProviderModels(id.data.id);
   return new Response(null, { status: 204 });
@@ -80,9 +80,10 @@ const deleteKey = route({}, async (c) => {
 type LoginProvider = "codex" | "spacexai";
 
 // O(1)
+// INV: Claude has no sign-in or sign-out routes; it uses only a session the user already has in their own Claude Code CLI
 function loginProviderOf(params: Record<string, string>): LoginProvider {
   const id = IdParams.safeParse(params);
-  if (!id.success || id.data.id === "openrouter") throw new HttpError(404, "not_found");
+  if (!id.success || id.data.id === "openrouter" || id.data.id === "claude") throw new HttpError(404, "not_found");
   return id.data.id;
 }
 

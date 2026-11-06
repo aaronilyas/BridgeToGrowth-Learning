@@ -12,7 +12,7 @@ const TASKS = [
   { task: "system", label: "System", hint: "Grading, extraction and insights." },
 ] as const;
 
-const PROVIDER_ORDER: readonly ProviderId[] = ["openrouter", "codex", "spacexai"];
+const PROVIDER_ORDER: readonly ProviderId[] = ["openrouter", "codex", "spacexai", "claude"];
 
 type Choice = Settings["models"]["lesson"];
 

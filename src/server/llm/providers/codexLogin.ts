@@ -18,7 +18,7 @@ function extraBinDirs(): string[] {
   if (process.platform === "win32") {
     const appData = process.env.APPDATA ?? join(home, "AppData", "Roaming");
     const local = process.env.LOCALAPPDATA ?? join(home, "AppData", "Local");
-    return [join(appData, "npm"), join(home, ".bun", "bin"), join(local, "mise", "shims"), join(home, ".volta", "bin")];
+    return [join(appData, "npm"), join(home, ".local", "bin"), join(home, ".bun", "bin"), join(local, "mise", "shims"), join(home, ".volta", "bin")];
   }
   return [
     join(home, ".local", "bin"),

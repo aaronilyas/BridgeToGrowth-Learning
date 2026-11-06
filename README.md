@@ -33,8 +33,9 @@ On first launch the app asks you to connect at least one AI source. You can conn
 | OpenRouter | paste an API key | your OpenRouter account, per use. The app shows the reported cost and can enforce an optional monthly budget. |
 | Codex | Settings → Connections → **Sign in with ChatGPT**. The app starts the official Codex CLI's own sign-in and shows a one-time code; you enter it on OpenAI's page. A browser sign-in is offered as a fallback. | your ChatGPT plan's usage limits. Install the CLI yourself (`npm install -g @openai/codex`); the app runs `codex exec` with every tool disabled. |
 | SpaceXAI | paste an xAI API key (**Get a SpaceXAI key** opens the xAI console) | your xAI account, per use. xAI does not document subscription use in other apps, so only API keys are supported. |
+| Claude | nothing in the app: install [Claude Code](https://github.com/anthropics/claude-code) and sign in to it yourself (`claude auth login`, or `/login` inside `claude`). Settings → Connections shows **Connected** once it is signed in. | the Claude plan Claude Code is signed in to. The app talks to Claude Code through the Agent Client Protocol (ACP) with every tool turned off. |
 
-The app never sees your ChatGPT password or Codex tokens: sign-in and sign-out run inside the official CLI, which keeps its own credentials. API keys are stored in your OS keychain (libsecret, macOS Keychain, or Windows Credential Manager). They are never written to the database, logs or exports. The Usage page shows tokens per provider and model for each month. USD cost appears only where the provider reports it, which is OpenRouter.
+The app never sees your ChatGPT password or Codex tokens: sign-in and sign-out run inside the official CLI, which keeps its own credentials. For Claude the app never signs in or out at all; it only uses the session Claude Code already has. API keys are stored in your OS keychain (libsecret, macOS Keychain, or Windows Credential Manager). They are never written to the database, logs or exports. The Usage page shows tokens per provider and model for each month. USD cost appears only where the provider reports it, which is OpenRouter.
 
 ## Your data
 
@@ -87,6 +88,6 @@ To publish a release, set the version in `desktop/electrobun.config.ts`, then pu
 
 ## Further reading
 
-- [docs/desktop-facts.md](docs/desktop-facts.md): verified facts about the Codex CLI, xAI, Bun and Electrobun that the design relies on, and the residual risks
+- [docs/desktop-facts.md](docs/desktop-facts.md): verified facts about the Codex CLI, xAI, Claude Code over ACP, Bun and Electrobun that the design relies on, and the residual risks
 - [docs/prompt-research.md](docs/prompt-research.md): the research behind the tutoring prompts
 - [CLAUDE.md](CLAUDE.md): the contract for code changes

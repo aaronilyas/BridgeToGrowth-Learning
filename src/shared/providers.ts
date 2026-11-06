@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const ProviderId = z.enum(["openrouter", "codex", "spacexai"]);
+export const ProviderId = z.enum(["openrouter", "codex", "spacexai", "claude"]);
 export type ProviderId = z.infer<typeof ProviderId>;
 
 export const ReasoningLevel = z.enum(["low", "high", "max"]);
@@ -47,7 +47,7 @@ export const LoginState = z.strictObject({
 });
 export type LoginState = z.infer<typeof LoginState>;
 
-export const ExternalTarget = z.enum(["openrouter_keys", "spacexai_keys", "codex_signin", "codex_install", "spacexai_signin", "grok_install"]);
+export const ExternalTarget = z.enum(["openrouter_keys", "spacexai_keys", "codex_signin", "codex_install", "spacexai_signin", "grok_install", "claude_install"]);
 export type ExternalTarget = z.infer<typeof ExternalTarget>;
 
 export const OpenExternalBody = z.strictObject({ target: ExternalTarget });

@@ -10,7 +10,7 @@ import { useSettings } from "../session.tsx";
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const tokens = new Intl.NumberFormat("en-US");
-const PROVIDER_ORDER: readonly ProviderId[] = ["openrouter", "codex", "spacexai"];
+const PROVIDER_ORDER: readonly ProviderId[] = ["openrouter", "codex", "spacexai", "claude"];
 
 // O(1)
 function monthPeriodLabel(period: string): string {

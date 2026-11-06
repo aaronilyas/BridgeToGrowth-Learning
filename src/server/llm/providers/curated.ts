@@ -19,6 +19,13 @@ const SPACEXAI_FALLBACK: readonly ModelRef[] = [
   { provider: "spacexai", id: "grok-4", label: "Grok 4", vision: true, structured: "native", reasoning: REASONING, contextTokens: 256_000 },
 ];
 
+// INV: aliases the Claude Code CLI resolves to the newest model of each family; used only if the account's own list cannot be read
+const CLAUDE_FALLBACK: readonly ModelRef[] = [
+  { provider: "claude", id: "opus", label: "Claude Opus (latest)", vision: true, structured: "native", reasoning: REASONING, contextTokens: 0 },
+  { provider: "claude", id: "sonnet", label: "Claude Sonnet (latest)", vision: true, structured: "native", reasoning: REASONING, contextTokens: 0 },
+  { provider: "claude", id: "haiku", label: "Claude Haiku (latest)", vision: true, structured: "native", reasoning: REASONING, contextTokens: 0 },
+];
+
 // O(1)
 export function curatedOpenRouterModels(): readonly ModelRef[] {
   return OPENROUTER_FALLBACK;
@@ -27,4 +34,9 @@ export function curatedOpenRouterModels(): readonly ModelRef[] {
 // O(1)
 export function curatedSpaceXaiModels(): readonly ModelRef[] {
   return SPACEXAI_FALLBACK;
+}
+
+// O(1)
+export function curatedClaudeModels(): readonly ModelRef[] {
+  return CLAUDE_FALLBACK;
 }

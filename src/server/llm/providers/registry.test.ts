@@ -12,7 +12,7 @@ const { forgetProviderModels, installProviderForTest } = await import("./src/ser
 const { updateSettings } = await import("./src/server/learn/sql.ts");
 
 const off = (id) => ({ id, auth: "subscription", status: async () => ({ provider: id, auth: "subscription", connected: false, detail: "logged_out" }), listModels: async () => [], stream: () => (async function* () {})() });
-const restoreOthers = [installProviderForTest("codex", off("codex")), installProviderForTest("spacexai", off("spacexai"))];
+const restoreOthers = [installProviderForTest("codex", off("codex")), installProviderForTest("spacexai", off("spacexai")), installProviderForTest("claude", off("claude"))];
 const Out = z.strictObject({ answer: z.string() });
 const model = { provider: "openrouter", id: "unit", label: "Unit", vision: false, structured: "prompted", reasoning: [], contextTokens: 1000 };
 await updateSettings(LOCAL_USER_ID, Settings.parse({ models: { lesson: { provider: "openrouter", id: "unit" } } }));

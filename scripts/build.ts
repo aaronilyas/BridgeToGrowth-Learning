@@ -47,6 +47,14 @@ async function relinkServerChunks(): Promise<number> {
 }
 
 // O(bundle size)
+// INV: the Claude ACP agent runs as its own Bun process (src/server/llm/providers/claude.ts), so it is one unsplit file beside the server bundle; nothing from node_modules ships
+async function buildClaudeAgent(): Promise<number> {
+  const out = await Bun.build({ entrypoints: ["src/server/llm/providers/claudeAcpEntry.ts"], outdir: OUT_DIR, naming: "claude-acp.js", target: "bun", minify: true, define: { "process.env.NODE_ENV": JSON.stringify("production") } });
+  for (const log of out.logs) console.error(log.message);
+  return out.success ? 0 : 1;
+}
+
+// O(bundle size)
 // INV: the Tailwind plugin from bunfig [serve.static] applies only to the dev server, so the production build passes it explicitly
 // INV: boot.js is the entry the desktop shell imports at runtime, so the app ships this exact bundle rather than a second build of the renderer
 // INV: splitting is required for the lazy page and markdown imports in src/web to become separate chunks; without it Bun inlines them into the entry
@@ -60,6 +68,7 @@ async function buildApp(): Promise<number> {
     return 1;
   }
   if ((await relinkServerChunks()) !== 0) return 1;
+  if ((await buildClaudeAgent()) !== 0) return 1;
   await copyPyodideAssets(join(OUT_DIR, "pyodide"));
   console.log(`built ${out.outputs.length} files into ${OUT_DIR}/`);
   return 0;

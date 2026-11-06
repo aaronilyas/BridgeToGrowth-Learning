@@ -40,7 +40,7 @@ function contains(bytes: Uint8Array, needle: string): boolean {
 beforeAll(async () => {
   await bootTestServer();
   const { installProviderForTest } = await import("./llm/providers/registry.ts");
-  restoreAdapters = (["openrouter", "codex", "spacexai"] as const).map((id) => installProviderForTest(id, quiet(id)));
+  restoreAdapters = (["openrouter", "codex", "spacexai", "claude"] as const).map((id) => installProviderForTest(id, quiet(id)));
   providers = (await import("./llm/routes.ts")).llmRoutes["/api/providers"].GET;
   exportData = (await import("./data/routes.ts")).dataRoutes["/api/data/export"].GET;
 });

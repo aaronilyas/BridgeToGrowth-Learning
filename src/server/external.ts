@@ -7,6 +7,7 @@ const FIXED: Record<Exclude<ExternalTarget, "codex_signin" | "spacexai_signin">,
   spacexai_keys: "https://console.x.ai/",
   codex_install: "https://github.com/openai/codex",
   grok_install: "https://docs.x.ai/build/overview",
+  claude_install: "https://github.com/anthropics/claude-code",
 };
 
 let opener: Opener = openWithPlatform;

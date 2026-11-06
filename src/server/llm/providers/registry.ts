@@ -3,8 +3,9 @@ import { ModelRef as ModelRefSchema, type ProviderId } from "../../../shared/pro
 import { sql } from "../../db.ts";
 import { HttpError } from "../../http.ts";
 import { jsonText, jsonValue } from "../../sqlmap.ts";
+import { claudeAdapter } from "./claude.ts";
 import { codexAdapter, codexEffortSnapshot, hydrateCodexEfforts } from "./codex.ts";
-import { curatedOpenRouterModels, curatedSpaceXaiModels } from "./curated.ts";
+import { curatedClaudeModels, curatedOpenRouterModels, curatedSpaceXaiModels } from "./curated.ts";
 import { openRouterAdapter } from "./openrouter.ts";
 import { spaceXaiAdapter } from "./spacexai.ts";
 import type { ModelRef, ProviderAdapter } from "./types.ts";
@@ -12,7 +13,7 @@ import type { ModelRef, ProviderAdapter } from "./types.ts";
 const DAY_MS = 86_400_000;
 const CachePayload = z.strictObject({ models: z.array(ModelRefSchema), efforts: z.record(z.string(), z.array(z.string())).optional() });
 
-const adapters: Record<ProviderId, ProviderAdapter> = { openrouter: openRouterAdapter, codex: codexAdapter, spacexai: spaceXaiAdapter };
+const adapters: Record<ProviderId, ProviderAdapter> = { openrouter: openRouterAdapter, codex: codexAdapter, spacexai: spaceXaiAdapter, claude: claudeAdapter };
 
 // O(1)
 export function installProviderForTest(id: ProviderId, adapter: ProviderAdapter): () => void {
@@ -72,13 +73,14 @@ async function loadModels(adapter: ProviderAdapter): Promise<readonly ModelRef[]
   }
   try {
     const models = await adapter.listModels();
-    if (models === curatedOpenRouterModels() || models === curatedSpaceXaiModels()) return models;
+    if (models === curatedOpenRouterModels() || models === curatedSpaceXaiModels() || models === curatedClaudeModels()) return models;
     const efforts = adapter.id === "codex" ? codexEffortSnapshot() : undefined;
     await writeModelCache(adapter.id, models, efforts);
     return models;
   } catch {
     if (adapter.id === "openrouter") return curatedOpenRouterModels();
     if (adapter.id === "spacexai") return curatedSpaceXaiModels();
+    if (adapter.id === "claude") return curatedClaudeModels();
     return [];
   }
 }
