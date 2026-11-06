@@ -418,3 +418,10 @@ test("chat stores stepIdx and the tutor sees the open check only after an attemp
     chatStreamImpl = async () => { throw new Error("llm must not be reached"); };
   }
 });
+
+test("a step explanation keeps its paragraph breaks and lists when cut to the word limit", async () => {
+  const { truncateWords } = await import("./core.ts");
+  const md = "A **proposition** is true or false.\n\nTo symbolize:\n\n1. Assign letters.\n2. Replace connectives.";
+  expect(truncateWords(md, 100)).toBe(md);
+  expect(truncateWords(md, 9)).toBe("A **proposition** is true or false.\n\nTo symbolize:\n\n1.");
+});

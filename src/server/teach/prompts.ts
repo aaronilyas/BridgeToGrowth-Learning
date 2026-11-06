@@ -33,10 +33,11 @@ export const EXPLANATION_RULES: string = [
   "- The first time you use a technical term, bold it and define it in plain words in the same sentence.",
   "- State every rule, formula and definition exactly, including the conditions under which it holds and when it does not apply.",
   "- Ground the general statement in a concrete case, such as specific numbers or a physical situation.",
-  "- Write short sentences in the active voice, with one idea per sentence. Use a numbered list for any procedure with more than two stages.",
+  "- Write short sentences in the active voice, with one idea per sentence. Use a numbered Markdown list, one item per line, for any procedure with more than two stages.",
+  "- Split the text into short paragraphs of two to three sentences, separated by a blank line: first the definitions, then the rule or procedure, then the concrete case, then the closing question.",
   "- Never use filler or hedges such as \"it is important to note\", \"simply\", \"obviously\", \"basically\", \"in essence\", \"plays a crucial role\", or \"various\".",
   "keyIdea is one sentence of at most 200 characters. It states the main takeaway as a precise claim, for example \"A first-order ODE is separable exactly when $dy/dx$ factors as $g(x)h(y)$.\". Never describe the step instead, as in \"This step covers ...\".",
-  "example is a worked example of at most 600 characters. State the problem, then give each step on its own line with the reason for it, then the result. Use different numbers from explanationMd. Set it to null only when the step is purely conceptual and no worked problem fits.",
+  "example is a worked example of at most 600 characters. State the problem in one line, then give each step as an item of a numbered Markdown list with the reason for it, then the result on its own line after a blank line. Use different numbers from explanationMd. Set it to null only when the step is purely conceptual and no worked problem fits.",
   "check is one question that tests the goal of this step on a new case or with new wording. Never ask the learner to repeat a sentence from explanationMd word for word.",
 ].join("\n");
 

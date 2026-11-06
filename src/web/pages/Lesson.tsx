@@ -183,7 +183,7 @@ export function LessonPage(): JSX.Element {
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <div ref={scroller} className="scroll-quiet min-h-0 flex-1 overflow-y-auto">
-            <div ref={content} aria-live="polite" aria-relevant="additions" aria-busy={teaching} aria-label="Lesson transcript" className="mx-auto flex max-w-[52rem] flex-col gap-10 px-8 py-8 leading-relaxed">
+            <div ref={content} aria-live="polite" aria-relevant="additions" aria-busy={teaching} aria-label="Lesson transcript" className="mx-auto flex max-w-[46rem] flex-col gap-14 px-8 pt-10 pb-16">
               {Array.from({ length: newest + 1 }, (_, i) => {
                 const s = steps[i];
                 return (
@@ -200,7 +200,7 @@ export function LessonPage(): JSX.Element {
             </div>
           </div>
 
-          <div className="mx-auto flex w-full max-w-[52rem] flex-col gap-2 px-8 pt-2 pb-4">
+          <div className="mx-auto flex w-full max-w-[46rem] flex-col gap-2 px-8 pt-2 pb-4">
             {canContinue && (
               <div className="flex justify-center">
                 {newest + 1 < total ? (

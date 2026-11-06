@@ -173,11 +173,21 @@ export function buildStepPrompt(settings: Settings, plan: StoredPlan, idx: numbe
   return parts.join("\n");
 }
 
+// O(n) in text length
+// INV: keeps the text's own whitespace, so paragraph breaks and Markdown lists survive; only words past maxWords are dropped
+export function truncateWords(text: string, maxWords: number): string {
+  let count = 0;
+  for (const m of text.matchAll(/\S+/g)) {
+    count += 1;
+    if (count === maxWords) return text.slice(0, m.index + m[0].length);
+  }
+  return text;
+}
+
 // O(n)
 // INV: explanationMd is cut at maxWords, citations are limited to the k sources, and the check is a valid question of the given category
 export function normalizeStep(out: StepOut, title: string, maxWords: number, papers: Paper[], category: QuestionCategory): NewStep {
-  const words = out.explanationMd.trim().split(/\s+/).filter((w) => w !== "");
-  const body = filterCitations(words.slice(0, maxWords).join(" "), papers.length);
+  const body = filterCitations(truncateWords(out.explanationMd.trim(), maxWords), papers.length);
   const check = toNewQuestion(out.check, category, papers);
   if (body.text === "" || !check) throw new HttpError(502, "llm_bad_output");
   const example = out.example?.trim() ? wrapBareMath(out.example.trim()) : null;

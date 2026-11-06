@@ -19,7 +19,7 @@ export const MessageRow = memo(function MessageRow({ row }: { row: ChatRow }): J
   return (
     <li className="flex flex-col gap-2">
       <span className="sr-only">Tutor: </span>
-      {row.pending && row.content === "" ? <span className="animate-pulse font-mono text-xs text-muted motion-reduce:animate-none">Thinking…</span> : <Md text={row.content} className="[&>p:first-child]:mt-0" />}
+      {row.pending && row.content === "" ? <span className="animate-pulse font-mono text-xs text-muted motion-reduce:animate-none">Thinking…</span> : <Md text={row.content} className="reading [&_p:first-child]:mt-0" />}
       {!row.pending && <Sources citations={row.citations} />}
     </li>
   );
@@ -29,7 +29,7 @@ export const MessageRow = memo(function MessageRow({ row }: { row: ChatRow }): J
 export function Messages({ rows }: { rows: readonly ChatRow[] | undefined }): JSX.Element | null {
   if (!rows || rows.length === 0) return null;
   return (
-    <ul className="flex flex-col gap-5">
+    <ul className="flex flex-col gap-8">
       {rows.map((r) => (
         <MessageRow key={r.id} row={r} />
       ))}

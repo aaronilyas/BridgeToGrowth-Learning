@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 const KEY = "btg:zoom";
 // The root font size at 100% zoom, as a share of the browser default (16px). The UI is sized in rem, so this scales the whole app.
-export const BASE_ROOT_PERCENT = 75;
+export const BASE_ROOT_PERCENT = 81.25;
 export const ZOOM_LEVELS = [0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2] as const;
 const EVENT = "btg:zoom-changed";
 

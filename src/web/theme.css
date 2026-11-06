@@ -117,7 +117,7 @@
 
 html {
   /* 100% app zoom; zoom.ts overrides this inline from the saved level */
-  font-size: 75%;
+  font-size: 81.25%; /* 13px; keep equal to BASE_ROOT_PERCENT in zoom.ts */
   color-scheme: dark;
   background: var(--bg);
   color: var(--text);
@@ -152,7 +152,7 @@ input[type="range"] {
 }
 
 [data-route="lesson"] .season-art {
-  --art-content: 52rem; /* Lesson transcript and composer column */
+  --art-content: 46rem; /* Lesson transcript and composer column */
 }
 
 /* The lesson header row spans the full width, so the top corners have no free gutter there. */
@@ -205,9 +205,25 @@ input[type="range"] {
   to { transform: translateY(4px) rotate(8deg); }
 }
 
-.md :where(p, ul, ol, pre, blockquote) { margin: 0.6em 0; }
-.md :where(ul) { list-style: disc; padding-left: 1.4em; }
-.md :where(ol) { list-style: decimal; padding-left: 1.4em; }
+/* Layered so per-element utilities such as [&>p:first-child]:mt-0 can override these defaults. */
+@layer components {
+  .md :where(p, ul, ol, pre, blockquote) { margin: 0.6em 0; }
+  .md :where(ul) { list-style: disc; padding-left: 1.4em; }
+  .md :where(ol) { list-style: decimal; padding-left: 1.4em; }
+  .md :where(li) { margin: 0.25em 0; padding-left: 0.2em; }
+  .md :where(li)::marker { color: var(--muted); }
+
+  /* Long-form lesson prose: a larger size, a taller line and clear gaps between paragraphs, so a step reads top to bottom
+     in short blocks. The lesson column (46rem) holds about 75 characters per line at this size. */
+  .reading :where(p, ul, ol, pre, blockquote) { margin: 1em 0; }
+  .reading :where(li) { margin: 0.4em 0; }
+  .reading .katex-display { margin: 1.1em 0; }
+}
+
+/* In the utilities layer and doubled-up, so it beats Md's own leading-relaxed. */
+@layer utilities {
+  .md.reading { font-size: 1.125rem; line-height: 1.75; }
+}
 .md :where(a) { color: var(--accent); text-decoration: underline; }
 .md :where(code) { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 0 0.3em; }
 .md :where(pre) { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 0.75em; overflow-x: auto; }
