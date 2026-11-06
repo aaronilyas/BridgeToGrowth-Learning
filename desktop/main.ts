@@ -1,7 +1,7 @@
 import "./linuxWebkit.ts";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import Electrobun, { BrowserWindow, Utils } from "electrobun/main";
+import Electrobun, { BrowserWindow, Screen, Utils } from "electrobun/main";
 
 type Boot = typeof import("../src/server/boot.ts");
 
@@ -30,6 +30,15 @@ async function loadBoot(): Promise<Boot> {
   return mod;
 }
 
+// O(1)
+// INV: the window opens at about 80% × 88% of the primary monitor's work area, never below 1024×700 or above the work area; centred
+// INV: if the display cannot be read (zero-sized work area), the window falls back to 1280×840
+function initialFrame(work: { width: number; height: number }): { width: number; height: number } {
+  if (!(work.width > 0 && work.height > 0)) return { width: 1280, height: 840 };
+  const fit = (share: number, total: number, min: number): number => Math.round(Math.min(total, Math.max(min, total * share)));
+  return { width: fit(0.8, work.width, 1024), height: fit(0.88, work.height, 700) };
+}
+
 const { startServer } = await loadBoot();
 const token = randomBytes(32).toString("hex");
 const server = await startServer({ token, openExternal: (url) => Utils.openExternal(url) });
@@ -38,7 +47,7 @@ const appWindow = new BrowserWindow({
   url: server.url,
   preload: desktopPreload(token),
   renderer: "native",
-  frame: { width: 1280, height: 840 },
+  frame: initialFrame(Screen.getPrimaryDisplay().workArea),
 });
 const state = { stopping: false };
 console.log(`BTG_URL=${server.url}`);

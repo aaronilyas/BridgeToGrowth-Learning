@@ -6,6 +6,7 @@ import { api, describeError } from "../api.ts";
 import { Button } from "../components/Button.tsx";
 import { ConnectionCards } from "../components/connections/ConnectionCards.tsx";
 import { BudgetField } from "../components/settings/BudgetField.tsx";
+import { DisplayFields } from "../components/settings/DisplayFields.tsx";
 import { DataSection } from "../components/settings/DataSection.tsx";
 import { LimitFields } from "../components/settings/LimitFields.tsx";
 import { LearningFields } from "../components/settings/LearningFields.tsx";
@@ -85,6 +86,7 @@ export function SettingsPage(): JSX.Element {
       <BudgetField value={draft.budgetUsd} onChange={(value) => setDraft((old) => ({ ...old, budgetUsd: value }))} />
       <DataSection email={draft.openalexMailto} onEmail={(value) => setDraft((old) => ({ ...old, openalexMailto: value }))} />
       <LearningFields draft={draft} setDraft={setDraft} onSeason={chooseSeason} />
+      <DisplayFields />
       <div className="flex items-center justify-end gap-4">
         {message && <span role="status" className={`text-sm ${failed ? "text-danger" : "text-muted"}`}>{message}</span>}
         <Button onClick={() => void saveSettings()} busy={saving}>Save settings</Button>

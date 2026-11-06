@@ -55,7 +55,7 @@ function Flake(): JSX.Element {
   );
 }
 
-// Art is drawn at 70% of its viewBox-ish design size, in rem so it follows app zoom (1rem = 12px at 100%).
+// Art is drawn at 70% of its viewBox-ish design size, in rem so it follows app zoom (1rem = 13px on the reference display).
 const size = (w: number, h: number) => ({ width: `${(w * 0.7) / 12}rem`, aspectRatio: `${w} / ${h}` });
 
 const sway = { transformBox: "fill-box", transformOrigin: "bottom left" } as const;
