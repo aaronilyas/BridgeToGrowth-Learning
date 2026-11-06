@@ -10,6 +10,7 @@
     "test": "bun test",
     "migrate": "bun scripts/migrate.ts",
     "desktop:dev": "bun scripts/desktop-dev.ts",
+    "setup:linux": "bun scripts/linux-runtime.ts",
     "desktop:build": "bun scripts/build.ts && cd desktop && bunx electrobun build --env=stable",
     "package:linux": "bun scripts/fetch-pyodide.ts && bun run desktop:build && bun scripts/package-linux.ts",
     "smoke": "bun scripts/smoke.ts",

@@ -30,7 +30,7 @@ Code questions run in Pyodide inside the app window, offline, with an import all
 
 ## Development
 
-Prerequisites: Bun 1.4 or newer. Linux desktop builds also need GTK 3 and WebKitGTK 4.1.
+Prerequisites: Bun 1.4 or newer. On Linux the desktop window also needs GTK 3, WebKitGTK 4.1, libsoup 3 and Ayatana AppIndicator 3. `bun run desktop:dev` checks for them before it builds. If any are missing, it prints the install command for your distro and offers to run it. Run `bun run setup:linux` to do the check on its own.
 
 ```sh
 bun install --frozen-lockfile
