@@ -231,6 +231,10 @@ input[type="range"] {
 .md :where(h1, h2, h3) { font-weight: 600; margin: 0.8em 0 0.4em; }
 .md :where(blockquote) { border-left: 3px solid var(--accent); padding-left: 0.8em; color: var(--muted); }
 .md .katex-display { overflow-x: auto; overflow-y: hidden; }
+.md .md-table { overflow-x: auto; margin: 0.8em 0; }
+.md .md-table table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.md .md-table :where(th, td) { border: 1px solid var(--border); padding: 0.3em 0.75em; text-align: left; vertical-align: top; }
+.md .md-table :where(th) { background: var(--panel-2); font-weight: 600; }
 
 /* Small uppercase monospace label, as in section captions ("PREDICTION", "SESSIONS"). */
 .label {

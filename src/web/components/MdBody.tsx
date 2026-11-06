@@ -1,7 +1,9 @@
 import type { JSX } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeKatex from "rehype-katex";
+import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
+import { normalizeMarkdown } from "../../shared/markdown.ts";
 import { wrapBareMath } from "../../shared/math.ts";
 import { registerKatexFonts } from "../katexFonts.ts";
 
@@ -19,13 +21,19 @@ const components: Components = {
     }
     return ok ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span>;
   },
+  // INV: a wide table scrolls inside its own box instead of widening the lesson column
+  table: ({ children }) => <div className="md-table"><table>{children}</table></div>,
 };
 
+// INV: GitHub tables, strikethrough only with ~~, autolinks and task lists; a single ~ stays a literal "approximately"
+const remarkPlugins: NonNullable<Parameters<typeof ReactMarkdown>[0]["remarkPlugins"]> = [[remarkGfm, { singleTilde: false }], remarkMath];
+
 // O(n) in text length
+// INV: the same text renders the same way for every subject: tables are repaired before math is wrapped and the Markdown is parsed
 export function MdBody({ text }: { text: string }): JSX.Element {
   return (
-    <ReactMarkdown skipHtml remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]} components={components}>
-      {wrapBareMath(text)}
+    <ReactMarkdown skipHtml remarkPlugins={remarkPlugins} rehypePlugins={[rehypeKatex]} components={components}>
+      {normalizeMarkdown(wrapBareMath(text))}
     </ReactMarkdown>
   );
 }
