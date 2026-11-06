@@ -1,8 +1,15 @@
 name: desktop
 
+# Builds the desktop app and its installers on each OS (Electrobun cannot cross-compile):
+#   Windows  BridgeToGrowthLearning-Setup-x64.exe   setup wizard (Inno Setup)
+#   macOS    BridgeToGrowthLearning-macOS-arm64.dmg drag-to-Applications disk image
+#   Linux    BridgeToGrowthLearning-x86_64.AppImage and BridgeToGrowthLearning-amd64.deb
+# Every run keeps them as workflow artifacts. Pushing a tag such as v0.1.0 also publishes them as a
+# GitHub Release; the README's download links point at the latest release.
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -25,11 +32,38 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-bin
       - run: bun install --frozen-lockfile
+      - name: Pyodide assets
+        run: bun scripts/fetch-pyodide.ts
       - name: Desktop build
         run: bun run desktop:build
       - name: Linux AppImage and deb
         if: runner.os == 'Linux'
-        run: bun scripts/package-linux.ts
+        run: |
+          bun scripts/package-linux.ts
+          mkdir installers
+          cp artifacts/BridgeToGrowthLearning-x86_64.AppImage installers/
+          cp artifacts/BridgeToGrowthLearning_*_amd64.deb installers/BridgeToGrowthLearning-amd64.deb
+      - name: Windows setup wizard
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe", "$env:ProgramFiles\Inno Setup *\ISCC.exe" -ErrorAction SilentlyContinue
+          if (-not $iscc) { choco install innosetup -y --no-progress }
+          bun scripts/package-windows.ts
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          New-Item -ItemType Directory installers | Out-Null
+          Copy-Item artifacts\BridgeToGrowthLearning-Setup-x64.exe installers\
+      - name: macOS disk image
+        if: runner.os == 'macOS'
+        run: |
+          bun scripts/package-macos.ts
+          mkdir installers
+          cp artifacts/BridgeToGrowthLearning-macOS-*.dmg installers/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: installer-${{ runner.os }}
+          path: installers/
+          if-no-files-found: error
       # TODO: code signing (Developer ID on macOS, Authenticode on Windows, optional dpkg-sig on Linux)
       - name: Code signing
         run: "echo 'TODO - code signing is not configured'"
@@ -40,3 +74,43 @@ jobs:
       # TODO: auto-update (Electrobun updater channel once artifacts are signed)
       - name: Auto-update
         run: "echo 'TODO - auto-update is not configured'"
+
+  release:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Tag matches the app version
+        run: |
+          version=$(sed -n 's/.*version: "\([^"]*\)".*/\1/p' desktop/electrobun.config.ts)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match the app version $version in desktop/electrobun.config.ts." >&2
+            exit 1
+          fi
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: installer-*
+          path: installers
+          merge-multiple: true
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l installers
+          cat > notes.md <<'EOF'
+          Download the installer for your computer:
+
+          - **Windows 10 or 11 (64-bit):** `BridgeToGrowthLearning-Setup-x64.exe`. Run it and follow the setup wizard.
+          - **macOS (Apple silicon):** `BridgeToGrowthLearning-macOS-arm64.dmg`. Open it and drag the app into Applications.
+          - **Ubuntu, Debian and other Linux:** `BridgeToGrowthLearning-amd64.deb` (double-click to install), or `BridgeToGrowthLearning-x86_64.AppImage` (portable; no install needed).
+
+          The installers are not code-signed yet, so Windows and macOS ask you to confirm the first time. See the README for the steps.
+          EOF
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" installers/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" installers/* --title "BridgeToGrowth Learning ${GITHUB_REF_NAME#v}" --notes-file notes.md --latest
+          fi

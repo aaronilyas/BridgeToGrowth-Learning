@@ -2,3 +2,5 @@
 *.cmd -text
 # Shell scripts must keep LF, even in a Windows checkout with core.autocrlf.
 *.sh text eol=lf
+# Inno Setup scripts use Windows line endings.
+*.iss text eol=crlf
