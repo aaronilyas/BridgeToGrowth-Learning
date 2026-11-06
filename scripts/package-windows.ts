@@ -2,19 +2,80 @@
 // Needs the stable Electrobun build (bun run desktop:build) and Inno Setup 6.3 or newer
 // (winget install JRSoftware.InnoSetup). With --optional, a missing Inno Setup is a note, not an error.
 import { mkdir, readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 import { ROOT, appVersion, findRuntime } from "./bundle.ts";
 
 const OUTPUT = join(ROOT, "artifacts");
 const OUTPUT_NAME = "BridgeToGrowthLearning-Setup-x64";
 const WEBVIEW2_URL = "https://go.microsoft.com/fwlink/p/?LinkId=2124703";
 const WEBVIEW2 = join(ROOT, "scripts", "cache", "webview2", "MicrosoftEdgeWebview2Setup.exe");
+// The file path is an environment variable, not part of the -Command text.
+const AUTHENTICODE_FILE_ENV = "BTG_AUTHENTICODE_FILE";
+
+// O(1). Windows PowerShell 5.1 cannot load PowerShell 7's Microsoft.PowerShell.Security.
+// The desktop workflow runs under pwsh, so a child powershell.exe inherits PSModulePath,
+// finds that 7.x module first, and Get-AuthenticodeSignature never loads
+// (CouldNotAutoloadMatchingModule). An absent PSModulePath makes 5.1 build its own.
+// Every casing: Node's process.env keys are case-sensitive, Windows env names are not.
+export function windowsPowerShellEnv(source: NodeJS.ProcessEnv, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  const skip = new Set(["psmodulepath", ...Object.keys(extra).map((key) => key.toLowerCase())]);
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined || skip.has(key.toLowerCase())) continue;
+    env[key] = value;
+  }
+  for (const [key, value] of Object.entries(extra)) env[key] = value;
+  return env;
+}
+
+// O(1). Absolute path: a bare "powershell.exe" is searched in the current directory before PATH.
+export function windowsPowerShellPath(env: NodeJS.ProcessEnv = process.env): string {
+  const systemRoot = env.SystemRoot ?? env.SYSTEMROOT ?? env.windir ?? env.WINDIR;
+  if (systemRoot === undefined || !/^[A-Za-z]:[\\/]/.test(systemRoot)) {
+    throw new Error(`cannot locate Windows PowerShell: SystemRoot is ${systemRoot === undefined ? "not set" : `not an absolute path (${systemRoot})`}`);
+  }
+  return win32.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+}
+
+// O(1). Import by path: on Windows Server 2025, autoload of Get-AuthenticodeSignature fails
+// when PSModulePath was absent at startup, which is exactly the environment above.
+export function authenticodeCommand(): string {
+  return [
+    "$ProgressPreference = 'SilentlyContinue'",
+    "$ErrorActionPreference = 'Stop'",
+    'Import-Module "$PSHOME\\Modules\\Microsoft.PowerShell.Security"',
+    `$s = Get-AuthenticodeSignature -LiteralPath $env:${AUTHENTICODE_FILE_ENV}`,
+    'Write-Output "$($s.Status)|$($s.SignerCertificate.Subject)"',
+  ].join("; ");
+}
+
+// O(1). null when the signature is Valid and the signer is Microsoft Corporation.
+// An empty status means the cmdlet did not run; that is not the same as an unsigned file.
+export function microsoftSignatureError(code: number, stdout: string, stderr: string): string | null {
+  const line = stdout.split(/\r?\n/).map((row) => row.trim()).find((row) => row.includes("|")) ?? "";
+  const bar = line.indexOf("|");
+  const status = bar === -1 ? "" : line.slice(0, bar).trim();
+  const subject = bar === -1 ? "" : line.slice(bar + 1).trim();
+  if (code !== 0 || status === "") {
+    const detail = stderr.trim().replace(/\s+/g, " ");
+    const clipped = detail.length > 500 ? `${detail.slice(0, 500)}…` : detail;
+    return `the WebView2 signature check did not run (powershell exit ${code}${clipped ? `: ${clipped}` : ""}). The bootstrapper was deleted; run again to download it fresh.`;
+  }
+  if (status !== "Valid" || !subject.includes("O=Microsoft Corporation")) {
+    return `the WebView2 bootstrapper is not signed by Microsoft (${status} ${subject}). It was deleted; run again to download it fresh.`;
+  }
+  return null;
+}
 
 // O(1)
-async function run(argv: string[]): Promise<{ code: number; stdout: string }> {
-  const proc = Bun.spawn(argv, { cwd: ROOT, stdout: "pipe", stderr: "inherit" });
-  const stdout = await new Response(proc.stdout).text();
-  return { code: await proc.exited, stdout };
+async function run(argv: string[], env: NodeJS.ProcessEnv): Promise<{ code: number; stdout: string; stderr: string }> {
+  const proc = Bun.spawn(argv, { cwd: ROOT, env, stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  return { code, stdout, stderr };
 }
 
 // O(n) in installed Inno Setup versions
@@ -42,14 +103,14 @@ async function ensureWebView2Bootstrapper(): Promise<string> {
     await mkdir(join(WEBVIEW2, ".."), { recursive: true });
     await Bun.write(WEBVIEW2, response);
   }
-  const check = await run([
-    "powershell", "-NoProfile", "-Command",
-    `$s = Get-AuthenticodeSignature -LiteralPath '${WEBVIEW2.replaceAll("'", "''")}';"$($s.Status)|$($s.SignerCertificate.Subject)"`,
-  ]);
-  const [status = "", subject = ""] = check.stdout.trim().split("|");
-  if (check.code !== 0 || status !== "Valid" || !subject.includes("O=Microsoft Corporation")) {
+  const check = await run(
+    [windowsPowerShellPath(), "-NoProfile", "-NonInteractive", "-Command", authenticodeCommand()],
+    windowsPowerShellEnv(process.env, { [AUTHENTICODE_FILE_ENV]: WEBVIEW2 }),
+  );
+  const error = microsoftSignatureError(check.code, check.stdout, check.stderr);
+  if (error) {
     await Bun.file(WEBVIEW2).delete().catch(() => undefined);
-    throw new Error(`the WebView2 bootstrapper is not signed by Microsoft (${status} ${subject}). It was deleted; run again to download it fresh.`);
+    throw new Error(error);
   }
   return WEBVIEW2;
 }
@@ -85,7 +146,9 @@ async function packageWindows(): Promise<void> {
   console.log(join(OUTPUT, `${OUTPUT_NAME}.exe`));
 }
 
-await packageWindows().catch((error: unknown) => {
-  console.error(`\npackage-windows: ${error instanceof Error ? error.message : String(error)}`);
-  process.exit(1);
-});
+if (import.meta.main) {
+  await packageWindows().catch((error: unknown) => {
+    console.error(`\npackage-windows: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  });
+}
