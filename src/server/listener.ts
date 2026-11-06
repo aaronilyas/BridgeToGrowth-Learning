@@ -7,7 +7,7 @@ import { readPyodideAsset } from "./pyodideAssets.ts";
 
 export const MAX_REQUEST_BYTES = 80 * 2 ** 20;
 
-type ApiHandler = (req: Request & { params?: Record<string, string> }) => Promise<Response>;
+type ApiHandler = (req: Request & { params?: Record<string, string> }, server?: Server<UpstreamSocket>) => Promise<Response>;
 export type ApiRoutes = Record<string, ApiHandler | Partial<Record<"GET" | "POST" | "PUT" | "PATCH" | "DELETE", ApiHandler>>>;
 type UpstreamSocket = { url: string; inner: WebSocket | null; pending: Array<string | Buffer> };
 
@@ -63,10 +63,12 @@ const API_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 
 // O(n) in route count
 // SEC: every API handler and the document fallback share one guard
+// INV: only a request that passes the guard has its idle timeout lifted; a model call may stay quiet for the user's whole time limit, which Bun's 255s idleTimeout ceiling cannot cover, and that call's own deadline bounds it
 function guardRoutes(api: ApiRoutes, token: string, portOf: () => number): ApiRoutes {
-  const guard = (handler: ApiHandler): ApiHandler => async (req) => {
+  const guard = (handler: ApiHandler): ApiHandler => async (req, server) => {
     const blocked = localGuard(req, `127.0.0.1:${portOf()}`, token);
     if (blocked) return secureResponse(blocked);
+    server?.timeout(req, 0);
     return handler(req);
   };
   const guarded: ApiRoutes = {};
@@ -89,7 +91,7 @@ function guardRoutes(api: ApiRoutes, token: string, portOf: () => number): ApiRo
 // INV: `api` handlers are built with route(), which wraps every response (including errors) in secureResponse, so they are mounted directly with no loopback hop
 // INV: `api` must not contain "/*"; the HTML bundle stays on the upstream so its responses pass through secureResponse
 // INV: maxRequestBodySize caps every body at the socket; route maxBody still caps each route below that
-// INV: idleTimeout stays above the model budgets in llm/timeouts.ts. Bun's default of 10s resets the socket before a lesson step or chat reply is written.
+// INV: idleTimeout covers documents and rejected requests; guardRoutes lifts it for authenticated API requests so a quiet model call is not reset. Bun's default of 10s would reset the socket before a lesson step or chat reply is written.
 // SEC: binds 127.0.0.1 only. The launch token makes localGuard reject any other Host, a missing API token, and a foreign mutation Origin.
 export function servePublic(o: { port: number; api: ApiRoutes; upstream: URL; token: string }): Server<UpstreamSocket> {
   if ("/*" in o.api) throw new Error("the document route belongs on the upstream");

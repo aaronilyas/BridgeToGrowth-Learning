@@ -44,5 +44,10 @@ export function settingsPatchOf(draft: Settings, saved: Settings): SettingsPatch
     patch.bite = bite;
   }
   if (draft.practice.dailyGoal !== saved.practice.dailyGoal) patch.practice = { dailyGoal: draft.practice.dailyGoal };
+  const limits: NonNullable<SettingsPatch["limits"]> = {};
+  if (draft.limits.timeoutSeconds !== saved.limits.timeoutSeconds) limits.timeoutSeconds = draft.limits.timeoutSeconds;
+  if (draft.limits.thinkingTokens !== saved.limits.thinkingTokens) limits.thinkingTokens = draft.limits.thinkingTokens;
+  if (draft.limits.answerScale !== saved.limits.answerScale) limits.answerScale = draft.limits.answerScale;
+  if (Object.keys(limits).length > 0) patch.limits = limits;
   return patch;
 }

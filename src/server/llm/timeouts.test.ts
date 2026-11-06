@@ -8,6 +8,8 @@ test("the server keeps a quiet model call open past Bun's 10s idle timeout", asy
   const listener = readFileSync(new URL("../listener.ts", import.meta.url), "utf8");
   expect(listener).toContain("idleTimeout: SERVER_IDLE_TIMEOUT_S");
   expect(SERVER_IDLE_TIMEOUT_S).toBeGreaterThanOrEqual(150);
+  expect(SERVER_IDLE_TIMEOUT_S).toBeLessThanOrEqual(255);
+  expect(listener).toContain("server?.timeout(req, 0)");
 
   const server = Bun.serve({
     hostname: "127.0.0.1",

@@ -8,7 +8,6 @@ import { buildMessages, completionBudget, parseJsonOutput, type ContentPart, typ
 import { providerAdapter, resolveTaskModel } from "./providers/registry.ts";
 import type { ChatMessage as ProviderMessage, ImagePart, LlmErrorCode, LlmRequest, ReasoningLevel } from "./providers/types.ts";
 import { insertLlmUsage, openRouterMonthMicros } from "./sql.ts";
-import { JSON_TIMEOUT_MS, STREAM_TIMEOUT_MS } from "./timeouts.ts";
 
 export type Who = { uid: string };
 export type SystemModelKey = "grade" | "extract" | "insight";
@@ -96,8 +95,7 @@ async function assertOpenRouterBudget(settings: Settings, provider: string): Pro
 
 // O(n) in the prompt
 // INV: an unset task model falls back to the requested id, the legacy default id, then any connected model
-async function prepare(task: ModelTask, requested: string | null, system: string, turns: Turn[], files: FilePart[], maxTokens: number, schema: Record<string, unknown> | null, signal: AbortSignal): Promise<{ req: LlmRequest; provider: string; modelId: string }> {
-  const settings = loadSettings(await localProfile());
+async function prepare(settings: Settings, task: ModelTask, requested: string | null, system: string, turns: Turn[], files: FilePart[], maxTokens: number, schema: Record<string, unknown> | null, signal: AbortSignal): Promise<{ req: LlmRequest; provider: string; modelId: string }> {
   const model = await resolveTaskModel(settings.models[task], [requested, settings.model]);
   await assertOpenRouterBudget(settings, model.provider);
   const built = providerMessages(buildMessages(system, turns, files));
@@ -107,7 +105,7 @@ async function prepare(task: ModelTask, requested: string | null, system: string
     system: native || schema === null ? built.system : `${built.system}\n\nRespond with JSON only, matching this JSON Schema:\n${JSON.stringify(schema)}`,
     messages: built.messages,
     reasoning: REASONING,
-    maxOutputTokens: completionBudget(maxTokens, model.reasoning.length > 0 ? REASONING : null),
+    maxOutputTokens: completionBudget(maxTokens, settings.limits, model.reasoning.length > 0),
     signal,
     ...(native && schema !== null ? { jsonSchema: schema } : {}),
   };
@@ -141,10 +139,12 @@ async function record(kind: string, provider: string, model: string, usage: Usag
 
 // O(n) in the prompt and response
 // INV: one retry after bad JSON, then bad_output; other provider errors are not retried
+// INV: settings.limits.timeoutSeconds bounds the whole call, both attempts included
 export async function chatJson<T>(o: JsonCall<T>): Promise<{ data: T; costMicros: bigint }> {
   const schema = z.toJSONSchema(o.schema) as unknown as Record<string, unknown>;
-  const timeout = AbortSignal.timeout(JSON_TIMEOUT_MS);
-  const prepared = await prepare(taskForKind(o.kind, o.model), typeof o.model === "string" ? o.model : null, o.system, [{ role: "user", content: o.user }], o.files ?? [], o.maxTokens, schema, o.signal ? AbortSignal.any([o.signal, timeout]) : timeout);
+  const settings = loadSettings(await localProfile());
+  const timeout = AbortSignal.timeout(settings.limits.timeoutSeconds * 1000);
+  const prepared = await prepare(settings, taskForKind(o.kind, o.model), typeof o.model === "string" ? o.model : null, o.system, [{ role: "user", content: o.user }], o.files ?? [], o.maxTokens, schema, o.signal ? AbortSignal.any([o.signal, timeout]) : timeout);
   let total = 0n;
   for (let attempt = 0; attempt < 2; attempt++) {
     const result = await collect(prepared.req);
@@ -165,7 +165,8 @@ function frameEvent(event: { t: "d"; v: string } | { t: "end"; citations?: Citat
 // INV: a missing or disconnected model throws before the stream starts, so the route can answer with a status
 export async function chatStream(o: StreamCall): Promise<ReadableStream<Uint8Array>> {
   const upstream = new AbortController();
-  const prepared = await prepare(taskForKind(o.kind, o.model), typeof o.model === "string" ? o.model : null, o.system, o.messages, [], o.maxTokens, null, AbortSignal.any([upstream.signal, o.signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)]));
+  const settings = loadSettings(await localProfile());
+  const prepared = await prepare(settings, taskForKind(o.kind, o.model), typeof o.model === "string" ? o.model : null, o.system, o.messages, [], o.maxTokens, null, AbortSignal.any([upstream.signal, o.signal, AbortSignal.timeout(settings.limits.timeoutSeconds * 1000)]));
   let closed = false;
   const send = (ctrl: ReadableStreamDefaultController<Uint8Array>, chunk: Uint8Array): void => {
     if (closed) return;

@@ -8,7 +8,10 @@ export const SETTINGS_LIMITS = {
   recall: { freeResponseRatio: { min: 0, max: 1 } },
   bite: { stepsPerLesson: { min: 2, max: 16 }, maxWordsPerStep: { min: 60, max: 400 }, questionsPerSession: { min: 3, max: 20 } },
   practice: { dailyGoal: { min: 1, max: 100 } },
+  limits: { timeoutSeconds: { min: 30, max: 900 }, thinkingTokens: { min: 1000, max: 64000 }, answerScale: { min: 0.5, max: 4 } },
 } as const;
+
+export const LIMIT_DEFAULTS = { timeoutSeconds: 120, thinkingTokens: 12000, answerScale: 1 } as const;
 
 const level = z.enum(["undergrad", "grad"]);
 const season = z.enum(["auto", "spring", "summer", "fall", "winter"]);
@@ -25,6 +28,8 @@ const srs = { enabled: z.boolean(), newPerDay: int(SETTINGS_LIMITS.srs.newPerDay
 const recall = { freeResponseRatio: z.number().min(SETTINGS_LIMITS.recall.freeResponseRatio.min).max(SETTINGS_LIMITS.recall.freeResponseRatio.max), confidencePrompt: z.boolean() };
 const bite = { stepsPerLesson: int(SETTINGS_LIMITS.bite.stepsPerLesson.min, SETTINGS_LIMITS.bite.stepsPerLesson.max), maxWordsPerStep: int(SETTINGS_LIMITS.bite.maxWordsPerStep.min, SETTINGS_LIMITS.bite.maxWordsPerStep.max), questionsPerSession: int(SETTINGS_LIMITS.bite.questionsPerSession.min, SETTINGS_LIMITS.bite.questionsPerSession.max) };
 const practice = { dailyGoal: int(SETTINGS_LIMITS.practice.dailyGoal.min, SETTINGS_LIMITS.practice.dailyGoal.max) };
+const L = SETTINGS_LIMITS.limits;
+const limits = { timeoutSeconds: int(L.timeoutSeconds.min, L.timeoutSeconds.max), thinkingTokens: int(L.thinkingTokens.min, L.thinkingTokens.max), answerScale: z.number().min(L.answerScale.min).max(L.answerScale.max) };
 
 // INV: parse({}) yields full defaults; nested groups use prefault so inner defaults apply
 export const Settings = z.strictObject({
@@ -39,6 +44,7 @@ export const Settings = z.strictObject({
   recall: z.strictObject({ freeResponseRatio: recall.freeResponseRatio.default(0.3), confidencePrompt: recall.confidencePrompt.default(true) }).prefault({}),
   bite: z.strictObject({ stepsPerLesson: bite.stepsPerLesson.default(4), maxWordsPerStep: bite.maxWordsPerStep.default(180), questionsPerSession: bite.questionsPerSession.default(8) }).prefault({}),
   practice: z.strictObject({ dailyGoal: practice.dailyGoal.default(10) }).prefault({}),
+  limits: z.strictObject({ timeoutSeconds: limits.timeoutSeconds.default(LIMIT_DEFAULTS.timeoutSeconds), thinkingTokens: limits.thinkingTokens.default(LIMIT_DEFAULTS.thinkingTokens), answerScale: limits.answerScale.default(LIMIT_DEFAULTS.answerScale) }).prefault({}),
 });
 export type Settings = z.infer<typeof Settings>;
 
@@ -53,6 +59,7 @@ export const SettingsPatch = z.strictObject({
   recall: z.strictObject({ freeResponseRatio: recall.freeResponseRatio.optional(), confidencePrompt: recall.confidencePrompt.optional() }).optional(),
   bite: z.strictObject({ stepsPerLesson: bite.stepsPerLesson.optional(), maxWordsPerStep: bite.maxWordsPerStep.optional(), questionsPerSession: bite.questionsPerSession.optional() }).optional(),
   practice: z.strictObject({ dailyGoal: practice.dailyGoal.optional() }).optional(),
+  limits: z.strictObject({ timeoutSeconds: limits.timeoutSeconds.optional(), thinkingTokens: limits.thinkingTokens.optional(), answerScale: limits.answerScale.optional() }).optional(),
 });
 export type SettingsPatch = z.infer<typeof SettingsPatch>;
 

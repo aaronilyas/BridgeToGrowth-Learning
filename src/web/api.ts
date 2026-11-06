@@ -32,7 +32,7 @@ const MESSAGES: Record<ErrorCode, string> = {
   quota_exhausted: "This month's provider budget is used up.",
   model_unavailable: "That model isn't available.",
   bad_output: "The model returned something unusable. Try again.",
-  timeout: "The model took too long. Try again.",
+  timeout: "The model took too long. Try again, or raise the response time limit in Settings.",
   provider_error: "The provider failed. Try again.",
   internal: "Something went wrong.",
 };

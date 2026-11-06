@@ -7,6 +7,7 @@ import { Button } from "../components/Button.tsx";
 import { ConnectionCards } from "../components/connections/ConnectionCards.tsx";
 import { BudgetField } from "../components/settings/BudgetField.tsx";
 import { DataSection } from "../components/settings/DataSection.tsx";
+import { LimitFields } from "../components/settings/LimitFields.tsx";
 import { LearningFields } from "../components/settings/LearningFields.tsx";
 import { ModelFields } from "../components/settings/ModelFields.tsx";
 import { settingsPatchOf } from "../components/settings/patch.ts";
@@ -70,7 +71,7 @@ export function SettingsPage(): JSX.Element {
     <div className="mx-auto grid max-w-3xl gap-5">
       <header>
         <h1 className="display text-2xl">Settings</h1>
-        <p className="mt-1 text-sm text-muted">Connect a provider, pick default models, and tune learning.</p>
+        <p className="mt-1 text-sm text-muted">Connect a provider, pick default models, set model limits, and tune learning.</p>
       </header>
       <section className="grid gap-3">
         <div>
@@ -80,6 +81,7 @@ export function SettingsPage(): JSX.Element {
         <ConnectionCards onChanged={loadModels} />
       </section>
       <ModelFields models={models} draft={draft} stale={settings.staleModels} setDraft={setDraft} />
+      <LimitFields draft={draft} setDraft={setDraft} />
       <BudgetField value={draft.budgetUsd} onChange={(value) => setDraft((old) => ({ ...old, budgetUsd: value }))} />
       <DataSection email={draft.openalexMailto} onEmail={(value) => setDraft((old) => ({ ...old, openalexMailto: value }))} />
       <LearningFields draft={draft} setDraft={setDraft} onSeason={chooseSeason} />

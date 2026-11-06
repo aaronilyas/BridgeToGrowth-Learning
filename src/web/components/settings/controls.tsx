@@ -25,11 +25,11 @@ export function SettingsToggle({ label, checked, onChange }: { label: string; ch
 }
 
 // O(1)
-export function SettingsNumber({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void }): JSX.Element {
+export function SettingsNumber({ label, value, min, max, step, onChange }: { label: string; value: number; min: number; max: number; step?: number; onChange: (value: number) => void }): JSX.Element {
   return (
     <label className="grid gap-1 text-sm">
       {label}
-      <input className={fieldClass} type="number" min={min} max={max} value={value} onChange={(event) => onChange(Math.max(min, Math.min(max, Number(event.currentTarget.value))))} />
+      <input className={fieldClass} type="number" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Math.max(min, Math.min(max, Number(event.currentTarget.value))))} />
     </label>
   );
 }

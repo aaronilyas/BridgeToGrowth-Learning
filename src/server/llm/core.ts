@@ -19,12 +19,12 @@ export function reasoningPayload(level: ReasoningLevel): { reasoning: { effort: 
   return { reasoning: { effort: level } };
 }
 
-const REASONING_BUDGET: Record<ReasoningLevel, number> = { low: 4000, high: 12000, max: 24000 };
-
 // O(1)
-// INV: reasoning tokens count against max_tokens upstream, so a reasoning call gets its level's budget on top of the answer's cap; otherwise the reasoning can use the whole cap and leave the answer empty
-export function completionBudget(answerTokens: number, level: ReasoningLevel | null): number {
-  return level === null ? answerTokens : answerTokens + REASONING_BUDGET[level];
+// INV: reasoning tokens count against max_tokens upstream, so a reasoning call gets the user's thinking budget on top of the answer's cap; otherwise the reasoning can use the whole cap and leave the answer empty
+// INV: answerScale stretches or shrinks the call site's answer cap; the result is never below 1
+export function completionBudget(answerTokens: number, limits: { thinkingTokens: number; answerScale: number }, reasons: boolean): number {
+  const answer = Math.max(1, Math.round(answerTokens * limits.answerScale));
+  return reasons ? answer + limits.thinkingTokens : answer;
 }
 
 // O(n) in text length
