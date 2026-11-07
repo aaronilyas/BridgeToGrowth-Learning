@@ -26,7 +26,7 @@ Linux builds need GTK 3 and WebKitGTK 4.1 headers (`libgtk-3-dev`, `libwebkit2gt
 
 ## Installers
 
-`.github/workflows/desktop.yml` builds these on every push and pull request and keeps them as workflow artifacts. A pushed `v*` tag that matches `app.version` in `desktop/electrobun.config.ts` also publishes them as a GitHub Release. The README links to `releases/latest/download/<file>`, so the file names must not change.
+`.github/workflows/desktop.yml` builds these on every push and pull request and keeps them as workflow artifacts. A pushed `v*` tag that matches `app.version` in `desktop/electrobun.config.ts` also publishes them as a GitHub Release. The README links to `releases/latest/download/<file>`, so the file names must not change. The download page in `website/` looks up these same names on the latest stable release and does not link a file that is missing.
 
 | File | Built by | What it is |
 |---|---|---|

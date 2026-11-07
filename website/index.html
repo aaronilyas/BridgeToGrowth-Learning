@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0e100f" />
+    <meta
+      name="description"
+      content="Download the latest stable BridgeToGrowth Learning installers for Windows, macOS, and Linux. A button is enabled only when that file is on the latest stable GitHub release."
+    />
+    <title>Download BridgeToGrowth Learning</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#downloads">Skip to downloads</a>
+    <header class="site-header">
+      <div class="brand">
+        <svg class="mark" width="40" height="40" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M3 24C9 14 23 14 29 24" fill="none" stroke="#8fd6a2" stroke-width="2.4" stroke-linecap="round" />
+          <path d="M3 24H29M9 24V19.5M16 24V17M23 24V19.5" fill="none" stroke="#8fd6a2" stroke-width="2" stroke-linecap="round" />
+          <path d="M16 15V7" fill="none" stroke="#c9e7cf" stroke-width="2" stroke-linecap="round" />
+          <path d="M16 10C16 6 13 4 9.5 4.5C10 8 12.5 10 16 10ZM16 8.5C16 5 19 3 22.5 3.5C22 7 19.5 8.5 16 8.5Z" fill="#c9e7cf" />
+        </svg>
+        <div>
+          <p class="eyebrow">Desktop app</p>
+          <p class="brand-name">BridgeToGrowth Learning</p>
+        </div>
+      </div>
+      <nav aria-label="Project">
+        <a href="https://github.com/aaronilyas/BridgeToGrowth-Learning/releases">Releases</a>
+        <a href="https://github.com/aaronilyas/BridgeToGrowth-Learning">Source</a>
+      </nav>
+    </header>
+    <main>
+      <div class="hero">
+        <h1>Download BridgeToGrowth Learning</h1>
+        <p class="lede">
+          Grounded lessons, Socratic chat, active recall, spaced repetition, Python exercises, and progress insights.
+          It runs on your computer with your own AI provider. There is no account and no subscription to us.
+        </p>
+        <noscript>
+          <p class="preview">JavaScript is off, so this page cannot ask GitHub which installers exist. The download buttons stay off. Use the releases page.</p>
+        </noscript>
+        <p id="preview-note" class="preview" hidden></p>
+        <p id="release-status" role="status" aria-live="polite">
+          Download buttons stay off until this page can confirm a file on the latest stable GitHub release. Drafts and pre-releases are skipped. If the buttons never turn on, use the releases page.
+        </p>
+        <p id="release-version"></p>
+        <p class="fallback">
+          <a id="releases-fallback" href="https://github.com/aaronilyas/BridgeToGrowth-Learning/releases">Open the GitHub releases page</a>
+        </p>
+      </div>
+
+      <section id="downloads" aria-labelledby="downloads-heading">
+        <div class="section-head">
+          <h2 id="downloads-heading">Installers</h2>
+          <p>Nothing else has to be installed first. Each computer builds its own installer, and only these four files are published.</p>
+        </div>
+        <div class="cards">
+          <article class="card" data-installer="windows">
+            <p class="match" hidden>Matches this computer</p>
+            <h3>Windows</h3>
+            <p class="arch">Windows 10 or 11 · 64-bit (x64)</p>
+            <p>Setup wizard. It adds a Start menu entry and an optional desktop shortcut.</p>
+            <div class="download-slot">
+              <button type="button" disabled aria-label="Download unavailable. BridgeToGrowthLearning-Setup-x64.exe for Windows 10 or 11 (64-bit)">Download unavailable</button>
+            </div>
+            <p class="file-meta"><code>BridgeToGrowthLearning-Setup-x64.exe</code><span class="size"></span></p>
+            <details>
+              <summary>Install steps</summary>
+              <ul>
+                <li>Run the downloaded file and follow the wizard.</li>
+                <li>Install for yourself, which needs no administrator rights, or for everyone.</li>
+                <li>The wizard installs the Microsoft Edge WebView2 runtime if Windows does not already have it. Windows 11 includes it.</li>
+                <li>Uninstall later from Settings → Apps.</li>
+              </ul>
+            </details>
+          </article>
+
+          <article class="card" data-installer="macos">
+            <p class="match" hidden>Matches this computer</p>
+            <h3>macOS</h3>
+            <p class="arch">Apple silicon (arm64)</p>
+            <p>Disk image. Open it and drag the app into Applications. There is no Intel Mac installer.</p>
+            <div class="download-slot">
+              <button type="button" disabled aria-label="Download unavailable. BridgeToGrowthLearning-macOS-arm64.dmg for macOS on Apple silicon (arm64)">Download unavailable</button>
+            </div>
+            <p class="file-meta"><code>BridgeToGrowthLearning-macOS-arm64.dmg</code><span class="size"></span></p>
+            <details>
+              <summary>Install steps</summary>
+              <ul>
+                <li>Open the disk image.</li>
+                <li>Drag BridgeToGrowth Learning into Applications.</li>
+              </ul>
+            </details>
+          </article>
+
+          <article class="card" data-installer="linux-deb">
+            <p class="match" hidden>Matches this computer</p>
+            <h3>Linux .deb</h3>
+            <p class="arch">Ubuntu, Debian, and Linux Mint · 64-bit (amd64)</p>
+            <p>Package that adds an app menu entry and installs the GTK and WebKitGTK libraries the window needs.</p>
+            <div class="download-slot">
+              <button type="button" disabled aria-label="Download unavailable. BridgeToGrowthLearning-amd64.deb for Ubuntu, Debian, and Linux Mint (64-bit amd64)">Download unavailable</button>
+            </div>
+            <p class="file-meta"><code>BridgeToGrowthLearning-amd64.deb</code><span class="size"></span></p>
+            <details>
+              <summary>Install steps</summary>
+              <ul>
+                <li>Double-click the package to open it in your software center, then choose Install.</li>
+                <li>Or from a terminal: <code>sudo apt install ~/Downloads/BridgeToGrowthLearning-amd64.deb</code></li>
+                <li>Remove it in the software center, or with <code>sudo apt remove bridgetogrowth-learning</code>.</li>
+              </ul>
+            </details>
+          </article>
+
+          <article class="card" data-installer="linux-appimage">
+            <p class="match" hidden>Matches this computer</p>
+            <h3>Linux AppImage</h3>
+            <p class="arch">Other Linux · 64-bit (x86_64)</p>
+            <p>Portable build. Nothing is copied into the system. It uses the WebKitGTK 4.1 libraries already installed.</p>
+            <div class="download-slot">
+              <button type="button" disabled aria-label="Download unavailable. BridgeToGrowthLearning-x86_64.AppImage for Other Linux (64-bit x86_64)">Download unavailable</button>
+            </div>
+            <p class="file-meta"><code>BridgeToGrowthLearning-x86_64.AppImage</code><span class="size"></span></p>
+            <details>
+              <summary>Install steps</summary>
+              <ul>
+                <li>Mark the file executable: right-click, Properties, Allow executing file as program. Or run <code>chmod +x BridgeToGrowthLearning-x86_64.AppImage</code>.</li>
+                <li>Open the file. If a WebKitGTK 4.1 library is missing, the app names the package to install.</li>
+                <li>Without FUSE, start it with <code>APPIMAGE_EXTRACT_AND_RUN=1 ./BridgeToGrowthLearning-x86_64.AppImage</code>.</li>
+              </ul>
+            </details>
+          </article>
+        </div>
+      </section>
+
+      <section class="notes" aria-labelledby="unsigned-heading">
+        <h2 id="unsigned-heading">Unsigned installers</h2>
+        <p>
+          The desktop workflow does not sign or notarize these installers yet. There is no Developer ID, no Apple notarization ticket, and no Authenticode signature.
+          The first launch asks for one extra confirmation. The macOS disk image does get an ad-hoc signature, which Apple silicon requires before the app can run at all. That signature does not satisfy Gatekeeper.
+        </p>
+        <ul>
+          <li><strong>Windows.</strong> If SmartScreen says "Windows protected your PC", choose More info, then Run anyway.</li>
+          <li><strong>macOS.</strong> If macOS says it cannot verify the app, choose Done. Then open System Settings → Privacy &amp; Security, scroll down, and choose Open Anyway next to the app's name. On macOS 14 and earlier, right-click the app in Applications and choose Open.</li>
+          <li><strong>Linux.</strong> The .deb and the AppImage are unsigned. A browser or software center may warn before you open them.</li>
+        </ul>
+      </section>
+
+      <section class="notes" aria-labelledby="other-heading">
+        <h2 id="other-heading">Computers without an installer</h2>
+        <p>
+          Intel Macs, ARM Linux, and 32-bit systems are not part of the published set. Those computers can build the app from source.
+          There is no auto-update. When a newer stable release is published, come back to this page or to the releases list.
+        </p>
+        <p>
+          <a href="https://github.com/aaronilyas/BridgeToGrowth-Learning#build-the-app">Build the app from source</a>
+        </p>
+      </section>
+    </main>
+    <footer>
+      <p>The files themselves stay on GitHub Releases. This page only links the latest stable ones.</p>
+      <p>
+        <a href="https://github.com/aaronilyas/BridgeToGrowth-Learning/issues">Report a problem</a>
+        <span aria-hidden="true"> · </span>
+        <a href="https://github.com/aaronilyas/BridgeToGrowth-Learning/blob/main/LICENSE">MIT License</a>
+      </p>
+    </footer>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
