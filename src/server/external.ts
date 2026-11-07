@@ -1,4 +1,5 @@
 import type { ExternalTarget } from "../shared/providers.ts";
+import { RELEASE_REPO } from "../shared/version.ts";
 
 type Opener = (url: string) => boolean;
 
@@ -8,6 +9,7 @@ const FIXED: Record<Exclude<ExternalTarget, "codex_signin" | "spacexai_signin">,
   codex_install: "https://github.com/openai/codex",
   grok_install: "https://docs.x.ai/build/overview",
   claude_install: "https://github.com/anthropics/claude-code",
+  releases: `https://github.com/${RELEASE_REPO}/releases`,
 };
 
 let opener: Opener = openWithPlatform;

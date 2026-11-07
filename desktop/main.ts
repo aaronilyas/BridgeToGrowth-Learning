@@ -21,6 +21,17 @@ async function stopDesktopServer(stop: () => Promise<void>, state: { stopping: b
 }
 
 // O(1)
+// INV: Electrobun writes Resources/version.json beside bin/, and the launcher starts in bin/, so this runs before loadBoot changes the cwd; a missing or unreadable file means no channel, which the updater treats as a build it cannot install over
+async function readReleaseChannel(): Promise<string> {
+  try {
+    const info: unknown = await Bun.file(join("..", "Resources", "version.json")).json();
+    return typeof info === "object" && info !== null && "channel" in info && typeof info.channel === "string" ? info.channel : "";
+  } catch {
+    return "";
+  }
+}
+
+// O(1)
 // INV: the backend and renderer come from scripts/build.ts (copied to server/), not from this bundle, so the app runs the same split, Tailwind-processed bundle as production
 // INV: Bun resolves a bundled HTML import's files against the cwd, and the launcher starts in bin/, so the cwd moves to the server bundle first
 async function loadBoot(): Promise<Boot> {
@@ -39,9 +50,14 @@ function initialFrame(work: { width: number; height: number }): { width: number;
   return { width: fit(0.8, work.width, 1024), height: fit(0.88, work.height, 700) };
 }
 
+const channel = await readReleaseChannel();
 const { startServer } = await loadBoot();
 const token = randomBytes(32).toString("hex");
-const server = await startServer({ token, openExternal: (url) => Utils.openExternal(url) });
+const server = await startServer({
+  token,
+  openExternal: (url) => Utils.openExternal(url),
+  shell: { channel, quit: () => void Utils.quit(), openPath: (path) => Utils.openPath(path), revealPath: (path) => void Utils.showItemInFolder(path) },
+});
 const appWindow = new BrowserWindow({
   title: "BridgeToGrowth Learning",
   url: server.url,

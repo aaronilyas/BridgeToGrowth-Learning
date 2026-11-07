@@ -24,6 +24,20 @@ The installers are not code-signed yet, so the first launch needs one extra conf
 
 Intel Macs, ARM Linux and other systems can build the app from source; see [Build the app](#build-the-app).
 
+## Update, or go back to an earlier version
+
+Open **Settings → App version**. The app asks GitHub for the published stable releases (it skips drafts and prereleases) and shows the newest one when it is newer than yours. Every stable version is listed, so you can also **Revert** to an earlier one.
+
+Choosing a version downloads that release's installer for your computer. The app accepts the file only if its size and SHA-256 checksum match what GitHub published for it. Before it installs, the app copies your database to `backups/` in the app-data folder (see [Your data](#your-data)) and keeps the newest five copies. An older version still opens data written by a newer one, but anything that depends on newer features may be missing until you update again.
+
+How the install finishes depends on how you installed the app:
+- **Windows:** the setup wizard opens and the app closes. Finish the wizard to start the chosen version.
+- **macOS:** the disk image opens. Quit the app, drag it onto Applications, and choose **Replace**.
+- **Linux .deb:** your system asks for your password (`pkexec`), installs the package (downgrades included) and restarts the app.
+- **Linux AppImage:** the AppImage file is replaced in place and the app restarts. If its folder is read-only, the new file opens in a folder instead.
+
+A development build, or a copy not installed by one of these installers, can still download a release; the file then opens in a folder for you to install by hand.
+
 ## How AI is paid for
 
 On first launch the app asks you to connect at least one AI source. You can connect several and pick a default model for each task (lessons, chat, practice generation, and system work such as grading, extraction and insights).
@@ -84,7 +98,7 @@ The script builds the app and its installer for the computer it runs on, into `a
 
 Each OS builds its own app, so build on each OS you want to ship. CI builds all three on every pull request. Linux also needs the GTK 3 and WebKitGTK 4.1 headers; the script names the packages if they are missing.
 
-To publish a release, set the version in `desktop/electrobun.config.ts`, then push a matching tag (`git tag v0.1.0 && git push origin v0.1.0`). CI builds the three installers and attaches them to a GitHub Release, and the download links above always point at the newest one. There is no auto-update yet. See [docs/packaging.md](docs/packaging.md).
+To publish a release, set `APP_VERSION` in `src/shared/version.ts`, then push a matching tag (`git tag v0.1.0 && git push origin v0.1.0`). CI builds the three installers and attaches them to a GitHub Release. The download links above always point at the newest one, and installed apps offer it under Settings → App version. A tag with a suffix such as `v0.2.0-beta.1`, or a release marked as a prerelease, is never offered as an update. See [docs/packaging.md](docs/packaging.md).
 
 ## Further reading
 

@@ -13,7 +13,7 @@ export function readLaunchHeaders(): Record<string, string> {
   return typeof token === "string" && token.length > 0 ? { "x-btg-token": token } : {};
 }
 
-const CODES: ReadonlySet<string> = new Set<ErrorCode>(["bad_request", "forbidden_origin", "not_found", "rate_limited", "model_not_allowed", "unsupported_media", "too_large", "upstream", "llm_bad_output", "source_blocked", "source_unreadable", "not_connected", "auth_expired", "quota_exhausted", "model_unavailable", "bad_output", "timeout", "provider_error", "internal"]);
+const CODES: ReadonlySet<string> = new Set<ErrorCode>(["bad_request", "forbidden_origin", "not_found", "rate_limited", "model_not_allowed", "unsupported_media", "too_large", "upstream", "llm_bad_output", "source_blocked", "source_unreadable", "not_connected", "auth_expired", "quota_exhausted", "model_unavailable", "bad_output", "timeout", "provider_error", "update_busy", "update_integrity", "update_install_failed", "internal"]);
 
 const MESSAGES: Record<ErrorCode, string> = {
   bad_request: "That request wasn't valid. Check the fields and try again.",
@@ -34,6 +34,9 @@ const MESSAGES: Record<ErrorCode, string> = {
   bad_output: "The model returned something unusable. Try again.",
   timeout: "The model took too long. Try again, or raise the response time limit in Settings.",
   provider_error: "The provider failed. Try again.",
+  update_busy: "Another download or install is already running. Wait for it to finish or cancel it.",
+  update_integrity: "The download didn't match the checksum GitHub published for it, so it was deleted. Try again.",
+  update_install_failed: "The installer didn't finish. Nothing was changed; try again, or download the file from the releases page.",
   internal: "Something went wrong.",
 };
 

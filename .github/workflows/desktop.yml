@@ -5,7 +5,8 @@ name: desktop
 #   macOS    BridgeToGrowthLearning-macOS-arm64.dmg drag-to-Applications disk image
 #   Linux    BridgeToGrowthLearning-x86_64.AppImage and BridgeToGrowthLearning-amd64.deb
 # Every run keeps them as workflow artifacts. Pushing a tag such as v0.1.0 also publishes them as a
-# GitHub Release; the README's download links point at the latest release.
+# GitHub Release; the README's download links point at the latest release, and the app's
+# Settings → App version lists the releases and installs the matching file (checked against GitHub's SHA-256 digest).
 on:
   push:
     branches: [main]
@@ -85,9 +86,9 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Tag matches the app version
         run: |
-          version=$(sed -n 's/.*version: "\([^"]*\)".*/\1/p' desktop/electrobun.config.ts)
+          version=$(sed -n 's/^export const APP_VERSION = "\([^"]*\)";.*/\1/p' src/shared/version.ts)
           if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match the app version $version in desktop/electrobun.config.ts." >&2
+            echo "Tag $GITHUB_REF_NAME does not match the app version $version in src/shared/version.ts." >&2
             exit 1
           fi
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -108,6 +109,8 @@ jobs:
           - **Ubuntu, Debian and other Linux:** `BridgeToGrowthLearning-amd64.deb` (double-click to install), or `BridgeToGrowthLearning-x86_64.AppImage` (portable; no install needed).
 
           The installers are not code-signed yet, so Windows and macOS ask you to confirm the first time. See the README for the steps.
+
+          Already installed? Open **Settings → App version** to update to this release, or to go back to an earlier one.
           EOF
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" installers/* --clobber

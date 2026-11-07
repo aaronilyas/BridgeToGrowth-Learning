@@ -1,7 +1,8 @@
 import type { ElectrobunConfig } from "electrobun";
+import { APP_VERSION } from "../src/shared/version.ts";
 
 export const electrobunConfig = {
-  app: { name: "BridgeToGrowth Learning", identifier: "dev.bridgetogrowth.learning", version: "0.1.0" },
+  app: { name: "BridgeToGrowth Learning", identifier: "dev.bridgetogrowth.learning", version: APP_VERSION },
   build: {
     mainProcess: "bun",
     bun: { entrypoint: "main.ts" },

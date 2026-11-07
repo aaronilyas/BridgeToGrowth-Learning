@@ -12,6 +12,7 @@ import { LimitFields } from "../components/settings/LimitFields.tsx";
 import { LearningFields } from "../components/settings/LearningFields.tsx";
 import { ModelFields } from "../components/settings/ModelFields.tsx";
 import { settingsPatchOf } from "../components/settings/patch.ts";
+import { UpdateSection } from "../components/settings/UpdateSection.tsx";
 import { useSettings } from "../session.tsx";
 
 // O(1)
@@ -72,7 +73,7 @@ export function SettingsPage(): JSX.Element {
     <div className="mx-auto grid max-w-3xl gap-5">
       <header>
         <h1 className="display text-2xl">Settings</h1>
-        <p className="mt-1 text-sm text-muted">Connect a provider, pick default models, set model limits, and tune learning.</p>
+        <p className="mt-1 text-sm text-muted">Connect a provider, pick default models, set model limits, tune learning, and update the app.</p>
       </header>
       <section className="grid gap-3">
         <div>
@@ -91,6 +92,7 @@ export function SettingsPage(): JSX.Element {
         {message && <span role="status" className={`text-sm ${failed ? "text-danger" : "text-muted"}`}>{message}</span>}
         <Button onClick={() => void saveSettings()} busy={saving}>Save settings</Button>
       </div>
+      <UpdateSection />
     </div>
   );
 }

@@ -14,6 +14,8 @@ import { seasonRoutes } from "./season/routes.ts";
 import { statsRoutes } from "./stats/routes.ts";
 import { styleRoutes } from "./styles/routes.ts";
 import { teachRoutes } from "./teach/routes.ts";
+import { setAppShell, type AppShell } from "./updates/install.ts";
+import { updateRoutes } from "./updates/routes.ts";
 
 const apiRoutes: ApiRoutes = {
   ...llmRoutes,
@@ -24,6 +26,7 @@ const apiRoutes: ApiRoutes = {
   ...teachRoutes,
   ...statsRoutes,
   ...seasonRoutes,
+  ...updateRoutes,
   "/api/health": { GET: route({}, async () => json({ ok: true })) },
   "/api/*": route({ csrf: false }, async () => json({ error: "not_found" }, 404)),
 };
@@ -31,9 +34,10 @@ const apiRoutes: ApiRoutes = {
 // O(1)
 // INV: one loopback listener per call
 // SEC: the mutation origin is the bound loopback origin; an omitted port lets the kernel choose one
-// INV: the desktop shell loads this module from the prebuilt bundle, so its native opener is handed in here rather than set on a second copy of external.ts
-export async function startServer(opts: { token: string; port?: number; openExternal?: (url: string) => boolean }): Promise<{ url: string; origin: string; stop: () => Promise<void> }> {
+// INV: the desktop shell loads this module from the prebuilt bundle, so its native opener and app shell (release channel, quit, open, reveal) are handed in here rather than set on a second copy of external.ts or updates/install.ts
+export async function startServer(opts: { token: string; port?: number; openExternal?: (url: string) => boolean; shell?: AppShell }): Promise<{ url: string; origin: string; stop: () => Promise<void> }> {
   if (opts.openExternal) setExternalOpener(opts.openExternal);
+  if (opts.shell) setAppShell(opts.shell);
   appDataDir();
   await activateDatabase();
   // SEC: API is served on the random public loopback socket; the upstream handles documents and assets only

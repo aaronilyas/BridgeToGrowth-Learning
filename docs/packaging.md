@@ -39,6 +39,24 @@ A stable Electrobun build is a self-extractor: `bin/launcher` plus `Resources/<h
 
 The Windows wizard runs per user by default, with no administrator prompt, and offers a per-machine install. It adds Start menu and optional desktop shortcuts and an uninstaller. If the WebView2 runtime is missing, it runs Microsoft's bootstrapper, which is bundled in the setup. `package-windows.ts` downloads that bootstrapper to `scripts/cache/webview2/` and accepts it only with a valid Authenticode signature from Microsoft Corporation. The check runs in Windows PowerShell 5.1, with `PSModulePath` removed from the child environment, and loads `Microsoft.PowerShell.Security` from `$PSHOME`. The desktop workflow's Windows step runs under PowerShell 7; without that, 5.1 inherits PowerShell 7's copy of the module, `Get-AuthenticodeSignature` does not load, and a good bootstrapper is reported as unsigned. The `AppId` GUID in the `.iss` lets a newer setup upgrade an older install in place. Never change it. CI installs Inno Setup with Chocolatey if the runner lacks it. `make-app.ts` skips the wizard with a note when Inno Setup is not installed.
 
+## In-app updates and rollback
+
+`src/server/updates/` lets an installed app move to any stable GitHub release, newer or older. The version lives in `src/shared/version.ts`. `desktop/electrobun.config.ts`, the `.deb` control file and the release job's tag check all read it from there, so a `.deb` always carries its real version and apt can tell an upgrade from a downgrade.
+
+- **Releases:** `GET /api/updates/releases` asks `api.github.com/repos/<repo>/releases` (no credentials; cached for 10 minutes, because GitHub allows 60 unauthenticated calls an hour). It keeps releases that are not drafts or prereleases and whose tag is plain `vX.Y.Z`.
+- **Download:** `POST /api/updates/download {tag}` fetches that release's asset for this machine into `updates/` in the app-data folder. The first URL must be this repository's `releases/download/` path on github.com. Redirects are followed by hand, and each hop must stay on `release-assets.githubusercontent.com` or `objects.githubusercontent.com`. The file is kept only if its byte count and SHA-256 match the asset's `size` and `digest` fields. A release asset without a `digest` is never downloaded.
+- **Install:** `POST /api/updates/install {tag}` first writes `backups/btg-before-<version>-<time>.sqlite` (with `VACUUM INTO`, keeping five). Then it installs by kind:
+
+| Kind | Detected by | Install |
+|---|---|---|
+| Windows | stable channel, `unins000.exe` beside `bin\` | runs the setup wizard detached, then quits. The fixed `AppId` lets any version replace the install. |
+| macOS | stable channel on arm64 | opens the `.dmg`; the user drags the app into Applications |
+| `.deb` | stable channel, running from `/opt/BridgeToGrowthLearning/` | `pkexec apt-get install -y --allow-downgrades <file>` (or `dpkg -i`), then relaunches `/usr/bin/bridgetogrowth-learning` and quits |
+| AppImage | stable channel, `APPIMAGE` set | copies the new image beside `$APPIMAGE`, renames it over the old one, relaunches it and quits |
+| none | dev builds, anything else | reveals the downloaded file in its folder |
+
+The shell passes the channel (from `Resources/version.json`, read before the cwd changes) and Electrobun's `Utils.quit`, `openPath` and `showItemInFolder` into `startServer`. The migration runner skips applied migrations it does not know, so an older version opens a newer database. The backup is there for the cases where newer data does not suit older code. This updater is separate from Electrobun's own updater, which still waits for signed artifacts (see below).
+
 `desktop/icon.ico` (16 to 256 px) and `desktop/icon.iconset/` (16 to 1024 px, with Apple's icon margin) are generated from `desktop/icon.svg` by `bun scripts/make-icons.ts`, which has its own small rasterizer. Run it after changing the SVG and commit the output.
 
 ## Artifacts
@@ -46,7 +64,7 @@ The Windows wizard runs per user by default, with no administrator prompt, and o
 | File | Role |
 |---|---|
 | `artifacts/BridgeToGrowthLearning-x86_64.AppImage` | portable Linux build |
-| `artifacts/BridgeToGrowthLearning_0.1.0_amd64.deb` | Debian package (`/opt/BridgeToGrowthLearning`, `/usr/bin/bridgetogrowth-learning`) |
+| `artifacts/BridgeToGrowthLearning_<version>_amd64.deb` | Debian package (`/opt/BridgeToGrowthLearning`, `/usr/bin/bridgetogrowth-learning`) |
 | `desktop/build/`, `desktop/artifacts/` | Electrobun intermediates (gitignored) |
 
 The `.deb` depends on `libgtk-3-0t64` (or `libgtk-3-0`), `libwebkit2gtk-4.1-0`, `libjavascriptcoregtk-4.1-0`, `libsoup-3.0-0` and `libayatana-appindicator3-1`, so `apt install ./BridgeToGrowthLearning_*.deb` pulls them in. The AppImage does not bundle WebKitGTK. Its `AppRun` checks the wrapper with `ldd` and names any missing libraries, on the terminal and with `notify-send`, instead of failing silently. Both packages install a `.desktop` entry named BridgeToGrowth Learning and the logo icon.

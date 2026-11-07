@@ -1,9 +1,10 @@
 import { chmod, cp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
+import { APP_VERSION } from "../src/shared/version.ts";
 
 const APP_NAME = "BridgeToGrowthLearning";
-const VERSION = "0.1.0";
+const VERSION = APP_VERSION;
 const TOOL_URL = "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage";
 const TOOL_SHA256 = "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0";
 const ROOT = resolve(import.meta.dir, "..");

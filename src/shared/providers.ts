@@ -47,7 +47,7 @@ export const LoginState = z.strictObject({
 });
 export type LoginState = z.infer<typeof LoginState>;
 
-export const ExternalTarget = z.enum(["openrouter_keys", "spacexai_keys", "codex_signin", "codex_install", "spacexai_signin", "grok_install", "claude_install"]);
+export const ExternalTarget = z.enum(["openrouter_keys", "spacexai_keys", "codex_signin", "codex_install", "spacexai_signin", "grok_install", "claude_install", "releases"]);
 export type ExternalTarget = z.infer<typeof ExternalTarget>;
 
 export const OpenExternalBody = z.strictObject({ target: ExternalTarget });

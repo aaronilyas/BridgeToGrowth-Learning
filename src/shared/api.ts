@@ -5,7 +5,7 @@ import { ConnectionStatus, ModelRef } from "./providers.ts";
 export { UsageResponse } from "./providers.ts";
 export type { UsageModel } from "./providers.ts";
 
-export type ErrorCode = "bad_request"|"forbidden_origin"|"not_found"|"rate_limited"|"model_not_allowed"|"unsupported_media"|"too_large"|"upstream"|"llm_bad_output"|"source_blocked"|"source_unreadable"|"not_connected"|"auth_expired"|"quota_exhausted"|"model_unavailable"|"bad_output"|"timeout"|"provider_error"|"internal";
+export type ErrorCode = "bad_request"|"forbidden_origin"|"not_found"|"rate_limited"|"model_not_allowed"|"unsupported_media"|"too_large"|"upstream"|"llm_bad_output"|"source_blocked"|"source_unreadable"|"not_connected"|"auth_expired"|"quota_exhausted"|"model_unavailable"|"bad_output"|"timeout"|"provider_error"|"update_busy"|"update_integrity"|"update_install_failed"|"internal";
 
 export const ConfigResponse = z.strictObject({});
 export type ConfigResponse = z.infer<typeof ConfigResponse>;
