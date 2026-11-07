@@ -140,7 +140,8 @@ export function QuestionCard({ question, onResult, label = "Check", answered = n
     return () => window.removeEventListener("keydown", onKey);
   }, [isMcq, locked, question.choices?.length]);
 
-  const row = "flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 text-sm transition has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-accent";
+  // INV: rows are positioned so each sr-only radio stays inside its row; otherwise focusing it scrolls the app shell and blanks the lesson
+  const row = "relative flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 text-sm transition has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-accent";
 
   return (
     <section aria-label={label} className="rounded-2xl border border-border bg-panel">

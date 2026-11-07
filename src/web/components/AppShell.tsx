@@ -21,6 +21,7 @@ function readCollapsed(): boolean {
 // INV: a collapsed sidebar leaves a slim rail with the toggle, so nothing floats over page content
 // INV: season art lives inside <main> (isolated stacking context) so it paints behind page content and never over the sidebar
 // INV: a window too narrow for the sidebar beside the lesson column shows the rail instead, until the user opens the sidebar
+// INV: <main> clips without being a scroll container (overflow-clip, not overflow-hidden), so focusing or scrolling to an element can never shift the whole page out of view
 // INV: the lesson route fills the main area itself (no padding, no scroll here); every other route scrolls inside a padded, width-capped column
 export function AppShell({ children }: { children: ReactNode }): JSX.Element {
   const [location] = useLocation();
@@ -48,7 +49,7 @@ export function AppShell({ children }: { children: ReactNode }): JSX.Element {
       ) : (
         <Sidebar onCollapse={() => set(true)} />
       )}
-      <main data-route={isLesson ? "lesson" : "page"} className="relative isolate flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
+      <main data-route={isLesson ? "lesson" : "page"} className="relative isolate flex h-screen min-w-0 flex-1 flex-col overflow-clip">
         <SeasonArt />
         <StaleModelBanner />
         {isLesson ? (
