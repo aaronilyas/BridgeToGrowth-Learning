@@ -4,7 +4,7 @@ BridgeToGrowth Learning is a desktop learning app. It offers grounded lessons, S
 
 ## Install
 
-Download the installer for your computer from the [latest release](https://github.com/aaronilyas/BridgeToGrowth-Learning/releases/latest):
+Download the installer for your computer from the [latest release](https://github.com/aaronilyas/BridgeToGrowth-Learning/releases/latest). The page in [`website/`](website/) lists these same files and leaves a button off until the latest stable release contains that file. See [docs/website.md](docs/website.md) to publish it.
 
 | Your computer | Download | How to install |
 |---|---|---|
