@@ -3,6 +3,7 @@ import { SETTINGS_LIMITS, type Settings } from "../../../shared/settings.ts";
 import { fieldClass, SettingsNumber, SettingsSection, SettingsToggle } from "./controls.tsx";
 
 const SEASONS = ["auto", "spring", "summer", "fall", "winter"] as const;
+const S = SETTINGS_LIMITS.srs;
 
 // O(1)
 export function LearningFields({ draft, setDraft, onSeason }: { draft: Settings; setDraft: Dispatch<SetStateAction<Settings>>; onSeason: (season: Settings["season"]) => void }): JSX.Element {
@@ -11,11 +12,11 @@ export function LearningFields({ draft, setDraft, onSeason }: { draft: Settings;
   }
   return (
     <>
-      <SettingsSection title="Spaced repetition" columns>
+      <SettingsSection title="Spaced repetition" hint="These ranges follow learning research. Each question gets at least three spaced reviews, and the longest gap is about one year." columns>
         <SettingsToggle label="Enable spaced repetition" checked={draft.srs.enabled} onChange={(value) => setDraft((old) => ({ ...old, srs: { ...old.srs, enabled: value } }))} />
-        <SettingsNumber label="New cards per day" value={draft.srs.newPerDay} min={SETTINGS_LIMITS.srs.newPerDay.min} max={SETTINGS_LIMITS.srs.newPerDay.max} onChange={(value) => setSrsNumber("newPerDay", value)} />
-        <SettingsNumber label="Maximum reviews per day" value={draft.srs.maxReviewsPerDay} min={SETTINGS_LIMITS.srs.maxReviewsPerDay.min} max={SETTINGS_LIMITS.srs.maxReviewsPerDay.max} onChange={(value) => setSrsNumber("maxReviewsPerDay", value)} />
-        <SettingsNumber label="Reviews per question" value={draft.srs.repetitions} min={SETTINGS_LIMITS.srs.repetitions.min} max={SETTINGS_LIMITS.srs.repetitions.max} onChange={(value) => setSrsNumber("repetitions", value)} />
+        <SettingsNumber label={`New cards per day (${S.newPerDay.min}–${S.newPerDay.max})`} value={draft.srs.newPerDay} min={S.newPerDay.min} max={S.newPerDay.max} onChange={(value) => setSrsNumber("newPerDay", value)} />
+        <SettingsNumber label={`Maximum reviews per day (${S.maxReviewsPerDay.min}–${S.maxReviewsPerDay.max})`} value={draft.srs.maxReviewsPerDay} min={S.maxReviewsPerDay.min} max={S.maxReviewsPerDay.max} onChange={(value) => setSrsNumber("maxReviewsPerDay", value)} />
+        <SettingsNumber label={`Reviews per question (${S.repetitions.min}–${S.repetitions.max})`} value={draft.srs.repetitions} min={S.repetitions.min} max={S.repetitions.max} onChange={(value) => setSrsNumber("repetitions", value)} />
       </SettingsSection>
       <SettingsSection title="Active recall">
         <SettingsToggle label="Ask for confidence after each answer" checked={draft.recall.confidencePrompt} onChange={(value) => setDraft((old) => ({ ...old, recall: { ...old.recall, confidencePrompt: value } }))} />

@@ -1,5 +1,5 @@
 import { beforeAll, expect, mock, test } from "bun:test";
-import { Settings } from "../../shared/settings.ts";
+import { Settings, SettingsPatch, SETTINGS_LIMITS } from "../../shared/settings.ts";
 import { bootTestServer, callRoute, createTestUser, insertFixtureUser, type Handler, type TestServer } from "../testkit.ts";
 
 let t: TestServer;
@@ -73,6 +73,29 @@ test("default schedule: three reviews at 1 day, 1 week, 1 month, then retired", 
   }
   expect(gaps).toEqual([1, 7, 30]);
   expect([core.ladderDays(6), core.ladderDays(7), core.ladderDays(8)]).toEqual([365, 730, 1460]);
+});
+
+test("reviews per question cannot run past the fixed review ladder", () => {
+  expect(SETTINGS_LIMITS.srs.repetitions.max).toBe(core.REVIEW_LADDER_D.length);
+});
+
+test("edits outside the research-based ranges are rejected", () => {
+  for (const srs of [{ repetitions: 2 }, { repetitions: 7 }, { maxReviewsPerDay: 29 }, { maxReviewsPerDay: 201 }, { newPerDay: -1 }, { newPerDay: 21 }]) {
+    expect([srs, SettingsPatch.safeParse({ srs }).success]).toEqual([srs, false]);
+  }
+  for (const srs of [{ repetitions: 3 }, { repetitions: 6 }, { maxReviewsPerDay: 30 }, { maxReviewsPerDay: 200 }, { newPerDay: 0 }, { newPerDay: 20 }]) {
+    expect([srs, SettingsPatch.safeParse({ srs }).success]).toEqual([srs, true]);
+  }
+});
+
+test("saved values outside the ranges are clamped and other settings survive", () => {
+  const high = core.loadSettings({ settings: { level: "grad", srs: { enabled: false, newPerDay: 50, maxReviewsPerDay: 500, repetitions: 10 } } });
+  expect(high.level).toBe("grad");
+  expect(high.srs).toEqual({ enabled: false, newPerDay: 20, maxReviewsPerDay: 200, repetitions: 6 });
+  const low = core.loadSettings({ settings: { level: "grad", srs: { enabled: true, newPerDay: 0, maxReviewsPerDay: 0, repetitions: 1 } } });
+  expect(low.level).toBe("grad");
+  expect(low.srs).toEqual({ enabled: true, newPerDay: 0, maxReviewsPerDay: 30, repetitions: 3 });
+  expect(Settings.parse({}).srs).toEqual({ enabled: true, newPerDay: 10, maxReviewsPerDay: 50, repetitions: 3 });
 });
 
 test("queue never exposes answer fields; attempt does, after grading", async () => {

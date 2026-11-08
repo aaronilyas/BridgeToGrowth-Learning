@@ -1,4 +1,4 @@
-import type { JSX, ReactNode } from "react";
+import { useState, type JSX, type ReactNode } from "react";
 import { Panel } from "../Panel.tsx";
 
 export const fieldClass = "w-full rounded-lg border border-border bg-panel-2 px-3 py-2 text-text outline-none focus:border-accent";
@@ -26,10 +26,16 @@ export function SettingsToggle({ label, checked, onChange }: { label: string; ch
 
 // O(1)
 export function SettingsNumber({ label, value, min, max, step, onChange }: { label: string; value: number; min: number; max: number; step?: number; onChange: (value: number) => void }): JSX.Element {
+  // INV: typed text stays until blur, so a number can pass below `min` while it is being entered; the draft is always in range
+  const [typed, setTyped] = useState<string | null>(null);
+  function change(text: string): void {
+    setTyped(text);
+    if (text !== "") onChange(Math.max(min, Math.min(max, Number(text))));
+  }
   return (
     <label className="grid gap-1 text-sm">
       {label}
-      <input className={fieldClass} type="number" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Math.max(min, Math.min(max, Number(event.currentTarget.value))))} />
+      <input className={fieldClass} type="number" min={min} max={max} step={step} value={typed ?? value} onBlur={() => setTyped(null)} onChange={(event) => change(event.currentTarget.value)} />
     </label>
   );
 }
