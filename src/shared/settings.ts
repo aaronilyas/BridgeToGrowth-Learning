@@ -6,7 +6,7 @@ const int = (min: number, max: number) => z.int().min(min).max(max);
 export const SETTINGS_LIMITS = {
   srs: { newPerDay: { min: 0, max: 50 }, maxReviewsPerDay: { min: 0, max: 500 }, repetitions: { min: 1, max: 10 } },
   recall: { freeResponseRatio: { min: 0, max: 1 } },
-  bite: { stepsPerLesson: { min: 2, max: 16 }, maxWordsPerStep: { min: 60, max: 400 }, questionsPerSession: { min: 3, max: 20 } },
+  bite: { topicsPerLesson: { min: 2, max: 16 }, maxWordsPerTurn: { min: 60, max: 400 }, questionsPerSession: { min: 3, max: 20 } },
   practice: { dailyGoal: { min: 1, max: 100 } },
   limits: { timeoutSeconds: { min: 30, max: 900 }, thinkingTokens: { min: 1000, max: 64000 }, answerScale: { min: 0.5, max: 4 } },
 } as const;
@@ -26,7 +26,7 @@ const taskModels = {
 };
 const srs = { enabled: z.boolean(), newPerDay: int(SETTINGS_LIMITS.srs.newPerDay.min, SETTINGS_LIMITS.srs.newPerDay.max), maxReviewsPerDay: int(SETTINGS_LIMITS.srs.maxReviewsPerDay.min, SETTINGS_LIMITS.srs.maxReviewsPerDay.max), repetitions: int(SETTINGS_LIMITS.srs.repetitions.min, SETTINGS_LIMITS.srs.repetitions.max) };
 const recall = { freeResponseRatio: z.number().min(SETTINGS_LIMITS.recall.freeResponseRatio.min).max(SETTINGS_LIMITS.recall.freeResponseRatio.max), confidencePrompt: z.boolean() };
-const bite = { stepsPerLesson: int(SETTINGS_LIMITS.bite.stepsPerLesson.min, SETTINGS_LIMITS.bite.stepsPerLesson.max), maxWordsPerStep: int(SETTINGS_LIMITS.bite.maxWordsPerStep.min, SETTINGS_LIMITS.bite.maxWordsPerStep.max), questionsPerSession: int(SETTINGS_LIMITS.bite.questionsPerSession.min, SETTINGS_LIMITS.bite.questionsPerSession.max) };
+const bite = { topicsPerLesson: int(SETTINGS_LIMITS.bite.topicsPerLesson.min, SETTINGS_LIMITS.bite.topicsPerLesson.max), maxWordsPerTurn: int(SETTINGS_LIMITS.bite.maxWordsPerTurn.min, SETTINGS_LIMITS.bite.maxWordsPerTurn.max), questionsPerSession: int(SETTINGS_LIMITS.bite.questionsPerSession.min, SETTINGS_LIMITS.bite.questionsPerSession.max) };
 const practice = { dailyGoal: int(SETTINGS_LIMITS.practice.dailyGoal.min, SETTINGS_LIMITS.practice.dailyGoal.max) };
 const L = SETTINGS_LIMITS.limits;
 const limits = { timeoutSeconds: int(L.timeoutSeconds.min, L.timeoutSeconds.max), thinkingTokens: int(L.thinkingTokens.min, L.thinkingTokens.max), answerScale: z.number().min(L.answerScale.min).max(L.answerScale.max) };
@@ -42,7 +42,7 @@ export const Settings = z.strictObject({
   openalexMailto: z.string().max(254).default(""),
   srs: z.strictObject({ enabled: srs.enabled.default(true), newPerDay: srs.newPerDay.default(10), maxReviewsPerDay: srs.maxReviewsPerDay.default(50), repetitions: srs.repetitions.default(3) }).prefault({}),
   recall: z.strictObject({ freeResponseRatio: recall.freeResponseRatio.default(0.3), confidencePrompt: recall.confidencePrompt.default(true) }).prefault({}),
-  bite: z.strictObject({ stepsPerLesson: bite.stepsPerLesson.default(4), maxWordsPerStep: bite.maxWordsPerStep.default(180), questionsPerSession: bite.questionsPerSession.default(8) }).prefault({}),
+  bite: z.strictObject({ topicsPerLesson: bite.topicsPerLesson.default(4), maxWordsPerTurn: bite.maxWordsPerTurn.default(180), questionsPerSession: bite.questionsPerSession.default(8) }).prefault({}),
   practice: z.strictObject({ dailyGoal: practice.dailyGoal.default(10) }).prefault({}),
   limits: z.strictObject({ timeoutSeconds: limits.timeoutSeconds.default(LIMIT_DEFAULTS.timeoutSeconds), thinkingTokens: limits.thinkingTokens.default(LIMIT_DEFAULTS.thinkingTokens), answerScale: limits.answerScale.default(LIMIT_DEFAULTS.answerScale) }).prefault({}),
 });
@@ -57,7 +57,7 @@ export const SettingsPatch = z.strictObject({
   openalexMailto: z.string().max(254).optional(),
   srs: z.strictObject({ enabled: srs.enabled.optional(), newPerDay: srs.newPerDay.optional(), maxReviewsPerDay: srs.maxReviewsPerDay.optional(), repetitions: srs.repetitions.optional() }).optional(),
   recall: z.strictObject({ freeResponseRatio: recall.freeResponseRatio.optional(), confidencePrompt: recall.confidencePrompt.optional() }).optional(),
-  bite: z.strictObject({ stepsPerLesson: bite.stepsPerLesson.optional(), maxWordsPerStep: bite.maxWordsPerStep.optional(), questionsPerSession: bite.questionsPerSession.optional() }).optional(),
+  bite: z.strictObject({ topicsPerLesson: bite.topicsPerLesson.optional(), maxWordsPerTurn: bite.maxWordsPerTurn.optional(), questionsPerSession: bite.questionsPerSession.optional() }).optional(),
   practice: z.strictObject({ dailyGoal: practice.dailyGoal.optional() }).optional(),
   limits: z.strictObject({ timeoutSeconds: limits.timeoutSeconds.optional(), thinkingTokens: limits.thinkingTokens.optional(), answerScale: limits.answerScale.optional() }).optional(),
 });

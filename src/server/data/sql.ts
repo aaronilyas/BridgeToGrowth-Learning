@@ -5,7 +5,6 @@ import { LOCAL_EMAIL, LOCAL_USER_ID } from "../profile.ts";
 // INV: app rows go away and the seeded local profile comes back; the migration ledger stays
 export async function deleteAppRows(tx: SQL): Promise<void> {
   await tx`DELETE FROM messages`;
-  await tx`DELETE FROM lesson_steps`;
   await tx`DELETE FROM conversations`;
   await tx`DELETE FROM attempts`;
   await tx`DELETE FROM cards`;

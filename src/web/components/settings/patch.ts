@@ -37,10 +37,10 @@ export function settingsPatchOf(draft: Settings, saved: Settings): SettingsPatch
     if (draft.recall.confidencePrompt !== saved.recall.confidencePrompt) recall.confidencePrompt = draft.recall.confidencePrompt;
     patch.recall = recall;
   }
-  if (draft.bite.stepsPerLesson !== saved.bite.stepsPerLesson || draft.bite.maxWordsPerStep !== saved.bite.maxWordsPerStep || draft.bite.questionsPerSession !== saved.bite.questionsPerSession) {
+  if (draft.bite.topicsPerLesson !== saved.bite.topicsPerLesson || draft.bite.maxWordsPerTurn !== saved.bite.maxWordsPerTurn || draft.bite.questionsPerSession !== saved.bite.questionsPerSession) {
     const bite: NonNullable<SettingsPatch["bite"]> = {};
-    if (draft.bite.stepsPerLesson !== saved.bite.stepsPerLesson) bite.stepsPerLesson = draft.bite.stepsPerLesson;
-    if (draft.bite.maxWordsPerStep !== saved.bite.maxWordsPerStep) bite.maxWordsPerStep = draft.bite.maxWordsPerStep;
+    if (draft.bite.topicsPerLesson !== saved.bite.topicsPerLesson) bite.topicsPerLesson = draft.bite.topicsPerLesson;
+    if (draft.bite.maxWordsPerTurn !== saved.bite.maxWordsPerTurn) bite.maxWordsPerTurn = draft.bite.maxWordsPerTurn;
     if (draft.bite.questionsPerSession !== saved.bite.questionsPerSession) bite.questionsPerSession = draft.bite.questionsPerSession;
     patch.bite = bite;
   }

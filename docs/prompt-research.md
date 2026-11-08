@@ -3,8 +3,8 @@
 This file maps each rule in the learner-facing LLM prompts to the peer-reviewed research behind it. The prompts it covers are:
 
 - the lesson plan (`buildPlanPrompt` + `PLAN_RULES`)
-- lesson steps (`buildStepPrompt` + `EXPLANATION_RULES` + `MCQ_RULES`)
-- tutor chat (`TUTOR_RULES`)
+- the tutor conversation (`TUTOR_RULES`)
+- lesson checks (`buildCheckPrompt` + `MCQ_RULES`)
 - practice questions (`buildGenPrompt`)
 - free-response grading (`buildGradePrompt`)
 - dashboard insights (`INSIGHT_SYSTEM`)
@@ -14,16 +14,16 @@ This file maps each rule in the learner-facing LLM prompts to the peer-reviewed 
 
 | Rule | Where | Evidence |
 |---|---|---|
-| Explicit prerequisites: list 2–4 precise prerequisite concepts, never vague ones like "Basic math". Step 1 opens with a `**Prerequisites:**` line. Every step and tutor prompt receives the list. | plan, step, tutor | Prior knowledge is a strong predictor of post-instruction knowledge, though only a weak predictor of gains [1]. Instruction that fits the learner's existing knowledge outperforms instruction that ignores it [2]. Naming prerequisites lets learners check them before they start. |
-| An explicit level definition: what undergrad and grad each assume. | plan, step, tutor | Expertise reversal: guidance that helps novices can hinder more expert learners, so the assumed knowledge must be stated [2]. |
-| Steps ordered so that each one uses only the prerequisites and earlier steps, with one idea per step. | plan, step | Segmenting and simple-to-complex sequencing manage intrinsic cognitive load [3][4]. |
-| Step summaries as one verb-led statement of what the learner can do. Vague verbs such as "understand" and "explore" are banned. | plan | Clear, specific goals ("where am I going?") are a precondition for effective feedback and learning [5]. |
-| Bold each new term and define it in plain words. State rules exactly, with their conditions. No filler or hedges. | step, tutor, gen | Signaling key terms improves retention and transfer [6]. Removing extraneous words (the coherence principle) lowers extraneous load [3]. Novices learn more from explicit, fully guided explanation than from minimal guidance [7]. |
-| A concrete case alongside the general statement. | step | Concreteness fading: concrete grounding followed by abstraction improves STEM transfer [8]. |
-| A worked example with each step and its reason, using new numbers. | step | Worked examples with explained steps beat unsupported problem solving for novices [4][9]. |
-| The check asks the learner to apply the idea to a new case, not to recall a phrase. | step, gen | Retrieval practice improves long-term retention [10][11]. Generative, constructive activity yields deeper learning than passive recall [12]. |
-| MCQ items: a complete stem, one best answer, choices of similar length, no "All/None of the above", no negatively worded stems. | step, gen | These are consensus item-writing guidelines [13]. |
-| Wrong choices built from specific common mistakes. The explanation names each mistake. | step, gen | Misconception-based distractors give diagnostic information and better items [14]. |
+| Explicit prerequisites: list 2–4 precise prerequisite concepts, never vague ones like "Basic math". Every tutor prompt receives the list. | plan, tutor | Prior knowledge is a strong predictor of post-instruction knowledge, though only a weak predictor of gains [1]. Instruction that fits the learner's existing knowledge outperforms instruction that ignores it [2]. Naming prerequisites lets learners check them before they start. |
+| An explicit level definition: what undergrad and grad each assume. | plan, tutor | Expertise reversal: guidance that helps novices can hinder more expert learners, so the assumed knowledge must be stated [2]. |
+| Outline topics ordered so that each one uses only the prerequisites and earlier topics, with one idea per topic. | plan, tutor | Segmenting and simple-to-complex sequencing manage intrinsic cognitive load [3][4]. |
+| Topic summaries as one verb-led statement of what the learner can do. Vague verbs such as "understand" and "explore" are banned. | plan | Clear, specific goals ("where am I going?") are a precondition for effective feedback and learning [5]. |
+| Bold each new term and define it in plain words. State rules exactly, with their conditions. No filler or hedges. | tutor, gen | Signaling key terms improves retention and transfer [6]. Removing extraneous words (the coherence principle) lowers extraneous load [3]. Novices learn more from explicit, fully guided explanation than from minimal guidance [7]. |
+| A concrete case alongside the general statement. | tutor | Concreteness fading: concrete grounding followed by abstraction improves STEM transfer [8]. |
+| A worked example with each step and its reason, using new numbers. | tutor | Worked examples with explained steps beat unsupported problem solving for novices [4][9]. |
+| The check asks the learner to apply the idea to a new case, not to recall a phrase. | check, gen | Retrieval practice improves long-term retention [10][11]. Generative, constructive activity yields deeper learning than passive recall [12]. |
+| MCQ items: a complete stem, one best answer, choices of similar length, no "All/None of the above", no negatively worded stems. | check, gen | These are consensus item-writing guidelines [13]. |
+| Wrong choices built from specific common mistakes. The explanation names each mistake. | check, gen | Misconception-based distractors give diagnostic information and better items [14]. |
 | A free-response stem that states the expected length and scope. Rubric criteria name exact facts, steps or results. | gen, grade | Specific criteria make clear what success looks like [5]. Specific, elaborated feedback beats vague feedback [15]. |
 | Grading feedback in a fixed order: what was right, what was wrong with the correct version, then one next step. No vague praise. | grade | Feedback works when it answers "how am I going" and "where to next" at the task level. Praise without task information has little effect [5][15]. |
 | The tutor answers the learner's actual question, gives step-level minimal hints, and gives full solutions on request. | tutor | Step-level tutoring approaches the effectiveness of human tutors [16]. Novices need direct guidance when they ask for it [7]. |

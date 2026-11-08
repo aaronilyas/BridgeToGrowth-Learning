@@ -1,10 +1,10 @@
 import { z } from "zod";
-import type { Citation, ErrorCode } from "../../shared/api.ts";
+import type { ErrorCode, StreamEvent } from "../../shared/api.ts";
 import type { Settings } from "../../shared/settings.ts";
 import { HttpError } from "../http.ts";
 import { loadSettings } from "../learn/core.ts";
 import { localProfile } from "../profile.ts";
-import { buildMessages, completionBudget, parseJsonOutput, type ContentPart, type FilePart, type Turn } from "./core.ts";
+import { buildMessages, completionBudget, parseJsonOutput, visibleLength, type ContentPart, type FilePart, type Turn } from "./core.ts";
 import { providerAdapter, resolveTaskModel } from "./providers/registry.ts";
 import type { ChatMessage as ProviderMessage, ImagePart, LlmErrorCode, LlmRequest, ReasoningLevel } from "./providers/types.ts";
 import { insertLlmUsage, openRouterMonthMicros } from "./sql.ts";
@@ -14,7 +14,9 @@ export type SystemModelKey = "grade" | "extract" | "insight";
 export type ModelChoice = string | { system: SystemModelKey };
 export type ModelTask = "lesson" | "chat" | "practice" | "system";
 export type JsonCall<T> = { who: Who; model: ModelChoice; kind: string; system: string; user: string; schema: z.ZodType<T>; maxTokens: number; files?: FilePart[]; signal?: AbortSignal };
-export type StreamCall = { who: Who; model: ModelChoice; kind: string; system: string; messages: Turn[]; maxTokens: number; signal: AbortSignal; onDone: (text: string) => Promise<{ citations?: Citation[] } | void> };
+export type StreamEnd = Omit<Extract<StreamEvent, { t: "end" }>, "t">;
+// INV: text from the first hideFrom on is never forwarded while streaming; onDone receives the full text and returns the final state; announcePrep tells the page a slower finish is under way
+export type StreamCall = { who: Who; model: ModelChoice; kind: string; system: string; messages: Turn[]; maxTokens: number; signal: AbortSignal; hideFrom: string; onDone: (text: string, announcePrep: () => void) => Promise<StreamEnd> };
 
 const REASONING: ReasoningLevel = "high";
 const enc = new TextEncoder();
@@ -157,7 +159,7 @@ export async function chatJson<T>(o: JsonCall<T>): Promise<{ data: T; costMicros
 }
 
 // O(1)
-function frameEvent(event: { t: "d"; v: string } | { t: "end"; citations?: Citation[] } | { t: "err"; code: ErrorCode }): Uint8Array {
+function frameEvent(event: StreamEvent): Uint8Array {
   return enc.encode(`data:${JSON.stringify(event)}\n\n`);
 }
 
@@ -179,16 +181,19 @@ export async function chatStream(o: StreamCall): Promise<ReadableStream<Uint8Arr
   const run = async (ctrl: ReadableStreamDefaultController<Uint8Array>): Promise<void> => {
     let usage: UsageSeen | null = null;
     let text = "";
+    let shown = 0;
     try {
       for await (const event of providerAdapter(prepared.req.model.provider).stream(prepared.req)) {
         if (event.type === "text") {
           text += event.delta;
-          send(ctrl, frameEvent({ t: "d", v: event.delta }));
+          const end = visibleLength(text, o.hideFrom, shown);
+          if (end > shown) send(ctrl, frameEvent({ t: "d", v: text.slice(shown, end) }));
+          shown = Math.max(shown, end);
         } else if (event.type === "usage") usage = { inputTokens: event.inputTokens, outputTokens: event.outputTokens, costUsd: event.costUsd };
         else if (event.type === "error") throw mapLlmError(event.code);
       }
-      const extra = await o.onDone(text);
-      send(ctrl, frameEvent(extra?.citations ? { t: "end", citations: extra.citations } : { t: "end" }));
+      const end = await o.onDone(text, () => send(ctrl, frameEvent({ t: "prep" })));
+      send(ctrl, frameEvent({ t: "end", ...end }));
     } catch (error) {
       if (!o.signal.aborted) {
         const code: ErrorCode = error instanceof HttpError ? error.code : "internal";

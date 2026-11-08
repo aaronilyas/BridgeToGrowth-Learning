@@ -1,7 +1,7 @@
 // INV: already-delimited $…$ / $$…$$, fenced code, and inline code are copied through unchanged
 export const MATH_DELIM_RULE: string = [
   "Write every mathematical expression as LaTeX inside $…$ or $$…$$.",
-  "That applies to explanationMd, keyIdea, example, the check stem, each choice, and the check explanation.",
+  "That applies to the question stem, each choice, and the explanation.",
   "An equation that is a whole choice is one math span, for example $dy/dx = x^2 y^3$ or $e^{x}+e^{y}$.",
   "Never leave bare LaTeX such as e^{x}, x^2, dy/dx, or a backslash command such as frac.",
 ].join(" ");

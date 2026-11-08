@@ -1,31 +1,31 @@
 import type { JSX } from "react";
 import type { LessonDetail } from "../../shared/api.ts";
 import { DeleteLessonButton } from "../components/DeleteLessonButton.tsx";
-import type { StepStatus } from "./transcript.ts";
+import type { TopicStatus } from "./transcript.ts";
 
-const DOT: Record<StepStatus, string> = {
+const DOT: Record<TopicStatus, string> = {
   done: "bg-accent border-accent",
   current: "border-accent",
   todo: "border-border",
 };
-const SAY: Record<StepStatus, string> = { done: "done", current: "current", todo: "not started" };
+const SAY: Record<TopicStatus, string> = { done: "done", current: "current", todo: "not started" };
 
-// O(n) in planned steps
-// INV: only opened steps are clickable; clicking scrolls the transcript to that step
-export function PlanPanel({ lesson, statusOf, opened, onJump, onDeleted }: { lesson: LessonDetail; statusOf: (i: number) => StepStatus; opened: (i: number) => boolean; onJump: (i: number) => void; onDeleted: () => void }): JSX.Element {
+// O(n) in outline topics
+// INV: only topics the tutor has reached are clickable; clicking scrolls the transcript to where it reached that topic
+export function PlanPanel({ lesson, statusOf, opened, onJump, onDeleted }: { lesson: LessonDetail; statusOf: (i: number) => TopicStatus; opened: (i: number) => boolean; onJump: (i: number) => void; onDeleted: () => void }): JSX.Element {
   return (
-    <aside id="lesson-plan" aria-label="Lesson plan" className="scroll-quiet flex w-72 shrink-0 flex-col gap-6 overflow-y-auto border-l border-border px-5 py-5">
+    <aside id="lesson-plan" aria-label="Lesson topics" className="scroll-quiet flex w-72 shrink-0 flex-col gap-6 overflow-y-auto border-l border-border px-5 py-5">
       <section className="flex flex-col gap-2">
-        <h2 className="label">Plan</h2>
+        <h2 className="label">Topics</h2>
         <ol className="flex flex-col">
-          {lesson.plan.steps.map((s, i) => {
+          {lesson.plan.outline.map((s, i) => {
             const st = statusOf(i);
             return (
               <li key={`${i}-${s.title}`}>
                 <button
                   type="button"
                   disabled={!opened(i)}
-                  aria-current={st === "current" ? "step" : undefined}
+                  aria-current={st === "current" ? "true" : undefined}
                   onClick={() => onJump(i)}
                   className="flex w-full items-start gap-3 rounded-lg px-2 py-2 text-left text-sm transition hover:bg-panel-2 focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-default disabled:hover:bg-transparent"
                 >
