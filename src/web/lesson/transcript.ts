@@ -7,6 +7,7 @@ export type TopicStatus = "done" | "current" | "todo";
 export type SentAttempt = { kind: QuestionPublic["kind"]; choiceText: string | null; response: string; thinking: string; confidence: number | null; dontKnow: boolean };
 
 const MAX_MESSAGE = 4000;
+const CLOSING_QUESTION = /\?(?:[*_"'”’)]|\s*\[\d+\])*$/;
 
 // O(n) in rows
 // INV: the newest row with a topic decides; a lesson nothing has been said in starts on topic 0
@@ -22,6 +23,30 @@ export function topicAnchors(rows: readonly ChatRow[]): Map<number, string> {
     if (r.topicIdx !== null && !anchors.has(r.topicIdx)) anchors.set(r.topicIdx, r.id);
   }
   return anchors;
+}
+
+// O(n) in message length
+// INV: only a final paragraph ending in "?" counts as the tutor's question; it is returned as written, and the saved message is never changed
+export function splitFollowUp(content: string): { lead: string; question: string } | null {
+  const text = content.trimEnd();
+  const last = text.split(/\n[ \t]*\n/).at(-1) ?? "";
+  if (!CLOSING_QUESTION.test(last)) return null;
+  return { lead: text.slice(0, text.length - last.length).trimEnd(), question: last.trim() };
+}
+
+// O(n) in message length
+// INV: a turn that hands over to a check or closes the lesson has no follow-up, so the learner is never shown two questions at once
+export function tutorFollowUp(row: ChatRow): { lead: string; question: string } | null {
+  if (row.role !== "assistant" || row.pending || row.check !== null || row.finishes) return null;
+  return splitFollowUp(row.content);
+}
+
+// O(n) in the last message
+// INV: only the newest settled tutor turn can be answered; a turn the learner replied to is closed
+export function openFollowUpId(rows: readonly ChatRow[], streaming: boolean): string | null {
+  const last = rows.at(-1);
+  if (streaming || !last) return null;
+  return tutorFollowUp(last) ? last.id : null;
 }
 
 // O(1)

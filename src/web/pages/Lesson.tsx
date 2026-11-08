@@ -8,7 +8,7 @@ import { lessonsChanged, useLessonChat } from "../lesson/chatStore.ts";
 import { Composer, type Seed } from "../lesson/Composer.tsx";
 import { Messages } from "../lesson/Messages.tsx";
 import { PlanPanel } from "../lesson/PlanPanel.tsx";
-import { attemptMessage, currentTopic, topicAnchors, topicStatus, type SentAttempt } from "../lesson/transcript.ts";
+import { attemptMessage, currentTopic, openFollowUpId, topicAnchors, topicStatus, type SentAttempt } from "../lesson/transcript.ts";
 
 const PLAN_KEY = "btg:lesson-plan-open";
 const NEAR_BOTTOM_PX = 96;
@@ -107,6 +107,15 @@ export function LessonPage(): JSX.Element {
   }, [loaded]);
 
   const anchors = useMemo(() => topicAnchors(chat.rows), [chat.rows]);
+  const openId = openFollowUpId(chat.rows, chat.streaming);
+
+  // O(1)
+  // INV: a follow-up answer is an ordinary chat turn, so it names no check and nothing is graded
+  const onReply = useCallback((sent: SentAttempt): void => {
+    const text = attemptMessage(sent);
+    stick.current = true;
+    if (!send({ text, checkId: null })) setSeed({ text, n: Date.now() });
+  }, [send]);
 
   if (!lesson) {
     return <div className="grid flex-1 place-items-center">{loadError ? <ErrorBanner error={loadError} /> : <Spinner label="Loading lesson" />}</div>;
@@ -145,7 +154,7 @@ export function LessonPage(): JSX.Element {
         <div className="flex min-w-0 flex-1 flex-col">
           <div ref={scroller} className="scroll-quiet min-h-0 flex-1 overflow-y-auto">
             <div ref={content} aria-live="polite" aria-relevant="additions" aria-busy={teaching} aria-label="Lesson transcript" className="mx-auto flex max-w-[46rem] flex-col gap-8 px-8 pt-10 pb-16">
-              <Messages rows={chat.rows} anchors={anchors} answered={answered} onResult={onResult} />
+              <Messages rows={chat.rows} anchors={anchors} answered={answered} onResult={onResult} openId={openId} onReply={onReply} />
             </div>
           </div>
 
