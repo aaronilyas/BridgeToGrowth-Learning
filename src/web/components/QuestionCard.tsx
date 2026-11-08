@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { AttemptResponse, type QuestionCategory, type QuestionPublic, type StepAttempt } from "../../shared/api.ts";
+import { AttemptResponse, type QuestionCategory, type QuestionPublic, type CheckAttempt } from "../../shared/api.ts";
 import type { CodeAttempt } from "../../shared/code.ts";
 import { api } from "../api.ts";
 import type { SentAttempt } from "../lesson/transcript.ts";
@@ -32,7 +32,7 @@ function reviewIn(nextDueAt: string | null, now: number): string | null {
 }
 
 // O(1)
-export function answeredLine(a: StepAttempt): string {
+export function answeredLine(a: CheckAttempt): string {
   if (a.dontKnow) return "Answered · didn't know";
   return `Answered · ${a.correct ? "correct" : "incorrect"}${a.confidence === null ? "" : ` · ${a.confidence}% confident`}`;
 }
@@ -50,7 +50,7 @@ function enterSubmits(e: ReactKeyboardEvent<HTMLTextAreaElement>, submit: () => 
 // INV: until `result` exists nothing here knows the answer; afterwards it shows exactly what the attempt response returned
 // INV: mount the card with key={question.id}; latency runs from mount to submit
 // INV: `answered` (a saved attempt) renders the compact answered state and accepts no new attempt
-export function QuestionCard({ question, onResult, label = "Check", answered = null }: { question: QuestionPublic; onResult?: (r: AttemptResponse, sent: SentAttempt) => void; label?: string; answered?: StepAttempt | null }): JSX.Element {
+export function QuestionCard({ question, onResult, label = "Check", answered = null }: { question: QuestionPublic; onResult?: (r: AttemptResponse, sent: SentAttempt) => void; label?: string; answered?: CheckAttempt | null }): JSX.Element {
   const { settings } = useSettings();
   const askConfidence = settings.recall.confidencePrompt;
   const started = useRef(performance.now());

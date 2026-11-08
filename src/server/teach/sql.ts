@@ -7,20 +7,21 @@ import { insertCards } from "../learn/sql.ts";
 import type { Paper } from "../lit/core.ts";
 import { dateFromMs, dayEndMs, dayStartMs, epochOf, jsonText, jsonValue, questionFrom, stringList, utcDayOf } from "../sqlmap.ts";
 import { topicsReleasedByLesson, type TopicUse } from "../topics/core.ts";
-import { lessonStatus, type NewStep, type StepContent } from "./core.ts";
+import type { NewQuestion } from "../gen/core.ts";
+import { lessonStatus } from "./core.ts";
 
 export type LessonRow = { id: string; topic_id: string; title: string; plan: unknown; paper_ids: string[]; model: string; created_at: Date };
-export type StepRow = { idx: number; content: unknown; question: QuestionRow };
-export type MessageRow = { id: string; role: "user" | "assistant"; content: string; citations: unknown; created_at: Date; step_idx: number | null };
+export type MessageRow = { id: string; role: "user" | "assistant"; content: string; citations: unknown; created_at: Date; topic_idx: number | null; check_id: string | null; finishes: boolean };
+export type NewTurn = { user: string | null; content: string; citations: Citation[]; topicIdx: number; finishes: boolean; check: NewQuestion | null };
 export type LessonListRow = { id: string; title: string; created_at: Date; status: LessonStatus; last_active_at: Date };
 
 type LessonRaw = { id: string; topic_id: string; title: string; plan: unknown; paper_ids: unknown; model: string; created_at: number };
-type LessonListRaw = { id: string; title: string; created_at: number; planned: number; opened: number; planned_opened: number; planned_attempted: number; newest_attempted: number | null; last_active: number };
+type LessonListRaw = { id: string; title: string; created_at: number; newest_attempted: number | null; finished: number; last_active: number };
 type PaperRaw = { id: string; doi: string | null; title: string; year: number | null; venue: string | null; abstract: string | null };
-type StepJoin = QuestionRow & { idx: number; content: unknown };
-type MessageRaw = { id: string | number; role: "user" | "assistant"; content: string; citations: unknown; created_at: number; step_idx: number | null };
+type MessageRaw = { id: string | number; role: "user" | "assistant"; content: string; citations: unknown; created_at: number; topic_idx: number | null; check_id: string | null; finishes: number };
 
 const LESSON_COLS = sql`l.id, l.topic_id, l.title, l.plan, l.paper_ids, l.model, l.created_at`;
+const QUESTION_COLS = sql`q.id, q.topic_id, q.lesson_id, q.kind, q.category, q.stem, q.choices, q.code_spec, q.answer, q.explanation, q.citations`;
 const REPLAY_LIMIT = 100_000;
 
 // O(1)
@@ -29,13 +30,8 @@ function lessonFrom(row: LessonRaw): LessonRow {
 }
 
 // O(1)
-function stepFrom(row: StepJoin): StepRow {
-  return { idx: row.idx, content: jsonValue(row.content), question: questionFrom(row) };
-}
-
-// O(1)
 function messageFrom(row: MessageRaw): MessageRow {
-  return { id: String(row.id), role: row.role, content: row.content, citations: jsonValue(row.citations), created_at: dateFromMs(row.created_at), step_idx: row.step_idx === null ? null : Number(row.step_idx) };
+  return { id: String(row.id), role: row.role, content: row.content, citations: jsonValue(row.citations), created_at: dateFromMs(row.created_at), topic_idx: row.topic_idx === null ? null : Number(row.topic_idx), check_id: row.check_id, finishes: Number(row.finishes) === 1 };
 }
 
 // O(1)
@@ -59,16 +55,13 @@ export async function findLesson(uid: string, id: string): Promise<LessonRow | n
 }
 
 // O(lessons for this user)
-// INV: one statement; status uses opened steps and their attempts; the page is newest activity first
+// INV: one statement; status comes from the newest check and whether the tutor closed the lesson; the page is newest activity first
 export async function listLessons(uid: string, limit: number): Promise<LessonListRow[]> {
   const rows: LessonListRaw[] = await sql`
-    SELECT id, title, created_at, planned, opened, planned_opened, planned_attempted, newest_attempted, last_active FROM (
+    SELECT id, title, created_at, newest_attempted, finished, last_active FROM (
       SELECT l.id AS id, l.title AS title, l.created_at AS created_at,
-        coalesce(json_array_length(l.plan, '$.steps'), 0) AS planned,
-        (SELECT count(*) FROM lesson_steps s WHERE s.lesson_id = l.id) AS opened,
-        (SELECT count(*) FROM lesson_steps s WHERE s.lesson_id = l.id AND s.idx < coalesce(json_array_length(l.plan, '$.steps'), 0)) AS planned_opened,
-        (SELECT count(*) FROM lesson_steps s WHERE s.lesson_id = l.id AND s.idx < coalesce(json_array_length(l.plan, '$.steps'), 0) AND EXISTS (SELECT 1 FROM attempts a WHERE a.user_id = ${uid} AND a.question_id = json_extract(s.content, '$.questionId'))) AS planned_attempted,
-        (SELECT CASE WHEN EXISTS (SELECT 1 FROM attempts a WHERE a.user_id = ${uid} AND a.question_id = json_extract(ns.content, '$.questionId')) THEN 1 ELSE 0 END FROM lesson_steps ns WHERE ns.lesson_id = l.id ORDER BY ns.idx DESC LIMIT 1) AS newest_attempted,
+        (SELECT CASE WHEN EXISTS (SELECT 1 FROM attempts a WHERE a.user_id = ${uid} AND a.question_id = m.check_id) THEN 1 ELSE 0 END FROM messages m JOIN conversations c ON c.id = m.conv_id WHERE c.lesson_id = l.id AND c.user_id = ${uid} AND m.check_id IS NOT NULL ORDER BY m.id DESC LIMIT 1) AS newest_attempted,
+        EXISTS (SELECT 1 FROM messages m JOIN conversations c ON c.id = m.conv_id WHERE c.lesson_id = l.id AND c.user_id = ${uid} AND m.finishes = 1) AS finished,
         max(l.created_at, coalesce((SELECT max(m.created_at) FROM messages m JOIN conversations c ON c.id = m.conv_id WHERE c.lesson_id = l.id AND c.user_id = ${uid}), 0), coalesce((SELECT max(a.created_at) FROM attempts a JOIN questions q ON q.id = a.question_id WHERE a.user_id = ${uid} AND q.user_id = ${uid} AND q.lesson_id = l.id), 0)) AS last_active
       FROM lessons l WHERE l.user_id = ${uid}
     ) AS listed ORDER BY last_active DESC LIMIT ${limit}`;
@@ -76,7 +69,7 @@ export async function listLessons(uid: string, limit: number): Promise<LessonLis
     id: row.id,
     title: row.title,
     created_at: dateFromMs(row.created_at),
-    status: lessonStatus({ planned: Number(row.planned), opened: Number(row.opened), plannedOpened: Number(row.planned_opened), plannedAttempted: Number(row.planned_attempted), newestAttempted: row.newest_attempted === null ? null : Number(row.newest_attempted) === 1 }),
+    status: lessonStatus({ newestAttempted: row.newest_attempted === null ? null : Number(row.newest_attempted) === 1, finished: Number(row.finished) === 1 }),
     last_active_at: dateFromMs(Number(row.last_active)),
   }));
 }
@@ -94,48 +87,6 @@ export async function listPapers(ids: string[]): Promise<Paper[]> {
   return out;
 }
 
-// O(steps), one statement
-// INV: steps are joined to their question in a single query; limit 16 is the maximum stepsPerLesson
-async function selectSteps(db: SQL, uid: string, lessonId: string, only: number | null): Promise<StepRow[]> {
-  const rows: StepJoin[] = await db`
-    SELECT s.idx, s.content, q.id, q.topic_id, q.lesson_id, q.kind, q.category, q.stem, q.choices, q.code_spec, q.answer, q.explanation, q.citations
-    FROM lesson_steps s
-    JOIN lessons l ON l.id = s.lesson_id
-    JOIN questions q ON q.id = json_extract(s.content, '$.questionId')
-    WHERE s.lesson_id = ${lessonId} AND l.user_id = ${uid} AND q.user_id = ${uid} AND (${only} IS NULL OR s.idx = ${only})
-    ORDER BY s.idx LIMIT 16`;
-  return rows.map(stepFrom);
-}
-
-// O(steps), one statement
-export async function listSteps(uid: string, lessonId: string, only: number | null = null): Promise<StepRow[]> {
-  return selectSteps(sql, uid, lessonId, only);
-}
-
-// O(1), four statements in one transaction (five when the race is lost)
-// INV: checks the lesson row so a delete cannot detach the new question; SQLite serializes writers, so concurrent calls yield one step; the loser's question is deleted (its card cascades)
-// INV: the winner's row is built from the RETURNING values; a loser re-reads the stored step under the same lesson transaction
-// INV: null means the lesson is gone
-export async function insertStep(uid: string, lesson: LessonRow, idx: number, s: NewStep): Promise<StepRow | null> {
-  return sql.begin(async (tx) => {
-    const held: { id: string }[] = await tx`SELECT id FROM lessons WHERE id = ${lesson.id} AND user_id = ${uid} LIMIT 1`;
-    if (held.length === 0) return null;
-    const [q] = await insertQuestions(tx, uid, lesson.topic_id, null, [s.check], lesson.id);
-    if (!q) throw new Error("question insert returned no row");
-    await insertCards(tx, uid, [q.id]);
-    const content: Omit<StepContent, "citations"> & { citations: Citation[] } = { ...s.content, questionId: q.id };
-    const won: { idx: number; content: unknown }[] = await tx`
-      INSERT INTO lesson_steps (lesson_id, idx, content) VALUES (${lesson.id}, ${idx}, ${jsonText(content)})
-      ON CONFLICT (lesson_id, idx) DO NOTHING RETURNING idx, content`;
-    const mine = won[0];
-    if (mine) return { idx: mine.idx, content: jsonValue(mine.content), question: q };
-    await tx`DELETE FROM questions WHERE id = ${q.id} AND user_id = ${uid}`;
-    const theirs = (await selectSteps(tx, uid, lesson.id, idx))[0];
-    if (!theirs) throw new Error("step missing after insert");
-    return theirs;
-  });
-}
-
 // O(1)
 // INV: one conversation per lesson (unique lesson_id); the lesson was already checked as owned
 export async function ensureConversation(uid: string, lessonId: string): Promise<string> {
@@ -147,16 +98,34 @@ export async function ensureConversation(uid: string, lessonId: string): Promise
   return row.id;
 }
 
-// O(1)
-// INV: both turns commit together, after the model stream succeeds
-export async function insertMessagePair(uid: string, convId: string, userContent: string, assistantContent: string, citations: Citation[], stepIdx: number | null): Promise<void> {
-  await sql.begin(async (tx) => {
+// O(1), up to six statements in one transaction
+// INV: checks the lesson row so a delete cannot detach the new question; the check, its card and both messages commit together, after the model has finished
+// INV: an opening turn (user null) is stored only into an empty conversation, so a duplicate request cannot write a second one
+// INV: returns the stored check, or null when the turn carried none or could not be stored
+export async function insertTutorTurn(uid: string, lesson: LessonRow, convId: string, t: NewTurn): Promise<QuestionRow | null> {
+  return sql.begin(async (tx) => {
+    const held: { id: string }[] = await tx`SELECT id FROM lessons WHERE id = ${lesson.id} AND user_id = ${uid} LIMIT 1`;
+    if (held.length === 0) return null;
+    if (t.user === null) {
+      const said: { id: number }[] = await tx`SELECT id FROM messages WHERE conv_id = ${convId} LIMIT 1`;
+      if (said.length > 0) return null;
+    }
+    let question: QuestionRow | null = null;
+    if (t.check) {
+      const [q] = await insertQuestions(tx, uid, lesson.topic_id, null, [t.check], lesson.id);
+      if (!q) throw new Error("question insert returned no row");
+      await insertCards(tx, uid, [q.id]);
+      question = q;
+    }
+    if (t.user !== null) {
+      await tx`
+        INSERT INTO messages (conv_id, role, content, citations)
+        SELECT c.id, 'user', ${t.user}, '[]' FROM conversations c WHERE c.id = ${convId} AND c.user_id = ${uid}`;
+    }
     await tx`
-      INSERT INTO messages (conv_id, role, content, citations, step_idx)
-      SELECT c.id, 'user', ${userContent}, '[]', ${stepIdx} FROM conversations c WHERE c.id = ${convId} AND c.user_id = ${uid}`;
-    await tx`
-      INSERT INTO messages (conv_id, role, content, citations, step_idx)
-      SELECT c.id, 'assistant', ${assistantContent}, ${jsonText(citations)}, ${stepIdx} FROM conversations c WHERE c.id = ${convId} AND c.user_id = ${uid}`;
+      INSERT INTO messages (conv_id, role, content, citations, topic_idx, check_id, finishes)
+      SELECT c.id, 'assistant', ${t.content}, ${jsonText(t.citations)}, ${t.topicIdx}, ${question?.id ?? null}, ${t.finishes ? 1 : 0} FROM conversations c WHERE c.id = ${convId} AND c.user_id = ${uid}`;
+    return question;
   });
 }
 
@@ -164,11 +133,38 @@ export async function insertMessagePair(uid: string, convId: string, userContent
 // INV: served by messages(conv_id, id); newest first
 export async function listMessages(uid: string, lessonId: string, before: string | null, limit: number): Promise<MessageRow[]> {
   const rows: MessageRaw[] = await sql`
-    SELECT CAST(m.id AS TEXT) AS id, m.role, m.content, m.citations, m.created_at, m.step_idx
+    SELECT CAST(m.id AS TEXT) AS id, m.role, m.content, m.citations, m.created_at, m.topic_idx, m.check_id, m.finishes
     FROM messages m JOIN conversations c ON c.id = m.conv_id
     WHERE c.lesson_id = ${lessonId} AND c.user_id = ${uid} AND (${before} IS NULL OR m.id < CAST(${before} AS INTEGER))
     ORDER BY m.id DESC LIMIT ${limit}`;
   return rows.map(messageFrom);
+}
+
+// O(k) in ids
+export async function listChecks(uid: string, ids: string[]): Promise<QuestionRow[]> {
+  if (ids.length === 0) return [];
+  const rows: QuestionRow[] = await sql`SELECT ${QUESTION_COLS} FROM questions q WHERE q.user_id = ${uid} AND q.id IN ${sql(ids)} LIMIT 500`;
+  return rows.map(questionFrom);
+}
+
+// O(messages in the lesson) in the worst case; served newest first by messages(conv_id, id)
+// SEC: only a check attached to this lesson can match, so a request cannot read another lesson's check through checkId
+// INV: id null finds the lesson's latest check
+export async function findLessonCheck(uid: string, lessonId: string, id: string | null): Promise<QuestionRow | null> {
+  const rows: QuestionRow[] = await sql`
+    SELECT ${QUESTION_COLS} FROM messages m
+    JOIN conversations c ON c.id = m.conv_id
+    JOIN questions q ON q.id = m.check_id
+    WHERE c.lesson_id = ${lessonId} AND c.user_id = ${uid} AND q.user_id = ${uid} AND (${id} IS NULL OR q.id = ${id})
+    ORDER BY m.id DESC LIMIT 1`;
+  const row = rows[0];
+  return row ? questionFrom(row) : null;
+}
+
+// O(lesson questions), served by questions_lesson_idx
+export async function countLessonChecks(uid: string, lessonId: string): Promise<number> {
+  const rows: { n: number }[] = await sql`SELECT count(*) AS n FROM questions WHERE user_id = ${uid} AND lesson_id = ${lessonId} LIMIT 1`;
+  return Number(rows[0]?.n ?? 0);
 }
 
 // O(n) in the lesson's attempts

@@ -213,7 +213,7 @@ input[type="range"] {
   .md :where(li) { margin: 0.25em 0; padding-left: 0.2em; }
   .md :where(li)::marker { color: var(--muted); }
 
-  /* Long-form lesson prose: a larger size, a taller line and clear gaps between paragraphs, so a step reads top to bottom
+  /* Long-form lesson prose: a larger size, a taller line and clear gaps between paragraphs, so a tutor message reads top to bottom
      in short blocks. The lesson column (46rem) holds about 75 characters per line at this size. */
   .reading :where(p, ul, ol, pre, blockquote) { margin: 1em 0; }
   .reading :where(li) { margin: 0.4em 0; }

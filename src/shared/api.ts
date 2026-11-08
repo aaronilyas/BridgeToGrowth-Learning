@@ -19,9 +19,6 @@ export type ProvidersResponse = z.infer<typeof ProvidersResponse>;
 export const Citation = z.strictObject({ n: z.int().min(1), paperId: z.string(), doi: z.string().nullable(), title: z.string(), year: z.int().nullable() });
 export type Citation = z.infer<typeof Citation>;
 
-export const StreamEvent = z.discriminatedUnion("t", [z.strictObject({ t: z.literal("d"), v: z.string() }), z.strictObject({ t: z.literal("end"), citations: z.array(Citation).optional() }), z.strictObject({ t: z.literal("err"), code: z.string() })]);
-export type StreamEvent = z.infer<typeof StreamEvent>;
-
 export const Domain = z.enum(["math", "physics", "chemistry", "biology", "cs", "engineering", "statistics", "earth", "other"]);
 export type Domain = z.infer<typeof Domain>;
 
@@ -39,6 +36,15 @@ export const PRACTICE_SET_SIZE = 4;
 // INV: the model answer, rubric and explanation stay on the server. A code question includes its hidden test source so the learner's machine can run it.
 export const QuestionPublic = z.strictObject({ id: z.uuid(), topicId: z.uuid(), kind: QuestionKind, category: QuestionCategory.nullable(), stem: z.string(), choices: z.array(z.string()).nullable(), code: CodeSpec.nullable(), codeTests: z.array(CodeTest).max(CODE_MAX_TESTS).nullable(), lessonId: z.uuid().nullable() });
 export type QuestionPublic = z.infer<typeof QuestionPublic>;
+
+// INV: lastAttempt is the learner's most recent attempt on this check, so a reloaded transcript shows answered checks as answered
+export const CheckAttempt = z.strictObject({ score: z.number().min(0).max(1), correct: z.boolean(), confidence: z.int().min(0).max(100).nullable(), dontKnow: z.boolean() });
+export type CheckAttempt = z.infer<typeof CheckAttempt>;
+export const LessonCheck = z.strictObject({ question: QuestionPublic, lastAttempt: CheckAttempt.nullable() });
+export type LessonCheck = z.infer<typeof LessonCheck>;
+
+export const StreamEvent = z.discriminatedUnion("t", [z.strictObject({ t: z.literal("d"), v: z.string() }), z.strictObject({ t: z.literal("prep") }), z.strictObject({ t: z.literal("end"), text: z.string(), citations: z.array(Citation), topicIdx: z.int().min(0), finishes: z.boolean(), check: LessonCheck.nullable() }), z.strictObject({ t: z.literal("err"), code: z.string() })]);
+export type StreamEvent = z.infer<typeof StreamEvent>;
 
 export const AttemptRequest = z.strictObject({
   questionId: z.uuid(),
@@ -94,7 +100,7 @@ export const LessonPlan = z.strictObject({
   title: z.string().max(120),
   topic: z.strictObject({ name: z.string().max(120), domain: Domain }),
   related: z.array(z.strictObject({ name: z.string().max(120), domain: Domain, kind: EdgeKind })),
-  steps: z.array(z.strictObject({ title: z.string().max(80), summary: z.string().max(200) })),
+  outline: z.array(z.strictObject({ title: z.string().max(80), summary: z.string().max(200) })),
 });
 export type LessonPlan = z.infer<typeof LessonPlan>;
 
@@ -102,15 +108,9 @@ export const MAX_LESSON_URLS = 3;
 export const CreateLessonRequest = z.strictObject({ prompt: z.string().trim().min(2).max(2000), model: z.string().min(1).max(100).optional(), urls: z.array(z.url({ protocol: /^https?$/ }).max(2048)).max(MAX_LESSON_URLS).optional() });
 export type CreateLessonRequest = z.infer<typeof CreateLessonRequest>;
 
-// INV: stepIdx anchors the turn to the lesson step on screen, so the transcript can interleave chat with steps and the tutor sees that step's check and the learner's attempt
-export const ChatRequest = z.strictObject({ message: z.string().trim().min(1).max(4000), stepIdx: z.int().min(0).max(63).optional() });
+// INV: checkId names the check a turn answers, so the tutor sees that check and the learner's attempt; without it the tutor sees the lesson's latest check
+export const ChatRequest = z.strictObject({ message: z.string().trim().min(1).max(4000), checkId: z.uuid().optional() });
 export type ChatRequest = z.infer<typeof ChatRequest>;
-
-// INV: lastAttempt is the learner's most recent attempt on this step's check, so a reloaded transcript shows answered checks as answered
-export const StepAttempt = z.strictObject({ score: z.number().min(0).max(1), correct: z.boolean(), confidence: z.int().min(0).max(100).nullable(), dontKnow: z.boolean() });
-export type StepAttempt = z.infer<typeof StepAttempt>;
-export const StepPublic = z.strictObject({ idx: z.int().min(0), title: z.string(), explanationMd: z.string(), keyIdea: z.string(), example: z.string().nullable(), check: QuestionPublic, citations: z.array(Citation), lastAttempt: StepAttempt.nullable() });
-export type StepPublic = z.infer<typeof StepPublic>;
 
 const Rate = z.number().min(0).nullable();
 export const Metrics = z.strictObject({ attempts: z.int().nonnegative(), accuracy: Rate, retention: Rate, calibrationError: Rate, masteredShare: Rate });
@@ -140,17 +140,17 @@ export type InsightsResponse = z.infer<typeof InsightsResponse>;
 export const LessonCreated = z.strictObject({ lessonId: z.uuid(), plan: LessonPlan, grounded: z.boolean() });
 export type LessonCreated = z.infer<typeof LessonCreated>;
 
-// INV: status "waiting" means the newest opened step's check has no attempt; "done" means every planned step has an attempted check; otherwise "active". lastActiveAt is the newest of lesson creation, message and attempt times.
+// INV: status "waiting" means the lesson's newest check has no attempt; "done" means the tutor closed the lesson; otherwise "active". lastActiveAt is the newest of lesson creation, message and attempt times.
 export const LessonStatus = z.enum(["waiting", "active", "done"]);
 export type LessonStatus = z.infer<typeof LessonStatus>;
 export const LessonSummary = z.strictObject({ id: z.uuid(), title: z.string(), createdAt: z.iso.datetime(), status: LessonStatus, lastActiveAt: z.iso.datetime() });
 export type LessonSummary = z.infer<typeof LessonSummary>;
 
-export const LessonDetail = z.strictObject({ id: z.uuid(), title: z.string(), plan: LessonPlan, prerequisites: z.array(z.string()), steps: z.array(StepPublic), citations: z.array(Citation) });
+export const LessonDetail = z.strictObject({ id: z.uuid(), title: z.string(), plan: LessonPlan, prerequisites: z.array(z.string()), citations: z.array(Citation) });
 export type LessonDetail = z.infer<typeof LessonDetail>;
 
-// INV: stepIdx is null for messages saved before steps were anchored; the transcript lists those after the last step
-export const MessageResponse = z.strictObject({ id: z.string(), role: z.enum(["user", "assistant"]), content: z.string(), citations: z.array(Citation), createdAt: z.iso.datetime(), stepIdx: z.int().min(0).nullable() });
+// INV: topicIdx is the outline topic a tutor message ended on, null on learner messages; a tutor message may carry a check, and finishes marks the one that closed the lesson
+export const MessageResponse = z.strictObject({ id: z.string(), role: z.enum(["user", "assistant"]), content: z.string(), citations: z.array(Citation), createdAt: z.iso.datetime(), topicIdx: z.int().min(0).nullable(), check: LessonCheck.nullable(), finishes: z.boolean() });
 export type MessageResponse = z.infer<typeof MessageResponse>;
 
 export const GenerateResponse = z.strictObject({ topicId: z.uuid(), grounded: z.boolean(), questions: z.array(QuestionPublic) });

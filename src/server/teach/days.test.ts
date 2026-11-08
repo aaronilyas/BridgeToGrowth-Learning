@@ -4,7 +4,7 @@ import { bootTestServer, createTestUser, insertFixtureUser, type TestServer } fr
 let t: TestServer;
 let deleteLessonData: typeof import("./sql.ts")["deleteLessonData"];
 
-const plan = { title: "T", topic: { name: "X", domain: "math" }, related: [], steps: [{ title: "s", summary: "s" }] };
+const plan = { title: "T", topic: { name: "X", domain: "math" }, related: [], outline: [{ title: "s", summary: "s" }] };
 
 beforeAll(async () => {
   t = await bootTestServer();

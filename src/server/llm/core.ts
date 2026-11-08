@@ -45,6 +45,17 @@ export function buildMessages(system: string, turns: Turn[], files: FilePart[] =
   return out;
 }
 
+// O(n) in text length
+// INV: the result is where marker starts, or where a suffix that could still become marker starts, so a marker split across stream chunks never leaks
+export function visibleLength(text: string, marker: string, from: number): number {
+  const at = text.indexOf(marker, Math.max(0, from - marker.length));
+  if (at !== -1) return at;
+  for (let n = Math.min(marker.length - 1, text.length); n > 0; n--) {
+    if (text.endsWith(marker.slice(0, n))) return text.length - n;
+  }
+  return text.length;
+}
+
 // O(n) in content length
 export function parseJsonOutput<T>(content: string | null, schema: z.ZodType<T>): T | null {
   if (content === null) return null;

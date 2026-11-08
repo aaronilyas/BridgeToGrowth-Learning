@@ -22,8 +22,8 @@ export function LearningFields({ draft, setDraft, onSeason }: { draft: Settings;
         <SettingsToggle label="Ask for confidence after each answer" checked={draft.recall.confidencePrompt} onChange={(value) => setDraft((old) => ({ ...old, recall: { ...old.recall, confidencePrompt: value } }))} />
       </SettingsSection>
       <SettingsSection title="Bite-sized learning" columns>
-        <SettingsNumber label="Steps per lesson" value={draft.bite.stepsPerLesson} min={SETTINGS_LIMITS.bite.stepsPerLesson.min} max={SETTINGS_LIMITS.bite.stepsPerLesson.max} onChange={(value) => setDraft((old) => ({ ...old, bite: { ...old.bite, stepsPerLesson: value } }))} />
-        <SettingsNumber label="Maximum words per step" value={draft.bite.maxWordsPerStep} min={SETTINGS_LIMITS.bite.maxWordsPerStep.min} max={SETTINGS_LIMITS.bite.maxWordsPerStep.max} onChange={(value) => setDraft((old) => ({ ...old, bite: { ...old.bite, maxWordsPerStep: value } }))} />
+        <SettingsNumber label="Topics per lesson" value={draft.bite.topicsPerLesson} min={SETTINGS_LIMITS.bite.topicsPerLesson.min} max={SETTINGS_LIMITS.bite.topicsPerLesson.max} onChange={(value) => setDraft((old) => ({ ...old, bite: { ...old.bite, topicsPerLesson: value } }))} />
+        <SettingsNumber label="Maximum words per tutor message" value={draft.bite.maxWordsPerTurn} min={SETTINGS_LIMITS.bite.maxWordsPerTurn.min} max={SETTINGS_LIMITS.bite.maxWordsPerTurn.max} onChange={(value) => setDraft((old) => ({ ...old, bite: { ...old.bite, maxWordsPerTurn: value } }))} />
       </SettingsSection>
       <SettingsSection title="Daily practice">
         <SettingsNumber label="Daily goal" value={draft.practice.dailyGoal} min={SETTINGS_LIMITS.practice.dailyGoal.min} max={SETTINGS_LIMITS.practice.dailyGoal.max} onChange={(value) => setDraft((old) => ({ ...old, practice: { ...old.practice, dailyGoal: value } }))} />

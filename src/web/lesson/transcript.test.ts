@@ -1,19 +1,19 @@
 import { expect, test } from "bun:test";
 import { answeredLine, captionOf } from "../components/QuestionCard.tsx";
-import { keepCited, mergeChatRows, type ChatRow } from "./chatStore.ts";
-import { attemptMessage, groupRows, stepStatus } from "./transcript.ts";
+import { mergeChatRows, type ChatRow } from "./chatStore.ts";
+import { attemptMessage, currentTopic, topicAnchors, topicStatus } from "./transcript.ts";
 
 // O(1)
-function row(id: string, role: ChatRow["role"], content: string, stepIdx: number | null): ChatRow {
-  return { id, role, content, citations: [], pending: false, stepIdx };
+function row(id: string, role: ChatRow["role"], content: string, topicIdx: number | null): ChatRow {
+  return { id, role, content, citations: [], pending: false, topicIdx, check: null, finishes: false, preparingCheck: false };
 }
 
-test("rows group under their step; legacy and unopened-step rows go after the last step", () => {
-  const rows = [row("1", "user", "old", null), row("2", "user", "a", 0), row("3", "assistant", "b", 0), row("4", "user", "c", 1), row("5", "user", "future", 4)];
-  const { byStep, tail } = groupRows(rows, 1);
-  expect(byStep.get(0)?.map((r) => r.id)).toEqual(["2", "3"]);
-  expect(byStep.get(1)?.map((r) => r.id)).toEqual(["4"]);
-  expect(tail.map((r) => r.id)).toEqual(["1", "5"]);
+test("the newest tutor message sets the topic, and each topic anchors to where it was first reached", () => {
+  const rows = [row("1", "assistant", "a", 0), row("2", "user", "b", null), row("3", "assistant", "c", 1), row("4", "assistant", "d", 0), row("5", "user", "e", null)];
+  expect(currentTopic(rows)).toBe(0);
+  expect(currentTopic(rows.slice(0, 3))).toBe(1);
+  expect(currentTopic([])).toBe(0);
+  expect([...topicAnchors(rows)]).toEqual([[0, "1"], [1, "3"]]);
 });
 
 test("the Socratic turn is composed from what the learner sent", () => {
@@ -26,12 +26,13 @@ test("the Socratic turn is composed from what the learner sent", () => {
   expect(attemptMessage({ ...base, kind: "free", response: "x".repeat(5000) }).length).toBe(4000);
 });
 
-test("step status: attempted is done, newest unattempted is current, unopened is todo", () => {
-  const answered = new Set([0]);
-  expect(stepStatus(0, 2, answered)).toBe("done");
-  expect(stepStatus(1, 2, answered)).toBe("done");
-  expect(stepStatus(2, 2, answered)).toBe("current");
-  expect(stepStatus(3, 2, answered)).toBe("todo");
+test("topic status follows the tutor, not the learner's answers", () => {
+  const reached = new Set([0, 1, 3]);
+  expect(topicStatus(0, 1, reached, false)).toBe("done");
+  expect(topicStatus(1, 1, reached, false)).toBe("current");
+  expect(topicStatus(2, 1, reached, false)).toBe("todo");
+  expect(topicStatus(3, 1, reached, false)).toBe("done");
+  expect(topicStatus(1, 1, reached, true)).toBe("done");
 });
 
 test("an optimistic turn is dropped once history holds that same turn", () => {
@@ -39,7 +40,6 @@ test("an optimistic turn is dropped once history holds that same turn", () => {
   const optimistic = [row("u-1", "user", "hi", 0), row("a-1", "assistant", "hello", 0)];
   expect(mergeChatRows(history, optimistic)).toEqual(history);
   expect(mergeChatRows(history.slice(0, 1), optimistic).map((r) => r.id)).toEqual(["1", "u-1", "a-1"]);
-  expect(keepCited("a [1] b [2]", [{ n: 1, paperId: "p", doi: null, title: "t", year: null }])).toBe("a [1] b ");
 });
 
 test("check captions and the saved-attempt line", () => {

@@ -1,7 +1,7 @@
 import type { QuestionPublic } from "../../shared/api.ts";
 import type { ChatRow } from "./chatStore.ts";
 
-export type StepStatus = "done" | "current" | "todo";
+export type TopicStatus = "done" | "current" | "todo";
 
 // What the learner sent with a check, so the tutor can be told in their own words.
 export type SentAttempt = { kind: QuestionPublic["kind"]; choiceText: string | null; response: string; thinking: string; confidence: number | null; dontKnow: boolean };
@@ -9,20 +9,19 @@ export type SentAttempt = { kind: QuestionPublic["kind"]; choiceText: string | n
 const MAX_MESSAGE = 4000;
 
 // O(n) in rows
-// INV: rows keep their order inside a step; legacy rows (stepIdx null) and rows for steps not opened yet go to `tail`, after the last step
-export function groupRows(rows: readonly ChatRow[], opened: number): { byStep: Map<number, ChatRow[]>; tail: ChatRow[] } {
-  const byStep = new Map<number, ChatRow[]>();
-  const tail: ChatRow[] = [];
+// INV: the newest row with a topic decides; a lesson nothing has been said in starts on topic 0
+export function currentTopic(rows: readonly ChatRow[]): number {
+  return rows.findLast((r) => r.topicIdx !== null)?.topicIdx ?? 0;
+}
+
+// O(n) in rows
+// INV: maps each topic the tutor has reached to the row that first reached it, for jumping from the topic list
+export function topicAnchors(rows: readonly ChatRow[]): Map<number, string> {
+  const anchors = new Map<number, string>();
   for (const r of rows) {
-    if (r.stepIdx === null || r.stepIdx > opened) {
-      tail.push(r);
-      continue;
-    }
-    const list = byStep.get(r.stepIdx);
-    if (list) list.push(r);
-    else byStep.set(r.stepIdx, [r]);
+    if (r.topicIdx !== null && !anchors.has(r.topicIdx)) anchors.set(r.topicIdx, r.id);
   }
-  return { byStep, tail };
+  return anchors;
 }
 
 // O(1)
@@ -44,9 +43,8 @@ export function attemptMessage(a: SentAttempt): string {
 }
 
 // O(1)
-// INV: a step is done once its check has an attempt; the newest opened step is current until then; unopened steps are todo
-export function stepStatus(i: number, newest: number, answered: ReadonlySet<number>): StepStatus {
-  if (answered.has(i)) return "done";
-  if (i === newest) return "current";
-  return i < newest ? "done" : "todo";
+// INV: the tutor's current topic is current until the lesson closes; a topic it has reached and left is done; a topic it has not reached is todo
+export function topicStatus(i: number, current: number, reached: ReadonlySet<number>, finished: boolean): TopicStatus {
+  if (i === current && !finished) return "current";
+  return reached.has(i) ? "done" : "todo";
 }

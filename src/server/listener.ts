@@ -91,7 +91,7 @@ function guardRoutes(api: ApiRoutes, token: string, portOf: () => number): ApiRo
 // INV: `api` handlers are built with route(), which wraps every response (including errors) in secureResponse, so they are mounted directly with no loopback hop
 // INV: `api` must not contain "/*"; the HTML bundle stays on the upstream so its responses pass through secureResponse
 // INV: maxRequestBodySize caps every body at the socket; route maxBody still caps each route below that
-// INV: idleTimeout covers documents and rejected requests; guardRoutes lifts it for authenticated API requests so a quiet model call is not reset. Bun's default of 10s would reset the socket before a lesson step or chat reply is written.
+// INV: idleTimeout covers documents and rejected requests; guardRoutes lifts it for authenticated API requests so a quiet model call is not reset. Bun's default of 10s would reset the socket before a tutor reply is written.
 // SEC: binds 127.0.0.1 only. The launch token makes localGuard reject any other Host, a missing API token, and a foreign mutation Origin.
 export function servePublic(o: { port: number; api: ApiRoutes; upstream: URL; token: string }): Server<UpstreamSocket> {
   if ("/*" in o.api) throw new Error("the document route belongs on the upstream");

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MdBody } from "../web/components/MdBody.tsx";
-import { normalizeMarkdown, truncateMarkdown } from "./markdown.ts";
+import { normalizeMarkdown } from "./markdown.ts";
 
 const html = (text: string): string => renderToStaticMarkup(createElement(MdBody, { text }));
 
@@ -18,26 +18,6 @@ test("a GitHub table renders as a table with math in its cells", () => {
   expect(out.match(/<tr>/g)?.length).toBe(5);
   expect(out).toContain("katex");
   expect(out).not.toContain("|---|");
-});
-
-test("the word limit counts prose only and never cuts a table row", () => {
-  const cut = truncateMarkdown(STEP, 180);
-  expect(cut).toContain(TABLE);
-  expect(cut.endsWith(QUESTION)).toBe(true);
-  const short = truncateMarkdown(STEP, 100);
-  expect(INTRO.startsWith(short)).toBe(true);
-  expect(short.endsWith(".")).toBe(true);
-  expect(short.split(/\s+/).length).toBeLessThanOrEqual(100);
-});
-
-test("a cut ends at a sentence or list item, keeping paragraph breaks", () => {
-  const md = "A **proposition** is true or false.\n\nTo symbolize:\n\n1. Assign letters.\n2. Replace connectives.";
-  expect(truncateMarkdown(md, 100)).toBe(md);
-  expect(truncateMarkdown(md, 9)).toBe("A **proposition** is true or false.\n\nTo symbolize:");
-  expect(truncateMarkdown(md, 11)).toBe("A **proposition** is true or false.\n\nTo symbolize:\n\n1. Assign letters.");
-  expect(truncateMarkdown("One two three four five six", 3)).toBe("One two three");
-  expect(truncateMarkdown("Let $x + 1 = 5$ hold here. Then more words follow.", 3)).toBe("Let $x + 1 = 5$ hold");
-  expect(truncateMarkdown("Intro text.\n\n```\nlong code block here\n```\n\nTail sentence.", 3)).toBe("Intro text.\n\n```\nlong code block here\n```");
 });
 
 test("table rows run together onto one line are split back into rows", () => {

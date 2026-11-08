@@ -1,5 +1,5 @@
 // The Markdown dialect the app renders: CommonMark plus GitHub tables (remark-gfm) and $…$ / $$…$$ math (remark-math).
-// Model output is repaired toward it at render time (normalizeMarkdown) and cut without breaking it (truncateMarkdown).
+// Model output is repaired toward it at render time (normalizeMarkdown).
 
 export const MARKDOWN_RULE: string = [
   "Format all text as Markdown: paragraphs separated by a blank line, and Markdown lists with one item per line.",
@@ -14,10 +14,6 @@ type Block = { start: number; end: number; atomic: boolean };
 
 const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/;
 const DELIM_CELL_RE = /^\s*:?-+:?\s*$/;
-const LIST_ITEM_RE = /^\s*(?:[-*+]|\d{1,9}[.)])\s/;
-const ABBREV_RE = /^(?:e\.g|i\.e|vs|cf)\.$/i;
-// A word is a run of non-space characters, where an inline $…$ math or `…` code span counts as part of one word even if it holds spaces.
-const WORD_RE = /(?:\$\$[\s\S]*?\$\$|\$(?:\\.|[^$\\\n])+?\$|`[^`\n]*`|\\.|[^\s$`\\]|[$`\\])+/g;
 
 // O(n) in text length
 function splitLines(text: string): Line[] {
@@ -68,98 +64,6 @@ function atomicEnd(lines: Line[], i: number): number {
   if (t.length > 2 && t.indexOf("$$", 2) >= 0) return i;
   for (let j = i + 1; j < lines.length; j++) if ((lines[j]?.text ?? "").includes("$$")) return j;
   return lines.length - 1;
-}
-
-// O(n) in text length
-// INV: blocks are in order, never overlap, and never include blank separator lines; fences, display math and tables are atomic
-function splitBlocks(text: string): Block[] {
-  const lines = splitLines(text);
-  const texts = lines.map((l) => l.text);
-  const out: Block[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    if (!line || isBlank(line.text)) {
-      i++;
-      continue;
-    }
-    const fenceEnd = atomicEnd(lines, i);
-    const tblEnd = tableEnd(texts, i);
-    let j = i;
-    let atomic = true;
-    if (fenceEnd >= 0) j = fenceEnd;
-    else if (tblEnd >= 0) j = tblEnd;
-    else {
-      atomic = false;
-      while (j + 1 < lines.length) {
-        if (isBlank(texts[j + 1] ?? "") || tableEnd(texts, j + 1) >= 0 || atomicEnd(lines, j + 1) >= 0) break;
-        j++;
-      }
-    }
-    out.push({ start: line.start, end: lines[j]?.end ?? line.end, atomic });
-    i = j + 1;
-  }
-  return out;
-}
-
-// O(n) in block length
-// INV: returns, in order, the offset after each word at which the block may end cleanly (a sentence end, or the end of a line before a list item), each with the number of words up to it
-function cutPoints(text: string, from: number, to: number): { at: number; words: number }[] {
-  const block = text.slice(from, to);
-  const words = [...block.matchAll(WORD_RE)];
-  const out: { at: number; words: number }[] = [];
-  words.forEach((m, k) => {
-    const word = m[0];
-    const end = (m.index ?? 0) + word.length;
-    const lineStart = block.lastIndexOf("\n", (m.index ?? 0) - 1) + 1;
-    const firstOnLine = block.slice(lineStart, m.index).trim() === "";
-    const marker = firstOnLine && LIST_ITEM_RE.test(block.slice(lineStart) + " ") && /^(?:[-*+]|\d{1,9}[.)])$/.test(word);
-    const nextNl = block.indexOf("\n", end);
-    const restOfLine = nextNl < 0 ? block.slice(end) : block.slice(end, nextNl);
-    const lineEnds = restOfLine.trim() === "";
-    const beforeItem = lineEnds && (nextNl < 0 || LIST_ITEM_RE.test(block.slice(nextNl + 1)));
-    const sentence = /[.!?]["')\]*_]*$/.test(word) && !word.endsWith("$") && !ABBREV_RE.test(word);
-    if (!marker && (sentence || beforeItem)) out.push({ at: from + end, words: k + 1 });
-  });
-  return out;
-}
-
-// O(n) in block length
-function nthWordEnd(text: string, from: number, to: number, n: number): number {
-  let k = 0;
-  for (const m of text.slice(from, to).matchAll(WORD_RE)) {
-    k++;
-    if (k === n) return from + (m.index ?? 0) + m[0].length;
-  }
-  return to;
-}
-
-// O(n) in text length
-// INV: counts the words of prose only; tables, fenced code and display math are never counted, never cut and kept whole while the limit is not reached
-// INV: a cut lands at the end of a sentence, or of a list item, so no table row, list item, math span or code span is left broken; only the first block is ever cut mid-sentence
-// INV: keeps the text's own whitespace, so paragraph breaks and Markdown lists survive
-export function truncateMarkdown(text: string, maxWords: number): string {
-  let used = 0;
-  let end = 0;
-  for (const b of splitBlocks(text)) {
-    if (used >= maxWords) break;
-    if (b.atomic) {
-      end = b.end;
-      continue;
-    }
-    const n = [...text.slice(b.start, b.end).matchAll(WORD_RE)].length;
-    if (used + n <= maxWords) {
-      used += n;
-      end = b.end;
-      continue;
-    }
-    const room = maxWords - used;
-    const fit = cutPoints(text, b.start, b.end).filter((c) => c.words <= room).pop();
-    if (fit) end = fit.at;
-    else if (end === 0) end = nthWordEnd(text, b.start, b.end, room);
-    used = maxWords;
-  }
-  return text.slice(0, end).trimEnd();
 }
 
 // O(n) in line length
