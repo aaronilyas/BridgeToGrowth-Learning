@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { answeredLine, captionOf } from "../components/QuestionCard.tsx";
 import { keepCited, mergeChatRows, type ChatRow } from "./chatStore.ts";
-import { attemptMessage, groupRows, stepStatus } from "./transcript.ts";
+import { attemptMessage, groupRows, openFollowUpId, splitFollowUp, stepStatus } from "./transcript.ts";
 
 // O(1)
 function row(id: string, role: ChatRow["role"], content: string, stepIdx: number | null): ChatRow {
@@ -24,6 +24,27 @@ test("the Socratic turn is composed from what the learner sent", () => {
   expect(attemptMessage({ ...base, kind: "code", response: "x = 1" })).toBe("I submitted this code:\n\n```python\nx = 1\n```");
   expect(attemptMessage({ ...base, kind: "free", response: "anything", dontKnow: true })).toBe("I don't know.");
   expect(attemptMessage({ ...base, kind: "free", response: "x".repeat(5000) }).length).toBe(4000);
+});
+
+test("a tutor turn's closing question splits off from its lead", () => {
+  expect(splitFollowUp("Right about the sign.\n\nWhat changes if $x<0$?\n")).toEqual({ lead: "Right about the sign.", question: "What changes if $x<0$?" });
+  expect(splitFollowUp("First.\n \nSecond.\n\n**Why does it hold?**")).toEqual({ lead: "First.\n \nSecond.", question: "**Why does it hold?**" });
+  expect(splitFollowUp("Why does it hold? [2]")).toEqual({ lead: "", question: "Why does it hold? [2]" });
+  expect(splitFollowUp("Here is the full derivation.")).toBeNull();
+  expect(splitFollowUp("Why?\n\nThat is the key step.")).toBeNull();
+  expect(splitFollowUp("")).toBeNull();
+});
+
+test("only the newest settled tutor question on the newest step is open", () => {
+  const asked = row("2", "assistant", "Why?", 1);
+  expect(openFollowUpId([row("1", "user", "hi", 1), asked], 1, false)).toBe("2");
+  expect(openFollowUpId([asked], 1, true)).toBeNull();
+  expect(openFollowUpId([{ ...asked, pending: true }], 1, false)).toBeNull();
+  expect(openFollowUpId([asked, row("3", "user", "because", 1)], 1, false)).toBeNull();
+  expect(openFollowUpId([asked], 2, false)).toBeNull();
+  expect(openFollowUpId([{ ...asked, content: "No question here." }], 1, false)).toBeNull();
+  expect(openFollowUpId([{ ...asked, stepIdx: null }], 2, false)).toBe("2");
+  expect(openFollowUpId([], 0, false)).toBeNull();
 });
 
 test("step status: attempted is done, newest unattempted is current, unopened is todo", () => {

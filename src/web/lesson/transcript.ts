@@ -7,6 +7,7 @@ export type StepStatus = "done" | "current" | "todo";
 export type SentAttempt = { kind: QuestionPublic["kind"]; choiceText: string | null; response: string; thinking: string; confidence: number | null; dontKnow: boolean };
 
 const MAX_MESSAGE = 4000;
+const CLOSING_QUESTION = /\?(?:[*_"'”’)]|\s*\[\d+\])*$/;
 
 // O(n) in rows
 // INV: rows keep their order inside a step; legacy rows (stepIdx null) and rows for steps not opened yet go to `tail`, after the last step
@@ -23,6 +24,24 @@ export function groupRows(rows: readonly ChatRow[], opened: number): { byStep: M
     else byStep.set(r.stepIdx, [r]);
   }
   return { byStep, tail };
+}
+
+// O(n) in message length
+// INV: only a final paragraph ending in "?" counts as the tutor's question; it is returned as written, and the saved message is never changed
+export function splitFollowUp(content: string): { lead: string; question: string } | null {
+  const text = content.trimEnd();
+  const last = text.split(/\n[ \t]*\n/).at(-1) ?? "";
+  if (!CLOSING_QUESTION.test(last)) return null;
+  return { lead: text.slice(0, text.length - last.length).trimEnd(), question: last.trim() };
+}
+
+// O(n) in the last message
+// INV: only the newest settled tutor turn can be answered, and only while its step is still the newest; a turn the learner replied to or moved past is closed
+export function openFollowUpId(rows: readonly ChatRow[], newest: number, streaming: boolean): string | null {
+  const last = rows.at(-1);
+  if (streaming || !last || last.role !== "assistant" || last.pending) return null;
+  if (last.stepIdx !== null && last.stepIdx < newest) return null;
+  return splitFollowUp(last.content) ? last.id : null;
 }
 
 // O(1)

@@ -9,7 +9,7 @@ import { lessonsChanged, useLessonChat } from "../lesson/chatStore.ts";
 import { Composer, type Seed } from "../lesson/Composer.tsx";
 import { Messages } from "../lesson/Messages.tsx";
 import { PlanPanel } from "../lesson/PlanPanel.tsx";
-import { attemptMessage, groupRows, stepStatus, type SentAttempt } from "../lesson/transcript.ts";
+import { attemptMessage, groupRows, openFollowUpId, stepStatus, type SentAttempt } from "../lesson/transcript.ts";
 
 const PLAN_KEY = "btg:lesson-plan-open";
 const NEAR_BOTTOM_PX = 96;
@@ -144,6 +144,14 @@ export function LessonPage(): JSX.Element {
 
   const newest = useMemo(() => Math.max(-1, ...Object.keys(steps).map(Number)), [steps]);
   const groups = useMemo(() => groupRows(chat.rows, newest), [chat.rows, newest]);
+  const openId = openFollowUpId(chat.rows, newest, chat.streaming);
+
+  // O(1)
+  const onReply = useCallback((sent: SentAttempt): void => {
+    const text = attemptMessage(sent);
+    stick.current = true;
+    if (!send({ text, stepIdx: newest >= 0 ? newest : null })) setSeed({ text, n: Date.now() });
+  }, [send, newest]);
 
   if (!lesson) {
     return <div className="grid flex-1 place-items-center">{loadError ? <ErrorBanner error={loadError} /> : <Spinner label="Loading lesson" />}</div>;
@@ -189,11 +197,11 @@ export function LessonPage(): JSX.Element {
                 return (
                   <Fragment key={i}>
                     {s && <StepView step={s} total={total} onResult={onResult} />}
-                    <Messages rows={groups.byStep.get(i)} />
+                    <Messages rows={groups.byStep.get(i)} openId={openId} onReply={onReply} />
                   </Fragment>
                 );
               })}
-              <Messages rows={groups.tail} />
+              <Messages rows={groups.tail} openId={openId} onReply={onReply} />
               {generating !== null && <StepSkeleton />}
               {stepError && <ErrorBanner error={stepError.error} onRetry={() => void openStep(stepError.idx)} />}
               {total === 0 && <p className="text-sm text-muted">This lesson has no steps.</p>}

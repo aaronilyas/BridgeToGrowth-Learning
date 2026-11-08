@@ -13,6 +13,7 @@ import { Md } from "./Md.tsx";
 import { Sources } from "./Sources.tsx";
 
 export type { SentAttempt } from "../lesson/transcript.ts";
+type CardQuestion = Pick<QuestionPublic, "id" | "kind" | "category" | "stem" | "choices" | "code" | "codeTests">;
 
 const DAY_MS = 86_400_000;
 const CAPTION: Record<QuestionCategory, string> = { terminology: "Terminology", conceptual: "Prediction", mcq: "Multiple choice", free: "Free response" };
@@ -50,7 +51,9 @@ function enterSubmits(e: ReactKeyboardEvent<HTMLTextAreaElement>, submit: () => 
 // INV: until `result` exists nothing here knows the answer; afterwards it shows exactly what the attempt response returned
 // INV: mount the card with key={question.id}; latency runs from mount to submit
 // INV: `answered` (a saved attempt) renders the compact answered state and accepts no new attempt
-export function QuestionCard({ question, onResult, label = "Check", answered = null }: { question: QuestionPublic; onResult?: (r: AttemptResponse, sent: SentAttempt) => void; label?: string; answered?: StepAttempt | null }): JSX.Element {
+// INV: `closed` shows only the caption and stem and accepts no answer
+// INV: with `onReply` nothing is graded or recorded; the answer goes to the tutor, who judges it in the conversation
+export function QuestionCard({ question, onResult, onReply, label = "Check", caption, answered = null, closed = false }: { question: CardQuestion; onResult?: (r: AttemptResponse, sent: SentAttempt) => void; onReply?: (sent: SentAttempt) => void; label?: string; caption?: string; answered?: StepAttempt | null; closed?: boolean }): JSX.Element {
   const { settings } = useSettings();
   const askConfidence = settings.recall.confidencePrompt;
   const started = useRef(performance.now());
@@ -65,7 +68,7 @@ export function QuestionCard({ question, onResult, label = "Check", answered = n
   const [result, setResult] = useState<{ r: AttemptResponse; sent: SentAttempt } | null>(null);
   const isMcq = question.kind === "mcq" && question.choices !== null;
   const code = question.kind === "code" ? question.code : null;
-  const locked = result !== null || answered !== null;
+  const locked = result !== null || answered !== null || closed;
   const ready = dontKnow || (isMcq ? choice !== null : text.trim() !== "");
 
   const pick = (i: number | null): void => {
@@ -82,7 +85,19 @@ export function QuestionCard({ question, onResult, label = "Check", answered = n
     setNote(null);
     const response = isMcq ? thinking.trim() : code ? text : text.trim();
     const latencyMs = Math.min(3_600_000, Math.round(performance.now() - started.current));
+    const sent: SentAttempt = {
+      kind: question.kind,
+      choiceText: isMcq && choice !== null && !skip ? (question.choices?.[choice] ?? null) : null,
+      response: skip ? "" : isMcq ? "" : response,
+      thinking: skip ? "" : isMcq ? response : "",
+      confidence: skip || !askConfidence ? null : confidence,
+      dontKnow: skip,
+    };
     try {
+      if (onReply) {
+        onReply(sent);
+        return;
+      }
       let body: Record<string, unknown>;
       if (skip) body = { questionId: question.id, dontKnow: true, confidence: 0, latencyMs };
       else {
@@ -105,14 +120,6 @@ export function QuestionCard({ question, onResult, label = "Check", answered = n
         };
       }
       const r = await api("/api/practice/attempt", AttemptResponse, { method: "POST", body });
-      const sent: SentAttempt = {
-        kind: question.kind,
-        choiceText: isMcq && choice !== null && !skip ? (question.choices?.[choice] ?? null) : null,
-        response: skip ? "" : isMcq ? "" : response,
-        thinking: skip ? "" : isMcq ? response : "",
-        confidence: skip || !askConfidence ? null : confidence,
-        dontKnow: skip,
-      };
       setResult({ r, sent });
       onResult?.(r, sent);
     } catch (e) {
@@ -146,7 +153,7 @@ export function QuestionCard({ question, onResult, label = "Check", answered = n
   return (
     <section aria-label={label} className="rounded-2xl border border-border bg-panel">
       <div className="flex flex-col gap-3 p-5">
-        <p className="label">{captionOf(question)}</p>
+        <p className="label">{caption ?? captionOf(question)}</p>
         <Md text={question.stem} className="[&>p:first-child]:mt-0" />
         {!locked && isMcq && (
           <fieldset className="flex flex-col gap-2">
