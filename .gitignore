@@ -27,6 +27,7 @@ scripts/cache/
 *.exe
 *.msi
 *.zip
+!src/server/testdata/v0.1.1-source.zip
 *.tar.gz
 
 # Local databases

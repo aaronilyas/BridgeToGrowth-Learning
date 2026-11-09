@@ -15,7 +15,7 @@ import { gatherSources } from "../sources/collect.ts";
 import { MAX_PDF_BYTES, MAX_SOURCE_FILES } from "../sources/core.ts";
 import { toNewQuestion, type NewQuestion } from "../gen/core.ts";
 import type { Settings } from "../../shared/settings.ts";
-import { CHAT_CONTEXT_MESSAGES, CheckOut, MAX_LESSON_CHECKS, OPENING_TURN, SourcedPlanOut, StoredPlan, TURN_MARK, allCitations, buildChatContext, buildCheckPrompt, buildPlanPrompt, buildTutorSystem, categoryOfCheck, currentTopic, KNOWN_TOPICS_IN_PROMPT, listPrereqs, maxOutlineTopics, normalizePlan, parseTutorTurn, pickLessonModel, revealAnswer, taughtText, toLessonCheck, toPublicPlan, tutorCheckBlock, unmetPrereqs } from "./core.ts";
+import { CHAT_CONTEXT_MESSAGES, CheckOut, MAX_LESSON_CHECKS, OPENING_TURN, SourcedPlanOut, StoredPlan, TURN_MARK, allCitations, buildChatContext, buildCheckPrompt, buildPlanPrompt, buildTutorSystem, categoryOfCheck, currentTopic, KNOWN_TOPICS_IN_PROMPT, listPrereqs, maxOutlineTopics, normalizePlan, parseTutorTurn, pickLessonModel, planFromStored, revealAnswer, taughtText, toLessonCheck, toPublicPlan, tutorCheckBlock, unmetPrereqs } from "./core.ts";
 import { CHECK_FALLBACK } from "./prompts.ts";
 import { countLessonChecks, deleteLessonData, ensureConversation, findLesson, findLessonCheck, insertLesson, insertTutorTurn, listChecks, listLessons, listMessages, listPapers, type LessonRow } from "./sql.ts";
 
@@ -39,7 +39,7 @@ async function requireLesson(uid: string, params: Record<string, string>): Promi
 }
 
 function readPlan(lesson: LessonRow): StoredPlan {
-  const p = StoredPlan.safeParse(lesson.plan);
+  const p = StoredPlan.safeParse(planFromStored(lesson.plan));
   if (!p.success) throw new Error("stored plan is invalid");
   return p.data;
 }
@@ -192,7 +192,7 @@ async function streamTurn(c: { req: Request; params: Record<string, string> }, i
       const text = turn.action === "check" && check === null ? `${body}\n\n${CHECK_FALLBACK}` : body;
       const citations = toCitations(f.used, papers);
       const finishes = turn.action === "finish";
-      const q = await insertTutorTurn(uid, lesson, convId, { user: input.message, content: text, citations, topicIdx: endTopic, finishes, check });
+      const q = await insertTutorTurn(uid, lesson, convId, { user: input.message, content: text, citations, topicIdx: endTopic, learnerTopicIdx: topicIdx, topic: plan.outline[endTopic] ?? null, finishes, check });
       return { text, citations, topicIdx: endTopic, finishes, check: q === null ? null : toLessonCheck(q, null) };
     },
   });

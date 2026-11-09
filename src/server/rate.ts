@@ -3,8 +3,9 @@ type Bucket = { tokens: number; t: number; cap: number; perMin: number };
 const MAX_KEYS = 100_000;
 const buckets = new Map<string, Bucket>();
 
+// INV: a clock moved backwards adds nothing and takes nothing away
 function refill(b: Bucket, now: number): void {
-  b.tokens = Math.min(b.cap, b.tokens + ((now - b.t) / 60_000) * b.perMin);
+  b.tokens = Math.min(b.cap, b.tokens + (Math.max(0, now - b.t) / 60_000) * b.perMin);
   b.t = now;
 }
 
