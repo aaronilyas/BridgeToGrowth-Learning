@@ -2,9 +2,17 @@ import { z } from "zod";
 import { ProviderId } from "./providers.ts";
 
 const int = (min: number, max: number) => z.int().min(min).max(max);
+// INV: a saved value outside the range is pulled into it; failing the parse would reset every setting to its default
+const clampedInt = ({ min, max }: { min: number; max: number }) => z.int().transform((v) => Math.max(min, Math.min(max, v)));
 
+// Spaced repetition bounds:
+// repetitions: at least 3 spaced reviews (Rawson & Dunlosky 2011, J Exp Psychol Gen 140:283; Kang 2016's 1 day / 1 week / 1 month).
+//   At most REVIEW_LADDER_D.length, ending on a 1-year gap. Later rungs double for decades, far past any tested gap (Cepeda et al. 2008, Psychol Sci 19:1095).
+// newPerDay: no controlled study sets a number. 20 is the top of common spaced-repetition practice; 0 pauses new material.
+// maxReviewsPerDay: workload arithmetic, not an experimental result. A cap under the review load builds a backlog and pushes reviews past their gaps.
+//   30 covers the default 10 new x 3 reviews. 200 covers 20 new x 6 reviews with room for lapses.
 export const SETTINGS_LIMITS = {
-  srs: { newPerDay: { min: 0, max: 50 }, maxReviewsPerDay: { min: 0, max: 500 }, repetitions: { min: 1, max: 10 } },
+  srs: { newPerDay: { min: 0, max: 20 }, maxReviewsPerDay: { min: 30, max: 200 }, repetitions: { min: 3, max: 6 } },
   recall: { freeResponseRatio: { min: 0, max: 1 } },
   bite: { stepsPerLesson: { min: 2, max: 16 }, maxWordsPerStep: { min: 60, max: 400 }, questionsPerSession: { min: 3, max: 20 } },
   practice: { dailyGoal: { min: 1, max: 100 } },
@@ -40,7 +48,7 @@ export const Settings = z.strictObject({
   staleModels: z.array(modelTask).default([]),
   season: season.default("auto"),
   openalexMailto: z.string().max(254).default(""),
-  srs: z.strictObject({ enabled: srs.enabled.default(true), newPerDay: srs.newPerDay.default(10), maxReviewsPerDay: srs.maxReviewsPerDay.default(50), repetitions: srs.repetitions.default(3) }).prefault({}),
+  srs: z.strictObject({ enabled: srs.enabled.default(true), newPerDay: clampedInt(SETTINGS_LIMITS.srs.newPerDay).default(10), maxReviewsPerDay: clampedInt(SETTINGS_LIMITS.srs.maxReviewsPerDay).default(50), repetitions: clampedInt(SETTINGS_LIMITS.srs.repetitions).default(3) }).prefault({}),
   recall: z.strictObject({ freeResponseRatio: recall.freeResponseRatio.default(0.3), confidencePrompt: recall.confidencePrompt.default(true) }).prefault({}),
   bite: z.strictObject({ stepsPerLesson: bite.stepsPerLesson.default(4), maxWordsPerStep: bite.maxWordsPerStep.default(180), questionsPerSession: bite.questionsPerSession.default(8) }).prefault({}),
   practice: z.strictObject({ dailyGoal: practice.dailyGoal.default(10) }).prefault({}),
