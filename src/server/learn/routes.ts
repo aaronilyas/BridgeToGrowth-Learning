@@ -6,8 +6,9 @@ import { HttpError, json, route } from "../http.ts";
 import { connectedProviderIds } from "../llm/providers/registry.ts";
 import { chatJson } from "../llm/gateway.ts";
 import { localProfile } from "../profile.ts";
-import { GradeOutput, CORRECT_AT, StoredAnswer, StoredCitations, buildGradePrompt, loadSettings, queueLimit, toAttemptAnswer, toQuestionPublic } from "./core.ts";
-import { countReviewsToday, findQuestion, listDueQuestions, recordAttempt, updateSettings } from "./sql.ts";
+import { localDayOf } from "../sqlmap.ts";
+import { GradeOutput, CORRECT_AT, StoredAnswer, StoredCitations, buildGradePrompt, loadSettings, newCardRoom, queueLimit, toAttemptAnswer, toQuestionPublic } from "./core.ts";
+import { countNewCardsAnswered, countReviewsToday, findQuestion, listDueReviews, listNewQuestions, markNewCardsServed, recordAttempt, updateSettings } from "./sql.ts";
 
 const getSettings = route({}, async () => {
   const connected = await connectedProviderIds();
@@ -21,10 +22,12 @@ const putSettings = route({ body: SettingsPatch }, async (c) => {
   const connected = await connectedProviderIds();
   const next = Settings.safeParse(mergeSettings(loadSettings(user), c.body, connected));
   if (!next.success) throw new HttpError(400, "bad_request");
-  await updateSettings(user.id, next.data);
+  await updateSettings(user.id, next.data, user.settings);
   return json(next.data);
 });
 
+// INV: reviews come first and fill the limit before any new card, so the new-card cap can never hold a review back
+// INV: serving records which questions Practice introduced; the attempt route cannot tell Practice from a lesson on its own
 const queue = route({}, async (c) => {
   const user = await localProfile();
   const q = QueueQuery.safeParse(Object.fromEntries(new URL(c.req.url).searchParams));
@@ -33,7 +36,13 @@ const queue = route({}, async (c) => {
   if (!settings.srs.enabled) return json([]);
   const limit = queueLimit(settings, await countReviewsToday(user.id), q.data.limit);
   if (limit === 0) return json([]);
-  return json((await listDueQuestions(user.id, limit, settings.srs.repetitions)).map(toQuestionPublic));
+  const now = Date.now();
+  const day = localDayOf(now);
+  const reviews = await listDueReviews(user.id, limit, settings.srs.repetitions, now);
+  const room = Math.min(limit - reviews.length, newCardRoom(settings, await countNewCardsAnswered(user.id, day)));
+  const fresh = room > 0 ? await listNewQuestions(user.id, room, now) : [];
+  await markNewCardsServed(user.id, day, fresh.map((q) => q.id));
+  return json([...reviews, ...fresh].map(toQuestionPublic));
 });
 
 const attempt = route({ body: AttemptRequest, rate: { key: "attempt", cap: 60, perMin: 60 } }, async (c) => {
@@ -69,7 +78,7 @@ const attempt = route({ body: AttemptRequest, rate: { key: "attempt", cap: 60, p
     feedback = g.data.feedback;
   }
   const now = new Date();
-  const due = await recordAttempt({ uid, topicId: row.topic_id, questionId: row.id, score, confidence: skip ? 0 : asked.confidence, latencyMs: asked.latencyMs, response: skip || row.kind === "mcq" ? null : (asked.response ?? null), dontKnow: skip, srs: loadSettings(user).srs }, now);
+  const due = await recordAttempt({ uid, topicId: row.topic_id, questionId: row.id, lessonId: row.lesson_id, score, confidence: skip ? 0 : asked.confidence, latencyMs: asked.latencyMs, response: skip || row.kind === "mcq" ? null : (asked.response ?? null), dontKnow: skip, srs: loadSettings(user).srs }, now);
   const body: AttemptResponse = { score, correct: score >= CORRECT_AT, feedback, answer: toAttemptAnswer(row.kind, stored, tests), explanation: row.explanation, citations: StoredCitations.parse(row.citations), nextDueAt: due ? due.toISOString() : null };
   return json(body);
 });

@@ -129,7 +129,7 @@ test("deleting a lesson removes its chat, checks, and topics nothing else uses",
   await addAttempt(u.id, keptId, keptQ, 1, 50, false);
   const [conv] = await t.sql`INSERT INTO conversations (user_id, lesson_id) VALUES (${u.id}, ${lessonId}) RETURNING id`;
   if (!conv) throw new Error("conversation missing");
-  await t.sql`INSERT INTO messages (conv_id, role, content, check_id) VALUES (${conv.id}, 'assistant', 'hi', ${qid})`;
+  await t.sql`INSERT INTO lesson_turns (conv_id, role, content, check_id) VALUES (${conv.id}, 'assistant', 'hi', ${qid})`;
   const today = utcDayOf(Date.now());
   const yesterday = utcDayOf(Date.now() - 86_400_000);
   await t.sql`INSERT INTO daily_activity (user_id, day, attempts, correct, reviews, review_correct, conf_err_sum) VALUES (${u.id}, ${today}, 9, 9, 9, 9, 9)`;
@@ -155,7 +155,7 @@ test("deleting a lesson removes its chat, checks, and topics nothing else uses",
       (SELECT count(*) FROM topics WHERE id = ${relatedId}) AS related,
       (SELECT count(*) FROM topics WHERE id = ${keptId}) AS kept_topics,
       (SELECT count(*) FROM topic_edges WHERE user_id = ${u.id}) AS edges,
-      (SELECT count(*) FROM messages m JOIN conversations c ON c.id = m.conv_id WHERE c.user_id = ${u.id}) AS messages,
+      (SELECT count(*) FROM lesson_turns m JOIN conversations c ON c.id = m.conv_id WHERE c.user_id = ${u.id}) AS messages,
       (SELECT count(*) FROM conversations WHERE user_id = ${u.id}) AS convos,
       (SELECT count(*) FROM insights WHERE user_id = ${u.id} AND day = ${today}) AS today_insights,
       (SELECT count(*) FROM insights WHERE user_id = ${u.id} AND day = ${yesterday}) AS old_insights`;
@@ -271,7 +271,7 @@ test("the tutor opens the lesson, once, and no learner message is stored", async
     expect(seen.system).toContain("This is the start of the lesson.");
     expect(seen.system).toContain("1. First idea: s (you are here)");
     expect(seen.messages.at(-1)?.role).toBe("user");
-    const rows = await t.sql`SELECT role, content, topic_idx FROM messages m JOIN conversations c ON c.id = m.conv_id WHERE c.lesson_id = ${lesson.id} ORDER BY m.id` as { role: string; content: string; topic_idx: number }[];
+    const rows = await t.sql`SELECT role, content, topic_idx FROM lesson_turns m JOIN conversations c ON c.id = m.conv_id WHERE c.lesson_id = ${lesson.id} ORDER BY m.id` as { role: string; content: string; topic_idx: number }[];
     expect(rows).toEqual([{ role: "assistant", content: "By the end you can name it. **Term** means this. What would change?", topic_idx: 0 }]);
     expect((await callRoute(h.start, "POST", path, { cookie: u.cookie, body: {} })).status).toBe(400);
   } finally {
@@ -322,7 +322,7 @@ test("a failed check leaves the turn intact and still asks the learner something
   try {
     expect((await callRoute(h.chat, "POST", `/x?id=${lesson.id}`, { cookie: u.cookie, body: { message: "go" } })).status).toBe(200);
     expect(checkCalls).toBe(1);
-    const [row] = await t.sql`SELECT content, check_id FROM messages m JOIN conversations c ON c.id = m.conv_id WHERE c.lesson_id = ${lesson.id} AND m.role = 'assistant'`;
+    const [row] = await t.sql`SELECT content, check_id FROM lesson_turns m JOIN conversations c ON c.id = m.conv_id WHERE c.lesson_id = ${lesson.id} AND m.role = 'assistant'`;
     expect(row).toEqual({ content: `Lead in.\n\n${CHECK_FALLBACK}`, check_id: null });
   } finally {
     resetLlm();
@@ -343,7 +343,7 @@ test("lesson status follows the newest check and the tutor closing, and the list
   async function say(lessonId: string, at: number, opts: { check?: boolean; finishes?: boolean } = {}): Promise<string | null> {
     const [conv] = await t.sql`INSERT INTO conversations (user_id, lesson_id) VALUES (${u.id}, ${lessonId}) ON CONFLICT (lesson_id) DO UPDATE SET lesson_id = excluded.lesson_id RETURNING id`;
     const qid = opts.check ? await addQuestion(u.id, topicId, lessonId) : null;
-    await t.sql`INSERT INTO messages (conv_id, role, content, topic_idx, check_id, finishes, created_at) VALUES (${conv.id}, 'assistant', 'x', 0, ${qid}, ${opts.finishes ? 1 : 0}, ${at})`;
+    await t.sql`INSERT INTO lesson_turns (conv_id, role, content, topic_idx, check_id, finishes, created_at) VALUES (${conv.id}, 'assistant', 'x', 0, ${qid}, ${opts.finishes ? 1 : 0}, ${at})`;
     return qid;
   }
   async function attemptAt(qid: string | null, at: number): Promise<void> {

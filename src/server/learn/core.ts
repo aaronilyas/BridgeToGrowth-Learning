@@ -2,7 +2,7 @@ import { z } from "zod";
 import { Citation, type AttemptAnswer, type QuestionCategory, type QuestionPublic } from "../../shared/api.ts";
 import { CodeSpec, type CodeTestResult } from "../../shared/code.ts";
 import { StoredCodeAnswer } from "../../shared/codeGrade.ts";
-import { Settings } from "../../shared/settings.ts";
+import { SETTINGS_LIMITS, Settings } from "../../shared/settings.ts";
 
 
 export type Card = { ef: number; intervalD: number; reps: number; lapses: number; dueAt: Date };
@@ -103,10 +103,41 @@ export function foldTopicStats(attempts: readonly AttemptScore[]): TopicStats {
   return { attempts: attempts.length, correct, confErrSum, mastery, lastSeenAt };
 }
 
+const SRS_NUMBERS = ["newPerDay", "maxReviewsPerDay", "repetitions"] as const;
+
+// O(1)
+function record(v: unknown): Record<string, unknown> | null {
+  return typeof v === "object" && v !== null && !Array.isArray(v) ? Object.fromEntries(Object.entries(v)) : null;
+}
+
+// O(1)
+// INV: users.settings keeps v0.1.1's key names, because v0.1.1 parses settings strictly and resets all of them on an unknown key
+export function settingsFromStored(stored: Record<string, unknown>): Record<string, unknown> {
+  const bite = record(stored.bite);
+  if (bite === null) return stored;
+  const { stepsPerLesson, maxWordsPerStep, ...rest } = bite;
+  return { ...stored, bite: { ...rest, ...(stepsPerLesson === undefined ? {} : { topicsPerLesson: stepsPerLesson }), ...(maxWordsPerStep === undefined ? {} : { maxWordsPerTurn: maxWordsPerStep }) } };
+}
+
+// O(1)
+// INV: a saved spaced-repetition number that only looks changed because loading clamped it stays as stored, so saving another setting cannot change what v0.1.1 reads
+export function settingsToStored(next: Settings, stored: Record<string, unknown>): Record<string, unknown> {
+  const { topicsPerLesson, maxWordsPerTurn, ...bite } = next.bite;
+  const srs: Record<string, unknown> = { ...next.srs };
+  const before = record(stored.srs);
+  for (const key of SRS_NUMBERS) {
+    const old = before?.[key];
+    if (typeof old !== "number" || !Number.isInteger(old)) continue;
+    const { min, max } = SETTINGS_LIMITS.srs[key];
+    if (Math.max(min, Math.min(max, old)) === next.srs[key]) srs[key] = old;
+  }
+  return { ...next, srs, bite: { ...bite, stepsPerLesson: topicsPerLesson, maxWordsPerStep: maxWordsPerTurn } };
+}
+
 // O(1)
 // INV: stored settings that fail validation fall back to full defaults
 export function loadSettings(user: { settings: Record<string, unknown> }): Settings {
-  const r = Settings.safeParse(user.settings);
+  const r = Settings.safeParse(settingsFromStored(user.settings));
   return r.success ? r.data : Settings.parse({});
 }
 
@@ -130,6 +161,12 @@ export function toQuestionPublic(row: QuestionRow): QuestionPublic {
 export function queueLimit(settings: Settings, reviewsToday: number, requested: number): number {
   if (!settings.srs.enabled) return 0;
   return Math.max(0, Math.min(requested, settings.srs.maxReviewsPerDay - reviewsToday));
+}
+
+// O(1)
+// INV: how many never-attempted questions Practice may still show today; introduced counts the ones already answered from today's allowance
+export function newCardRoom(settings: Settings, introduced: number): number {
+  return Math.max(0, settings.srs.newPerDay - introduced);
 }
 
 // O(n) in response length

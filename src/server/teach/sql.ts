@@ -1,5 +1,5 @@
 import type { SQL } from "bun";
-import type { Citation, LessonPlan, LessonStatus } from "../../shared/api.ts";
+import type { Citation, LessonStatus } from "../../shared/api.ts";
 import { sql } from "../db.ts";
 import { insertQuestions } from "../gen/sql.ts";
 import { CORRECT_AT, foldTopicStats, type AttemptScore, type QuestionRow } from "../learn/core.ts";
@@ -8,11 +8,12 @@ import type { Paper } from "../lit/core.ts";
 import { dateFromMs, dayEndMs, dayStartMs, epochOf, jsonText, jsonValue, questionFrom, stringList, utcDayOf } from "../sqlmap.ts";
 import { topicsReleasedByLesson, type TopicUse } from "../topics/core.ts";
 import type { NewQuestion } from "../gen/core.ts";
-import { lessonStatus } from "./core.ts";
+import { legacyStepContent, lessonStatus, planToStored, withLegacyCheckNote, type StoredPlan } from "./core.ts";
 
 export type LessonRow = { id: string; topic_id: string; title: string; plan: unknown; paper_ids: string[]; model: string; created_at: Date };
 export type MessageRow = { id: string; role: "user" | "assistant"; content: string; citations: unknown; created_at: Date; topic_idx: number | null; check_id: string | null; finishes: boolean };
-export type NewTurn = { user: string | null; content: string; citations: Citation[]; topicIdx: number; finishes: boolean; check: NewQuestion | null };
+// INV: learnerTopicIdx is the topic the learner replied on; topic is the outline entry the turn ended on, null if the plan has no such entry
+export type NewTurn = { user: string | null; content: string; citations: Citation[]; topicIdx: number; learnerTopicIdx: number; topic: { title: string; summary: string } | null; finishes: boolean; check: NewQuestion | null };
 export type LessonListRow = { id: string; title: string; created_at: Date; status: LessonStatus; last_active_at: Date };
 
 type LessonRaw = { id: string; topic_id: string; title: string; plan: unknown; paper_ids: unknown; model: string; created_at: number };
@@ -36,10 +37,10 @@ function messageFrom(row: MessageRaw): MessageRow {
 
 // O(1)
 // INV: plan and paper ids are JSON text
-export async function insertLesson(tx: SQL, uid: string, topicId: string, plan: LessonPlan, paperIds: string[], model: string): Promise<string> {
+export async function insertLesson(tx: SQL, uid: string, topicId: string, plan: StoredPlan, paperIds: string[], model: string): Promise<string> {
   const rows: { id: string }[] = await tx`
     INSERT INTO lessons (user_id, topic_id, title, plan, paper_ids, model)
-    VALUES (${uid}, ${topicId}, ${plan.title}, ${jsonText(plan)}, ${jsonText(paperIds)}, ${model}) RETURNING id`;
+    VALUES (${uid}, ${topicId}, ${plan.title}, ${jsonText(planToStored(plan))}, ${jsonText(paperIds)}, ${model}) RETURNING id`;
   const row = rows[0];
   if (!row) throw new Error("lesson insert returned no row");
   return row.id;
@@ -60,9 +61,9 @@ export async function listLessons(uid: string, limit: number): Promise<LessonLis
   const rows: LessonListRaw[] = await sql`
     SELECT id, title, created_at, newest_attempted, finished, last_active FROM (
       SELECT l.id AS id, l.title AS title, l.created_at AS created_at,
-        (SELECT CASE WHEN EXISTS (SELECT 1 FROM attempts a WHERE a.user_id = ${uid} AND a.question_id = m.check_id) THEN 1 ELSE 0 END FROM messages m JOIN conversations c ON c.id = m.conv_id WHERE c.lesson_id = l.id AND c.user_id = ${uid} AND m.check_id IS NOT NULL ORDER BY m.id DESC LIMIT 1) AS newest_attempted,
-        EXISTS (SELECT 1 FROM messages m JOIN conversations c ON c.id = m.conv_id WHERE c.lesson_id = l.id AND c.user_id = ${uid} AND m.finishes = 1) AS finished,
-        max(l.created_at, coalesce((SELECT max(m.created_at) FROM messages m JOIN conversations c ON c.id = m.conv_id WHERE c.lesson_id = l.id AND c.user_id = ${uid}), 0), coalesce((SELECT max(a.created_at) FROM attempts a JOIN questions q ON q.id = a.question_id WHERE a.user_id = ${uid} AND q.user_id = ${uid} AND q.lesson_id = l.id), 0)) AS last_active
+        (SELECT CASE WHEN EXISTS (SELECT 1 FROM attempts a WHERE a.user_id = ${uid} AND a.question_id = m.check_id) THEN 1 ELSE 0 END FROM lesson_turns m JOIN conversations c ON c.id = m.conv_id WHERE c.lesson_id = l.id AND c.user_id = ${uid} AND m.check_id IS NOT NULL ORDER BY m.id DESC LIMIT 1) AS newest_attempted,
+        EXISTS (SELECT 1 FROM lesson_turns m JOIN conversations c ON c.id = m.conv_id WHERE c.lesson_id = l.id AND c.user_id = ${uid} AND m.finishes = 1) AS finished,
+        max(l.created_at, coalesce((SELECT max(m.created_at) FROM lesson_turns m JOIN conversations c ON c.id = m.conv_id WHERE c.lesson_id = l.id AND c.user_id = ${uid}), 0), coalesce((SELECT max(a.created_at) FROM attempts a JOIN questions q ON q.id = a.question_id WHERE a.user_id = ${uid} AND q.user_id = ${uid} AND q.lesson_id = l.id), 0)) AS last_active
       FROM lessons l WHERE l.user_id = ${uid}
     ) AS listed ORDER BY last_active DESC LIMIT ${limit}`;
   return rows.map((row) => ({
@@ -98,43 +99,58 @@ export async function ensureConversation(uid: string, lessonId: string): Promise
   return row.id;
 }
 
-// O(1), up to six statements in one transaction
-// INV: checks the lesson row so a delete cannot detach the new question; the check, its card and both messages commit together, after the model has finished
+// O(1), up to nine statements in one transaction
+// INV: checks the lesson row so a delete cannot detach the new question; the check, its card and every written row commit together, after the model has finished
 // INV: an opening turn (user null) is stored only into an empty conversation, so a duplicate request cannot write a second one
 // INV: returns the stored check, or null when the turn carried none or could not be stored
+// INV: each turn is also written in v0.1.1's form, because v0.1.1 cannot read lesson_turns; the links stop the next start from importing these rows back
 export async function insertTutorTurn(uid: string, lesson: LessonRow, convId: string, t: NewTurn): Promise<QuestionRow | null> {
   return sql.begin(async (tx) => {
     const held: { id: string }[] = await tx`SELECT id FROM lessons WHERE id = ${lesson.id} AND user_id = ${uid} LIMIT 1`;
     if (held.length === 0) return null;
     if (t.user === null) {
-      const said: { id: number }[] = await tx`SELECT id FROM messages WHERE conv_id = ${convId} LIMIT 1`;
+      const said: { id: number }[] = await tx`SELECT id FROM lesson_turns WHERE conv_id = ${convId} LIMIT 1`;
       if (said.length > 0) return null;
     }
     let question: QuestionRow | null = null;
+    let legacyStep: number | null = null;
     if (t.check) {
       const [q] = await insertQuestions(tx, uid, lesson.topic_id, null, [t.check], lesson.id);
       if (!q) throw new Error("question insert returned no row");
       await insertCards(tx, uid, [q.id]);
       question = q;
+      if (t.topic) {
+        const won: { idx: number }[] = await tx`
+          INSERT INTO lesson_steps (lesson_id, idx, content) VALUES (${lesson.id}, ${t.topicIdx}, ${jsonText(legacyStepContent(t.topic, q.id))})
+          ON CONFLICT (lesson_id, idx) DO NOTHING RETURNING idx`;
+        legacyStep = won[0]?.idx ?? null;
+      }
     }
     if (t.user !== null) {
+      const legacy: { id: number }[] = await tx`
+        INSERT INTO messages (conv_id, role, content, citations, step_idx)
+        SELECT c.id, 'user', ${t.user}, '[]', ${t.learnerTopicIdx} FROM conversations c WHERE c.id = ${convId} AND c.user_id = ${uid} RETURNING id`;
       await tx`
-        INSERT INTO messages (conv_id, role, content, citations)
-        SELECT c.id, 'user', ${t.user}, '[]' FROM conversations c WHERE c.id = ${convId} AND c.user_id = ${uid}`;
+        INSERT INTO lesson_turns (conv_id, role, content, citations, legacy_message_id)
+        SELECT c.id, 'user', ${t.user}, '[]', ${legacy[0]?.id ?? null} FROM conversations c WHERE c.id = ${convId} AND c.user_id = ${uid}`;
     }
+    const legacyContent = question !== null && legacyStep === null ? withLegacyCheckNote(t.content, question.stem) : t.content;
+    const legacy: { id: number }[] = await tx`
+      INSERT INTO messages (conv_id, role, content, citations, step_idx)
+      SELECT c.id, 'assistant', ${legacyContent}, ${jsonText(t.citations)}, ${t.topicIdx} FROM conversations c WHERE c.id = ${convId} AND c.user_id = ${uid} RETURNING id`;
     await tx`
-      INSERT INTO messages (conv_id, role, content, citations, topic_idx, check_id, finishes)
-      SELECT c.id, 'assistant', ${t.content}, ${jsonText(t.citations)}, ${t.topicIdx}, ${question?.id ?? null}, ${t.finishes ? 1 : 0} FROM conversations c WHERE c.id = ${convId} AND c.user_id = ${uid}`;
+      INSERT INTO lesson_turns (conv_id, role, content, citations, topic_idx, check_id, finishes, legacy_message_id, legacy_step_idx)
+      SELECT c.id, 'assistant', ${t.content}, ${jsonText(t.citations)}, ${t.topicIdx}, ${question?.id ?? null}, ${t.finishes ? 1 : 0}, ${legacy[0]?.id ?? null}, ${legacyStep} FROM conversations c WHERE c.id = ${convId} AND c.user_id = ${uid}`;
     return question;
   });
 }
 
 // O(limit)
-// INV: served by messages(conv_id, id); newest first
+// INV: served by lesson_turns(conv_id, id); newest first
 export async function listMessages(uid: string, lessonId: string, before: string | null, limit: number): Promise<MessageRow[]> {
   const rows: MessageRaw[] = await sql`
     SELECT CAST(m.id AS TEXT) AS id, m.role, m.content, m.citations, m.created_at, m.topic_idx, m.check_id, m.finishes
-    FROM messages m JOIN conversations c ON c.id = m.conv_id
+    FROM lesson_turns m JOIN conversations c ON c.id = m.conv_id
     WHERE c.lesson_id = ${lessonId} AND c.user_id = ${uid} AND (${before} IS NULL OR m.id < CAST(${before} AS INTEGER))
     ORDER BY m.id DESC LIMIT ${limit}`;
   return rows.map(messageFrom);
@@ -147,12 +163,12 @@ export async function listChecks(uid: string, ids: string[]): Promise<QuestionRo
   return rows.map(questionFrom);
 }
 
-// O(messages in the lesson) in the worst case; served newest first by messages(conv_id, id)
+// O(turns in the lesson) in the worst case; served newest first by lesson_turns(conv_id, id)
 // SEC: only a check attached to this lesson can match, so a request cannot read another lesson's check through checkId
 // INV: id null finds the lesson's latest check
 export async function findLessonCheck(uid: string, lessonId: string, id: string | null): Promise<QuestionRow | null> {
   const rows: QuestionRow[] = await sql`
-    SELECT ${QUESTION_COLS} FROM messages m
+    SELECT ${QUESTION_COLS} FROM lesson_turns m
     JOIN conversations c ON c.id = m.conv_id
     JOIN questions q ON q.id = m.check_id
     WHERE c.lesson_id = ${lessonId} AND c.user_id = ${uid} AND q.user_id = ${uid} AND (${id} IS NULL OR q.id = ${id})

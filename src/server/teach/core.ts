@@ -44,6 +44,34 @@ export type SourcedPlanOut = z.infer<typeof SourcedPlanOut>;
 export const StoredPlan = LessonPlan.extend({ notes: z.array(z.string().max(MAX_NOTE_CHARS)).optional() });
 export type StoredPlan = z.infer<typeof StoredPlan>;
 
+// O(1)
+// INV: lessons.plan keeps v0.1.1's "steps" key, because v0.1.1 parses the plan strictly; this build reads it as the outline
+export function planFromStored(stored: unknown): unknown {
+  if (typeof stored !== "object" || stored === null || !("steps" in stored)) return stored;
+  const { steps, ...rest } = stored;
+  return { ...rest, outline: steps };
+}
+
+// O(1)
+export function planToStored(plan: StoredPlan): Record<string, unknown> {
+  const { outline, ...rest } = plan;
+  return { ...rest, steps: outline };
+}
+
+const LEGACY_STEP_BODY = "The tutor asked this check in the conversation below.";
+
+// O(1)
+// INV: exactly the keys v0.1.1's strict StepContent accepts; the teaching stays in the conversation, so nothing is shown twice
+export function legacyStepContent(topic: { title: string; summary: string }, questionId: string): Record<string, unknown> {
+  return { title: topic.title, explanationMd: LEGACY_STEP_BODY, keyIdea: topic.summary, example: null, citations: [], questionId };
+}
+
+// O(n) in the message
+// INV: v0.1.1 holds one check per step, so a further check on a topic is shown there as text; the stem never reveals the answer
+export function withLegacyCheckNote(content: string, stem: string): string {
+  return `${content}\n\n**Check from the tutor (answer it in Practice):** ${stem}`.slice(0, 20000);
+}
+
 export type TurnAction = "continue" | "check" | "finish";
 export type TutorTurn = { prose: string; topicIdx: number | null; action: TurnAction };
 

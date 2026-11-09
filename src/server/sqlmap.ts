@@ -53,6 +53,13 @@ export function utcDayOf(ms: number): string {
 }
 
 // O(1)
+// INV: the server runs on the learner's machine, so its timezone is the learner's; the result is the local calendar day as YYYY-MM-DD
+export function localDayOf(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// O(1)
 export function dayStartMs(day: string): number {
   return Date.parse(`${day}T00:00:00.000Z`);
 }

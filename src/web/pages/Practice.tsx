@@ -137,7 +137,7 @@ export function PracticePage(): JSX.Element {
         {queue?.length === 0 && (
           <Panel>
             <h2 className="display text-xl text-accent">All caught up</h2>
-            <p className="mt-1 text-muted">Nothing is due right now. Generate a new practice set to keep going.</p>
+            <p className="mt-1 text-muted">Nothing is due right now. New questions wait until today's new-card allowance has room. You can change it in Settings.</p>
           </Panel>
         )}
         {card && (
