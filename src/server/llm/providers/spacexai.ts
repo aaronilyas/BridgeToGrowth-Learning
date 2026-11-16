@@ -6,11 +6,11 @@ import { findGrokBin, onGrokLoginChange } from "./grokLogin.ts";
 import { parseGrokModels } from "./grokParse.ts";
 import { streamGrokEvents } from "./grokRun.ts";
 import { buildOpenAiChatBody, probeBearer, streamOpenAiChat } from "./openaiSse.ts";
+import { createStatusCache, STATUS_TTL_MS } from "./statusCache.ts";
 import type { ConnectionStatus, LlmEvent, LlmRequest, ModelRef, ProviderAdapter, ReasoningLevel, SubscriptionDetail } from "./types.ts";
 
 const BASE = "https://api.x.ai/v1";
 const REASONING: readonly ReasoningLevel[] = ["low", "high", "max"];
-const CLI_STATUS_TTL_MS = 30_000;
 const Item = z.object({ id: z.string(), name: z.string().optional() });
 const Catalog = z.object({ data: z.array(z.unknown()) });
 
@@ -67,26 +67,42 @@ function defaultSpaceXaiDeps(): SpaceXaiDeps {
 
 // O(1)
 // INV: a grok.com subscription signed in through the official grok CLI wins over a stored API key; the key is the fallback
+// INV: status() and stream() share one createStatusCache, and stream() picks the CLI or the key from that status, so a model call that has just checked does not run `grok models` or the key probe again
 export function createSpaceXaiAdapter(overrides: Partial<SpaceXaiDeps> = {}): ProviderAdapter {
   const deps: SpaceXaiDeps = { ...defaultSpaceXaiDeps(), ...overrides };
   let cli: CliState | null = null;
-  onGrokLoginChange(() => {
-    cli = null;
+  let cliGeneration = 0;
+  const status = createStatusCache(async (): Promise<ConnectionStatus> => {
+    const state = await readCli();
+    if (state.detail === "ok") return { provider: "spacexai", auth: "subscription", connected: true, detail: "ok", subscription: "ok" };
+    return keyStatus(state.detail);
   });
+  // O(1)
+  // INV: a CLI read that started before this call is never kept, so a sign-out cannot be undone by a check already in flight
+  function forgetAll(): void {
+    cliGeneration += 1;
+    cli = null;
+    status.forget();
+  }
+  onGrokLoginChange(forgetAll);
 
+  // INV: only a signed-in CLI state is kept, for STATUS_TTL_MS, so a sign-in done in a terminal shows at once and listModels reuses the ids the status check read
   async function readCli(): Promise<CliState> {
-    if (cli !== null && Date.now() - cli.at < CLI_STATUS_TTL_MS) return cli;
+    if (cli !== null && Date.now() - cli.at < STATUS_TTL_MS) return cli;
+    cli = null;
+    const at = Date.now();
+    const started = cliGeneration;
     const bin = deps.which();
-    if (bin === null) cli = { detail: "cli_missing", ids: [], at: Date.now() };
-    else {
-      try {
-        const parsed = parseGrokModels(await deps.readModels(bin));
-        cli = { detail: parsed.loggedIn ? "ok" : "logged_out", ids: parsed.ids, at: Date.now() };
-      } catch {
-        cli = { detail: "logged_out", ids: [], at: Date.now() };
-      }
+    if (bin === null) return { detail: "cli_missing", ids: [], at };
+    let state: CliState;
+    try {
+      const parsed = parseGrokModels(await deps.readModels(bin));
+      state = { detail: parsed.loggedIn ? "ok" : "logged_out", ids: parsed.ids, at };
+    } catch {
+      state = { detail: "logged_out", ids: [], at };
     }
-    return cli;
+    if (state.detail === "ok" && started === cliGeneration) cli = state;
+    return state;
   }
 
   async function keyStatus(subscription: SubscriptionDetail): Promise<ConnectionStatus> {
@@ -98,9 +114,9 @@ export function createSpaceXaiAdapter(overrides: Partial<SpaceXaiDeps> = {}): Pr
   }
 
   async function* streamSpaceXai(req: LlmRequest): AsyncIterable<LlmEvent> {
-    const state = await readCli();
+    const current = await status.read();
     const bin = deps.which();
-    if (state.detail === "ok" && bin !== null) {
+    if (current.subscription === "ok" && bin !== null) {
       yield* streamGrokEvents(req, bin, deps.run);
       return;
     }
@@ -115,11 +131,8 @@ export function createSpaceXaiAdapter(overrides: Partial<SpaceXaiDeps> = {}): Pr
   return {
     id: "spacexai",
     auth: "subscription",
-    async status(): Promise<ConnectionStatus> {
-      const state = await readCli();
-      if (state.detail === "ok") return { provider: "spacexai", auth: "subscription", connected: true, detail: "ok", subscription: "ok" };
-      return keyStatus(state.detail);
-    },
+    status: status.read,
+    forgetStatus: forgetAll,
     async listModels(): Promise<readonly ModelRef[]> {
       const state = await readCli();
       if (state.detail === "ok") {

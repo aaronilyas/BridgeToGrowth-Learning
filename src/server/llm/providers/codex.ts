@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { findCodexBin } from "./codexLogin.ts";
 import { codexEffortValue, spawnCodexLines, streamCodexEvents, type CodexRun } from "./codexRun.ts";
+import { createStatusCache, type StatusCache } from "./statusCache.ts";
 import type { ConnectionStatus, LlmEvent, LlmRequest, ModelRef, ProviderAdapter, ReasoningLevel } from "./types.ts";
 
 const Level = z.object({ effort: z.string() });
@@ -69,17 +70,20 @@ function defaultDeps(): CodexDeps {
 }
 
 // O(1)
+// INV: status() and stream() share one createStatusCache, so a model call that has just checked the CLI does not run `codex login status` again
 export function createCodexAdapter(deps: CodexDeps = defaultDeps()): ProviderAdapter {
+  const status = createStatusCache(async (): Promise<ConnectionStatus> => {
+    const bin = deps.which("codex");
+    if (bin === null) return { provider: "codex", auth: "subscription", connected: false, detail: "cli_missing" };
+    const code = await deps.statusCode();
+    if (code === 0) return { provider: "codex", auth: "subscription", connected: true, detail: "ok" };
+    return { provider: "codex", auth: "subscription", connected: false, detail: "logged_out" };
+  });
   return {
     id: "codex",
     auth: "subscription",
-    async status(): Promise<ConnectionStatus> {
-      const bin = deps.which("codex");
-      if (bin === null) return { provider: "codex", auth: "subscription", connected: false, detail: "cli_missing" };
-      const code = await deps.statusCode();
-      if (code === 0) return { provider: "codex", auth: "subscription", connected: true, detail: "ok" };
-      return { provider: "codex", auth: "subscription", connected: false, detail: "logged_out" };
-    },
+    status: status.read,
+    forgetStatus: status.forget,
     async listModels(): Promise<readonly ModelRef[]> {
       const bin = deps.which("codex");
       if (bin === null) return [];
@@ -107,14 +111,14 @@ export function createCodexAdapter(deps: CodexDeps = defaultDeps()): ProviderAda
       return models;
     },
     stream(req: LlmRequest): AsyncIterable<LlmEvent> {
-      return streamCodex(req, deps);
+      return streamCodex(req, deps, status);
     },
   };
 }
 
 // O(n) in the CLI output
-async function* streamCodex(req: LlmRequest, deps: CodexDeps): AsyncIterable<LlmEvent> {
-  const current = await createCodexAdapter(deps).status();
+async function* streamCodex(req: LlmRequest, deps: CodexDeps, status: StatusCache): AsyncIterable<LlmEvent> {
+  const current = await status.read();
   if (!current.connected) {
     yield { type: "error", code: "not_connected" };
     return;

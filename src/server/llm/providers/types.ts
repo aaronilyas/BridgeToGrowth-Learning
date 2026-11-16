@@ -39,6 +39,8 @@ export type ProviderAdapter = {
   id: ProviderId;
   auth: AuthKind;
   status: () => Promise<ConnectionStatus>;
+  // INV: drops any status the adapter keeps, so the next status() asks the CLI or the key probe again; absent on adapters that keep none
+  forgetStatus?: () => void;
   listModels: () => Promise<readonly ModelRef[]>;
   stream: (req: LlmRequest) => AsyncIterable<LlmEvent>;
 };

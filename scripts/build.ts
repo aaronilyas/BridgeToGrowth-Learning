@@ -1,9 +1,11 @@
 import type { BunPlugin } from "bun";
 import tailwind from "bun-plugin-tailwind";
 import { join } from "node:path";
+import { moveSourceMaps, resetBuildDirs } from "./buildOutput.ts";
 import { copyPyodideAssets } from "./fetch-pyodide.ts";
 
 const OUT_DIR = "dist";
+const MAPS_DIR = "dist-maps";
 const SERVER_ENTRIES = [join(OUT_DIR, "index.js"), join(OUT_DIR, "boot.js")];
 const CHUNK_IMPORT = /(\bfrom\s*"|\bimport\s*"|\bimport\(\s*")\/(chunk-[a-z0-9]+\.js)"/g;
 const KATEX_CSS = /^katex\/dist\/katex\.min\.css$/;
@@ -58,8 +60,10 @@ async function buildClaudeAgent(): Promise<number> {
 // INV: the Tailwind plugin from bunfig [serve.static] applies only to the dev server, so the production build passes it explicitly
 // INV: boot.js is the entry the desktop shell imports at runtime, so the app ships this exact bundle rather than a second build of the renderer
 // INV: splitting is required for the lazy page and markdown imports in src/web to become separate chunks; without it Bun inlines them into the entry
+// INV: dist/ is emptied first and its source maps are external (no sourceMappingURL comment for the runtime to chase) and end in dist-maps/, so the folder Electrobun copies into the app holds only this build's runtime files
 async function buildApp(): Promise<number> {
-  const out = await Bun.build({ entrypoints: ["src/server/index.ts", "src/server/boot.ts"], outdir: OUT_DIR, target: "bun", splitting: true, minify: true, publicPath: "/", sourcemap: "linked", plugins: [katexFontsAsFiles, tailwind], define: { "process.env.NODE_ENV": JSON.stringify("production") } });
+  await resetBuildDirs(OUT_DIR, MAPS_DIR);
+  const out = await Bun.build({ entrypoints: ["src/server/index.ts", "src/server/boot.ts"], outdir: OUT_DIR, target: "bun", splitting: true, minify: true, publicPath: "/", sourcemap: "external", plugins: [katexFontsAsFiles, tailwind], define: { "process.env.NODE_ENV": JSON.stringify("production") } });
   for (const log of out.logs) console.error(log.message);
   if (!out.success) return 1;
   const inlined = await findInlinedFonts(out.outputs.map((o) => o.path));
@@ -70,7 +74,8 @@ async function buildApp(): Promise<number> {
   if ((await relinkServerChunks()) !== 0) return 1;
   if ((await buildClaudeAgent()) !== 0) return 1;
   await copyPyodideAssets(join(OUT_DIR, "pyodide"));
-  console.log(`built ${out.outputs.length} files into ${OUT_DIR}/`);
+  const maps = await moveSourceMaps(OUT_DIR, MAPS_DIR);
+  console.log(`built ${out.outputs.length} files into ${OUT_DIR}/, ${maps.length} source maps into ${MAPS_DIR}/`);
   return 0;
 }
 

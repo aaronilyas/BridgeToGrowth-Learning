@@ -7,7 +7,7 @@ import { deleteProviderKey, keyHint, readProviderKey, storeProviderKey } from ".
 import { beginCodexLogin, cancelCodexLogin, pendingCodexLoginUrl, readCodexLogin, signOutCodex } from "./providers/codexLogin.ts";
 import { beginGrokLogin, cancelGrokLogin, pendingGrokLoginUrl, readGrokLogin, signOutGrok } from "./providers/grokLogin.ts";
 import { probeOpenRouterKey } from "./providers/openrouter.ts";
-import { forgetProviderModels, listConnectedModels, providerAdapter } from "./providers/registry.ts";
+import { forgetProviderModels, forgetProviderStatus, listConnectedModels, providerAdapter } from "./providers/registry.ts";
 import { probeSpaceXaiKey } from "./providers/spacexai.ts";
 import { listUsageGroups } from "./sql.ts";
 
@@ -44,13 +44,15 @@ const usage = route({}, async () => {
   return json(body);
 });
 
+// INV: providers are checked in parallel and listed in ProviderId order
 const providers = route({}, async () => {
-  const body: z.infer<typeof ConnectionStatus>[] = [];
-  for (const id of ProviderId.options) {
-    const status = await providerAdapter(id).status();
-    const hint = keyHint(await readProviderKey(id));
-    body.push(hint === null ? status : { ...status, last4: hint });
-  }
+  const body: z.infer<typeof ConnectionStatus>[] = await Promise.all(
+    ProviderId.options.map(async (id) => {
+      const [status, key] = await Promise.all([providerAdapter(id).status(), readProviderKey(id)]);
+      const hint = keyHint(key);
+      return hint === null ? status : { ...status, last4: hint };
+    }),
+  );
   return json(body);
 });
 
@@ -62,6 +64,7 @@ const putKey = route({ body: ProviderKeyBody }, async (c) => {
   if (probe === "invalid") throw new HttpError(422, "bad_request");
   if (probe === "unreachable") throw new HttpError(502, "upstream");
   await storeProviderKey(id.data.id, c.body.key);
+  forgetProviderStatus(id.data.id);
   await forgetProviderModels(id.data.id);
   const status = await providerAdapter(id.data.id).status();
   const hint = keyHint(c.body.key);
@@ -73,6 +76,7 @@ const deleteKey = route({}, async (c) => {
   const id = IdParams.safeParse(c.params);
   if (!id.success || id.data.id === "codex" || id.data.id === "claude") throw new HttpError(404, "not_found");
   await deleteProviderKey(id.data.id);
+  forgetProviderStatus(id.data.id);
   await forgetProviderModels(id.data.id);
   return new Response(null, { status: 204 });
 });
@@ -99,6 +103,7 @@ const startLogin = route({ body: LoginBody, rate: { key: "cli-login", cap: 5, pe
   if (await subscriptionConnected(id)) throw new HttpError(409, "bad_request");
   if (id === "codex") beginCodexLogin(c.body.method);
   else beginGrokLogin(c.body.method);
+  forgetProviderStatus(id);
   await forgetProviderModels(id);
   return json(id === "codex" ? readCodexLogin() : readGrokLogin());
 });
@@ -106,7 +111,10 @@ const startLogin = route({ body: LoginBody, rate: { key: "cli-login", cap: 5, pe
 const pollLogin = route({}, async (c) => {
   const id = loginProviderOf(c.params);
   const state = id === "codex" ? readCodexLogin() : readGrokLogin();
-  if (state.state === "ok") await forgetProviderModels(id);
+  if (state.state === "ok") {
+    forgetProviderStatus(id);
+    await forgetProviderModels(id);
+  }
   return json(state);
 });
 
@@ -120,6 +128,7 @@ const cancelLogin = route({}, async (c) => {
 const logout = route({}, async (c) => {
   const id = loginProviderOf(c.params);
   const ok = id === "codex" ? await signOutCodex() : await signOutGrok();
+  forgetProviderStatus(id);
   if (!ok) throw new HttpError(502, "provider_error");
   await forgetProviderModels(id);
   return new Response(null, { status: 204 });

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { env } from "../../env.ts";
 import { readProviderKey } from "../../secrets.ts";
 import { buildOpenAiChatBody, probeBearer, providerHttpDetail, streamOpenAiChat } from "./openaiSse.ts";
+import { createStatusCache } from "./statusCache.ts";
 import type { ConnectionStatus, LlmEvent, LlmRequest, ModelRef, ProviderAdapter, ReasoningLevel } from "./types.ts";
 
 const REASONING: readonly ReasoningLevel[] = ["low", "high", "max"];
@@ -39,17 +40,20 @@ export async function probeOpenRouterKey(key: string, fetchFn: typeof fetch = fe
 }
 
 // O(1)
+// INV: the key probe goes through createStatusCache, so a connected answer is reused for 30 s and concurrent checks share one probe
 export function createOpenRouterAdapter(fetchFn: typeof fetch = fetch): ProviderAdapter {
+  const status = createStatusCache(async (): Promise<ConnectionStatus> => {
+    const key = await readProviderKey("openrouter");
+    if (key === null) return { provider: "openrouter", auth: "api_key", connected: false, detail: "key_invalid" };
+    const probed = await probeOpenRouterKey(key, fetchFn);
+    if (probed === "ok") return { provider: "openrouter", auth: "api_key", connected: true, detail: "ok" };
+    return { provider: "openrouter", auth: "api_key", connected: false, detail: probed === "invalid" ? "key_invalid" : "unreachable" };
+  });
   return {
     id: "openrouter",
     auth: "api_key",
-    async status(): Promise<ConnectionStatus> {
-      const key = await readProviderKey("openrouter");
-      if (key === null) return { provider: "openrouter", auth: "api_key", connected: false, detail: "key_invalid" };
-      const probed = await probeOpenRouterKey(key, fetchFn);
-      if (probed === "ok") return { provider: "openrouter", auth: "api_key", connected: true, detail: "ok" };
-      return { provider: "openrouter", auth: "api_key", connected: false, detail: probed === "invalid" ? "key_invalid" : "unreachable" };
-    },
+    status: status.read,
+    forgetStatus: status.forget,
     async listModels(): Promise<readonly ModelRef[]> {
       const key = await readProviderKey("openrouter");
       if (key === null) throw new Error("openrouter key missing");

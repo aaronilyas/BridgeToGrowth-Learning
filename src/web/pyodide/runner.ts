@@ -1,6 +1,7 @@
 import { CODE_MEMORY_BYTES, RUN_TIMEOUT_MS, type CodeSpec, type CodeTest, type CodeTestResult } from "../../shared/code.ts";
 import { HarnessRun } from "../../shared/codeGrade.ts";
 import { parseOut } from "./protocol.ts";
+import { claimWarm, createPythonWorker, indexURLOf, replenishWarm, stopPythonWorker } from "./warm.ts";
 
 const LOAD_TIMEOUT_MS = 60_000;
 
@@ -24,33 +25,23 @@ export type RunOptions = {
 
 export type FetchProbe = { fetch: string; jsFetch: string; pyfetch: string };
 
-// O(1)
-function withSlash(url: string): string {
-  return url.endsWith("/") ? url : `${url}/`;
-}
-
-// O(1)
-function defaultIndex(): string {
-  const origin = globalThis.location?.origin;
-  if (!origin || origin === "null") throw new Error("Python failed to start.");
-  return new URL("/pyodide/", origin).href;
-}
-
 // O(t)
 function notRun(tests: readonly CodeTest[]): CodeTestResult[] {
   return tests.map((t) => ({ name: t.name, passed: false, error: "not run" }));
 }
 
 // O(code + output). One worker per call; terminate() is the timeout and the memory cap.
+// INV: the time limit starts when the worker reports ready, which is when user code starts. durationMs starts at this call, so a warm worker that is still booting counts in the shown duration.
 // SEC: libraries and hidden tests are the question's. The worker loads only those wheels, then blocks network APIs.
 export function runPython(spec: CodeSpec, userCode: string, opts: RunOptions = {}): Promise<RunResult> {
   const timeoutMs = opts.timeoutMs ?? RUN_TIMEOUT_MS;
   const memoryBytes = opts.memoryBytes ?? CODE_MEMORY_BYTES;
   const tests = [...(opts.tests ?? [])];
-  const indexURL = withSlash(opts.indexURL ?? defaultIndex());
+  const indexURL = indexURLOf(opts.indexURL);
+  const libs = [...spec.libraries];
   const guardDefs = opts.guardDefs ?? true;
   const startedAt = performance.now();
-  const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
+  const worker = claimWarm(indexURL, libs) ?? createPythonWorker();
   const seconds = Math.max(1, Math.round(timeoutMs / 1000));
   const memoryError = `Your code was stopped: it used more than ${Math.round(memoryBytes / (1024 * 1024))} MB of memory.`;
 
@@ -63,7 +54,8 @@ export function runPython(spec: CodeSpec, userCode: string, opts: RunOptions = {
       settled = true;
       clearTimeout(loadTimer);
       if (runTimer !== null) clearTimeout(runTimer);
-      worker.terminate();
+      stopPythonWorker(worker);
+      replenishWarm(indexURL, libs);
       resolve(r);
     };
     const stopped = (error: string, timedOut: boolean, started: boolean): RunResult => ({
@@ -109,31 +101,31 @@ export function runPython(spec: CodeSpec, userCode: string, opts: RunOptions = {
       const detail = ev.message || "error";
       finish(stopped(phase === "run" ? "Your code was stopped: it used more than 512 MB of memory or crashed the interpreter." : `Python failed to start. ${detail}`.slice(0, 300), false, phase === "run"));
     };
-    worker.postMessage({ type: "run", code: userCode, libs: [...spec.libraries], tests, guardDefs, indexURL, memoryBytes });
+    worker.postMessage({ type: "run", code: userCode, libs, tests, guardDefs, indexURL, memoryBytes });
   });
 }
 
 // O(1) plus one Pyodide boot
 // SEC: the same worker prelude as a real run. User Python calls js.fetch and pyodide.http.pyfetch after network APIs are replaced.
 export function probeUserFetch(indexURL: string): Promise<FetchProbe> {
-  const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
+  const worker = createPythonWorker();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
-      worker.terminate();
+      stopPythonWorker(worker);
       reject(new Error("Python failed to start."));
     }, LOAD_TIMEOUT_MS);
     worker.onmessage = (ev: MessageEvent<unknown>): void => {
       const msg = parseOut(ev.data);
       if (!msg || msg.type !== "fetchprobe") return;
       clearTimeout(timer);
-      worker.terminate();
+      stopPythonWorker(worker);
       resolve({ fetch: msg.fetch, jsFetch: msg.jsFetch, pyfetch: msg.pyfetch });
     };
     worker.onerror = (): void => {
       clearTimeout(timer);
-      worker.terminate();
+      stopPythonWorker(worker);
       reject(new Error("Python failed to start."));
     };
-    worker.postMessage({ type: "fetchprobe", indexURL: withSlash(indexURL) });
+    worker.postMessage({ type: "fetchprobe", indexURL: indexURLOf(indexURL) });
   });
 }

@@ -5,9 +5,9 @@ import { AcpError, openAcpConnection, refuseAcpRequest, spawnAcpAgent, type AcpC
 import { claudeEffortValue, claudeInitializeParams, claudeModelsFrom, claudePromptBlocks, claudeSessionParams, claudeStopReason, claudeSystemText, claudeUsageEvent, interpretClaudeUpdate, mapClaudeAcpError } from "./claudeAcp.ts";
 import { findCliBin } from "./codexLogin.ts";
 import { curatedClaudeModels } from "./curated.ts";
+import { createStatusCache } from "./statusCache.ts";
 import type { ConnectionStatus, LlmEvent, LlmRequest, ModelRef, ProviderAdapter } from "./types.ts";
 
-const STATUS_TTL_MS = 30_000;
 const STATUS_TIMEOUT_MS = 10_000;
 const MODELS_TIMEOUT_MS = 30_000;
 // Variables a parent Claude Code session sets for its own children. A desktop app started from a Claude Code terminal must not pass them on, or the CLI would treat each call as a child of that session.
@@ -20,7 +20,6 @@ export type ClaudeDeps = {
   connect: (bin: string, cwd: string) => AcpTransport;
 };
 
-type StatusCache = { detail: ConnectionStatus["detail"]; at: number };
 type Item = { event: LlmEvent; last: boolean };
 
 // O(d) in searched directories
@@ -202,13 +201,11 @@ async function* streamClaudeAcp(req: LlmRequest, bin: string, deps: ClaudeDeps):
 // SEC: this app never signs in or out of Claude Code; it only uses a session the user already has in their own CLI
 export function createClaudeAdapter(overrides: Partial<ClaudeDeps> = {}): ProviderAdapter {
   const deps: ClaudeDeps = { ...defaultClaudeDeps(), ...overrides };
-  let cache: StatusCache | null = null;
 
-  // INV: only a signed-in result is cached; while signed out every check asks the CLI again, so a sign-in done in a terminal shows up at once
-  async function readDetail(): Promise<StatusCache["detail"]> {
-    if (cache !== null && cache.detail === "ok" && Date.now() - cache.at < STATUS_TTL_MS) return cache.detail;
+  // INV: only a signed-in result is cached (createStatusCache); while signed out every check asks the CLI again, so a sign-in done in a terminal shows up at once
+  const status = createStatusCache(async (): Promise<ConnectionStatus> => {
     const bin = deps.which();
-    let detail: StatusCache["detail"] = "cli_missing";
+    let detail: ConnectionStatus["detail"] = "cli_missing";
     if (bin !== null) {
       try {
         const out = await deps.readStatus(bin);
@@ -217,17 +214,14 @@ export function createClaudeAdapter(overrides: Partial<ClaudeDeps> = {}): Provid
         detail = "logged_out";
       }
     }
-    cache = { detail, at: Date.now() };
-    return detail;
-  }
+    return { provider: "claude", auth: "subscription", connected: detail === "ok", detail };
+  });
 
   return {
     id: "claude",
     auth: "subscription",
-    async status(): Promise<ConnectionStatus> {
-      const detail = await readDetail();
-      return { provider: "claude", auth: "subscription", connected: detail === "ok", detail };
-    },
+    status: status.read,
+    forgetStatus: status.forget,
     async listModels(): Promise<readonly ModelRef[]> {
       const bin = deps.which();
       if (bin === null) return [];
@@ -244,7 +238,7 @@ export function createClaudeAdapter(overrides: Partial<ClaudeDeps> = {}): Provid
     },
     async *stream(req: LlmRequest): AsyncIterable<LlmEvent> {
       const bin = deps.which();
-      if (bin === null || (await readDetail()) !== "ok") {
+      if (bin === null || (await status.read()).detail !== "ok") {
         yield { type: "error", code: "not_connected" };
         return;
       }
