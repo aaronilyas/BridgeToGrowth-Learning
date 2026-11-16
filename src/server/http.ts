@@ -3,6 +3,7 @@ import type { ErrorCode } from "../shared/api.ts";
 import { env } from "./env.ts";
 import { guardOrigin, originAllowed } from "./localGuard.ts";
 import { takeToken } from "./rate.ts";
+import { withKeyReads } from "./secrets.ts";
 
 export class HttpError extends Error {
   constructor(readonly status: number, readonly code: ErrorCode) {
@@ -94,6 +95,7 @@ function readIp(req: Request): string {
 // INV: check order is size, origin, rate limit, body parse, handler
 // INV: raw skips body parsing so the handler reads the stream itself (multipart); size is capped by content-length here and by the handler
 // INV: rate buckets are keyed by the route key
+// INV: the handler runs inside withKeyReads, so one request reads each provider key from the keychain at most once
 export function route<B = undefined>(opts: RouteOpts<B>, fn: (c: Ctx<B>) => Promise<Response>): (req: Request & { params?: Record<string, string> }) => Promise<Response> {
   const maxBody = opts.maxBody ?? 64 * 1024;
   return async (req) => {
@@ -117,7 +119,8 @@ export function route<B = undefined>(opts: RouteOpts<B>, fn: (c: Ctx<B>) => Prom
         if (!r.success) throw new HttpError(400, "bad_request");
         body = r.data;
       }
-      return secureResponse(await fn({ req, ip, params: req.params ?? {}, body }));
+      const ctx: Ctx<B> = { req, ip, params: req.params ?? {}, body };
+      return secureResponse(await withKeyReads(() => fn(ctx)));
     } catch (e) {
       if (e instanceof HttpError) return secureResponse(json({ error: e.code }, e.status));
       console.error("request failed");

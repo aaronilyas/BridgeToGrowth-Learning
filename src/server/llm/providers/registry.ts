@@ -8,18 +8,25 @@ import { codexAdapter, codexEffortSnapshot, hydrateCodexEfforts } from "./codex.
 import { curatedClaudeModels, curatedOpenRouterModels, curatedSpaceXaiModels } from "./curated.ts";
 import { openRouterAdapter } from "./openrouter.ts";
 import { spaceXaiAdapter } from "./spacexai.ts";
-import type { ModelRef, ProviderAdapter } from "./types.ts";
+import type { ConnectionStatus, ModelRef, ProviderAdapter } from "./types.ts";
 
 const DAY_MS = 86_400_000;
 const CachePayload = z.strictObject({ models: z.array(ModelRefSchema), efforts: z.record(z.string(), z.array(z.string())).optional() });
 
 const adapters: Record<ProviderId, ProviderAdapter> = { openrouter: openRouterAdapter, codex: codexAdapter, spacexai: spaceXaiAdapter, claude: claudeAdapter };
 
+export type StatusLookup = (id: ProviderId) => Promise<ConnectionStatus>;
+
 // O(1)
+// INV: both the adapter swapped in and the one it replaces forget any kept status, on install and on restore, so no test sees a status another test left behind
 export function installProviderForTest(id: ProviderId, adapter: ProviderAdapter): () => void {
   const previous = adapters[id];
+  previous.forgetStatus?.();
+  adapter.forgetStatus?.();
   adapters[id] = adapter;
   return () => {
+    adapter.forgetStatus?.();
+    previous.forgetStatus?.();
     adapters[id] = previous;
   };
 }
@@ -30,12 +37,35 @@ export function providerAdapter(id: ProviderId): ProviderAdapter {
 }
 
 // O(1)
-export async function connectedProviderIds(): Promise<Set<ProviderId>> {
-  const ids = new Set<ProviderId>();
-  for (const adapter of Object.values(adapters)) {
-    if ((await adapter.status()).connected) ids.add(adapter.id);
-  }
-  return ids;
+// INV: called after every in-app key save or delete, login start, successful login poll and logout, so the next check asks the provider again at once
+export function forgetProviderStatus(id: ProviderId): void {
+  adapters[id].forgetStatus?.();
+}
+
+// O(1)
+// INV: one lookup asks each provider at most once, so even a not-connected answer, which no cache keeps, is learned once per model call
+export function statusLookup(): StatusLookup {
+  const seen = new Map<ProviderId, Promise<ConnectionStatus>>();
+  return (id) => {
+    const known = seen.get(id);
+    if (known !== undefined) return known;
+    const asked = adapters[id].status();
+    seen.set(id, asked);
+    return asked;
+  };
+}
+
+// O(p) in providers; their checks run in parallel
+// INV: the result keeps the registry's fixed provider order whichever check finishes first
+async function connectedAdapters(lookup: StatusLookup): Promise<ProviderAdapter[]> {
+  const all = Object.values(adapters);
+  const statuses = await Promise.all(all.map((adapter) => lookup(adapter.id)));
+  return all.filter((_, i) => statuses[i]?.connected === true);
+}
+
+// O(p) in providers
+export async function connectedProviderIds(lookup: StatusLookup = statusLookup()): Promise<Set<ProviderId>> {
+  return new Set((await connectedAdapters(lookup)).map((adapter) => adapter.id));
 }
 
 // O(1)
@@ -86,23 +116,22 @@ async function loadModels(adapter: ProviderAdapter): Promise<readonly ModelRef[]
 }
 
 // O(n) in connected catalogs
-export async function listConnectedModels(): Promise<ModelRef[]> {
-  const out: ModelRef[] = [];
-  for (const adapter of Object.values(adapters)) {
-    if (!(await adapter.status()).connected) continue;
-    out.push(...(await loadModels(adapter)));
-  }
-  return out;
+// INV: providers are checked and their catalogs loaded in parallel; models are listed in the registry's fixed provider order
+export async function listConnectedModels(lookup: StatusLookup = statusLookup()): Promise<ModelRef[]> {
+  const catalogs = await Promise.all((await connectedAdapters(lookup)).map(loadModels));
+  return catalogs.flat();
 }
 
 // O(n) in connected catalogs
 // INV: order is the configured task model, then each candidate id in order, then the first connected model
 // INV: an unset task model, or one whose provider has since disconnected, never blocks another connected provider; not_connected only when none is connected
 // INV: a configured model that its connected provider no longer lists still fails with model_unavailable rather than being swapped silently
+// INV: one statusLookup serves the whole resolution, so each provider's status is learned at most once per model call
 export async function resolveTaskModel(configured: { provider: ProviderId; id: string } | null, candidates: readonly (string | null | undefined)[]): Promise<ModelRef> {
-  if (configured !== null && (await adapters[configured.provider].status()).connected) return resolveModelRef(configured);
-  const available = await listConnectedModels();
-  if (available.length === 0) throw (await connectedProviderIds()).size > 0 ? new HttpError(404, "model_unavailable") : new HttpError(409, "not_connected");
+  const lookup = statusLookup();
+  if (configured !== null && (await lookup(configured.provider)).connected) return resolveModelRef(configured, lookup);
+  const available = await listConnectedModels(lookup);
+  if (available.length === 0) throw (await connectedProviderIds(lookup)).size > 0 ? new HttpError(404, "model_unavailable") : new HttpError(409, "not_connected");
   for (const id of candidates) {
     if (id === null || id === undefined || id.length === 0) continue;
     const found = available.find((model) => model.id === id);
@@ -113,9 +142,9 @@ export async function resolveTaskModel(configured: { provider: ProviderId; id: s
 
 // O(n) in that provider's catalog
 // INV: a disconnected provider fails with not_connected before a model id is accepted
-export async function resolveModelRef(choice: { provider: ProviderId; id: string }): Promise<ModelRef> {
+export async function resolveModelRef(choice: { provider: ProviderId; id: string }, lookup: StatusLookup = statusLookup()): Promise<ModelRef> {
   const adapter = adapters[choice.provider];
-  if (!(await adapter.status()).connected) throw new HttpError(409, "not_connected");
+  if (!(await lookup(choice.provider)).connected) throw new HttpError(409, "not_connected");
   const found = (await loadModels(adapter)).find((model) => model.id === choice.id);
   if (found === undefined) throw new HttpError(404, "model_unavailable");
   return found;

@@ -1,5 +1,4 @@
-import { extractText, getResolvedPDFJS } from "unpdf";
-import { VerbosityLevel, type PDFDocumentLoadingTask, type PDFDocumentProxy, type PDFPageProxy } from "unpdf/pdfjs";
+import type { PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy } from "unpdf/pdfjs";
 import { HttpError } from "../http.ts";
 import { sniffMime } from "../styles/core.ts";
 import { MAX_CONCURRENT_PDF_TOOLS, MAX_PDF_BYTES, MAX_TEXT_PAGES, tidyText } from "./core.ts";
@@ -21,12 +20,26 @@ const PDF_OPEN = {
   isOffscreenCanvasSupported: false,
   isImageDecoderSupported: false,
   maxImageSize: 16_777_216,
-  verbosity: VerbosityLevel.ERRORS,
 };
 
 type PdfPiece = Awaited<ReturnType<PDFPageProxy["getTextContent"]>>["items"][number];
+type Unpdf = typeof import("unpdf");
 
 let running = 0;
+let unpdf: Promise<Unpdf> | null = null;
+
+// O(1) after the first call; the first call loads unpdf and its pdf.js build
+// INV: unpdf, and the 1.6 MB pdf.js it bundles, load on the first PDF read rather than when the server starts; every later read shares the same module
+// INV: a failed load is not remembered, so the next read tries again
+export function loadUnpdf(): Promise<Unpdf> {
+  if (unpdf === null) {
+    unpdf = import("unpdf");
+    unpdf.catch(() => {
+      unpdf = null;
+    });
+  }
+  return unpdf;
+}
 
 // O(1)
 function clipPdfChars(text: string): string {
@@ -50,7 +63,7 @@ async function textOfPage(doc: PDFDocumentProxy, pageNumber: number): Promise<st
 async function readCappedPages(doc: PDFDocumentProxy, signal: AbortSignal): Promise<string> {
   if (signal.aborted) throw new HttpError(422, "source_unreadable");
   if (doc.numPages <= MAX_TEXT_PAGES) {
-    const extracted = await extractText(doc, { mergePages: true });
+    const extracted = await (await loadUnpdf()).extractText(doc, { mergePages: true });
     return extracted.text;
   }
   const parts: string[] = [];
@@ -67,9 +80,9 @@ async function readCappedPages(doc: PDFDocumentProxy, signal: AbortSignal): Prom
 
 // O(n) in file size
 async function readPdfText(bytes: Uint8Array, signal: AbortSignal, bind: (task: PDFDocumentLoadingTask) => void): Promise<string> {
-  const pdfjs = await getResolvedPDFJS();
+  const pdfjs = await (await loadUnpdf()).getResolvedPDFJS();
   if (signal.aborted) throw new HttpError(422, "source_unreadable");
-  const task = pdfjs.getDocument({ data: bytes.slice(), ...PDF_OPEN });
+  const task = pdfjs.getDocument({ data: bytes.slice(), ...PDF_OPEN, verbosity: pdfjs.VerbosityLevel.ERRORS });
   bind(task);
   if (signal.aborted) throw new HttpError(422, "source_unreadable");
   return readCappedPages(await task.promise, signal);

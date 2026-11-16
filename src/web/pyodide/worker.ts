@@ -129,9 +129,45 @@ async function runUser(py: PyodideAPI, msg: RunMsg): Promise<void> {
   }
 }
 
+let bootTask: Promise<PyodideAPI> | null = null;
+let ran = false;
+let reported = false;
+
+// O(1)
+function report(e: unknown): void {
+  if (reported) return;
+  reported = true;
+  postMessage({ type: "error", message: textOf(e).slice(0, 300) });
+}
+
+// O(wheels) once. Later calls share the same boot.
+// INV: loadPyodide runs at most once in this worker. boot blocks network before this resolves, so user code never sees an open network.
+function bootOnce(indexURL: string, libs: readonly string[]): Promise<PyodideAPI> {
+  bootTask ??= boot(indexURL, libs).then((py) => {
+    postMessage({ type: "booted" });
+    return py;
+  });
+  return bootTask;
+}
+
+// O(code + output)
+// INV: this worker executes user code at most once. A second run message is ignored.
+function runOnce(msg: RunMsg): void {
+  if (ran) return;
+  ran = true;
+  bootOnce(msg.indexURL, msg.libs).then((py) => runUser(py, msg)).catch(report);
+}
+
 self.onmessage = (ev: MessageEvent<unknown>): void => {
   const msg = parseIn(ev.data);
   if (!msg) return;
-  const task = msg.type === "fetchprobe" ? probeFetch(msg.indexURL) : boot(msg.indexURL, msg.libs).then((py) => runUser(py, msg));
-  task.catch((e: unknown) => postMessage({ type: "error", message: textOf(e).slice(0, 300) }));
+  if (msg.type === "fetchprobe") {
+    probeFetch(msg.indexURL).catch(report);
+    return;
+  }
+  if (msg.type === "boot") {
+    bootOnce(msg.indexURL, msg.libs).catch(report);
+    return;
+  }
+  runOnce(msg);
 };

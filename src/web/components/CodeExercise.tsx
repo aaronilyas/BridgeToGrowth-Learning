@@ -1,6 +1,7 @@
-import { useState, type JSX, type KeyboardEvent } from "react";
+import { useEffect, useState, type JSX, type KeyboardEvent } from "react";
 import { CODE_MAX_CHARS, type CodeRunResponse, type CodeSpec, type CodeTestResult } from "../../shared/code.ts";
 import { runPython } from "../pyodide/runner.ts";
+import { prewarmPython } from "../pyodide/warm.ts";
 import { Button } from "./Button.tsx";
 import { ErrorBanner } from "./ErrorBanner.tsx";
 
@@ -31,9 +32,17 @@ function LibraryList({ spec }: { spec: CodeSpec }): JSX.Element {
   );
 }
 
+// O(1)
+// INV: while this editor is mounted, one interpreter for its libraries is booting or ready. Unmount, and a library change, terminate it.
+function useWarmInterpreter(spec: CodeSpec): void {
+  const wheels = spec.libraries.join("\0");
+  useEffect(() => prewarmPython(spec), [wheels]);
+}
+
 // O(n) in code length
 // INV: Run executes the learner's code without the hidden tests; submitting is the parent card's job
 export function CodeExercise({ spec, value, onChange, disabled }: { spec: CodeSpec; value: string; onChange: (v: string) => void; disabled: boolean }): JSX.Element {
+  useWarmInterpreter(spec);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [out, setOut] = useState<CodeRunResponse | null>(null);

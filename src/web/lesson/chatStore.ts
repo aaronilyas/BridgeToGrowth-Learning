@@ -76,8 +76,9 @@ function watch(lessonId: string, fn: (snap: ChatSnap) => void): () => void {
   };
 }
 
-// O(m) per delta in the streaming row only
+// O(rows) once per animation frame while a turn streams
 // INV: one turn at a time per lesson; returns false (and sends nothing) while a turn streams
+// INV: text deltas reach listeners at most once per animation frame; end, prep, stop and the stream closing flush any buffered text first, and a dropped or failed turn discards it
 function sendTurn(lessonId: string, turn: ChatTurn, base: ChatRow[]): boolean {
   const text = turn.text.trim();
   const active = chatJobs.get(lessonId);
@@ -107,11 +108,49 @@ function sendTurn(lessonId: string, turn: ChatTurn, base: ChatRow[]): boolean {
     cur.rows = cur.rows.map((r) => (r.id === aid ? fn(r) : r));
     emit(lessonId);
   };
+  let pendingText = "";
+  let frame: number | null = null;
+  // O(1)
+  const cancelFrame = (): void => {
+    if (frame === null) return;
+    cancelAnimationFrame(frame);
+    frame = null;
+  };
+  // O(rows)
+  // INV: buffered deltas append to this turn only; a replaced job is left untouched and the buffer is dropped
+  const writePending = (): boolean => {
+    const extra = pendingText;
+    pendingText = "";
+    cancelFrame();
+    if (extra === "") return false;
+    const cur = mine();
+    if (!cur) return false;
+    cur.rows = cur.rows.map((r) => (r.id === aid ? { ...r, content: r.content + extra } : r));
+    return true;
+  };
+  // O(1) to schedule; the streaming row is mapped once per frame
+  // INV: listeners see a turn's new text at most once per animation frame
+  const queueDelta = (v: string): void => {
+    if (!mine()) return;
+    pendingText += v;
+    if (frame !== null) return;
+    frame = requestAnimationFrame(() => {
+      frame = null;
+      if (writePending()) emit(lessonId);
+    });
+  };
   const settle = (): void => {
     const cur = mine();
-    if (!cur) return;
+    if (!cur) {
+      pendingText = "";
+      cancelFrame();
+      return;
+    }
+    const extra = pendingText;
+    pendingText = "";
+    cancelFrame();
     cur.streaming = false;
-    cur.rows = cur.rows.map((r) => (r.id === aid ? { ...r, pending: false, preparingCheck: false } : r));
+    cur.rows = cur.rows.map((r) => (r.id === aid ? { ...r, content: r.content + extra, pending: false, preparingCheck: false } : r));
     emit(lessonId);
     chatJobs.delete(lessonId);
     lessonsChanged();
@@ -119,15 +158,24 @@ function sendTurn(lessonId: string, turn: ChatTurn, base: ChatRow[]): boolean {
   const path = `/api/lessons/${lessonId}/${turn.opening ? "start" : "chat"}`;
   const body = turn.opening ? {} : { message: text, ...(turn.checkId === null ? {} : { checkId: turn.checkId }) };
   streamSse(path, body, (e) => {
-    if (e.t === "d") patch((r) => ({ ...r, content: r.content + e.v }));
-    else if (e.t === "prep") patch((r) => ({ ...r, preparingCheck: true }));
-    else if (e.t === "end") {
+    if (e.t === "d") queueDelta(e.v);
+    else if (e.t === "prep") {
+      writePending();
+      patch((r) => ({ ...r, preparingCheck: true }));
+    } else if (e.t === "end") {
+      writePending();
       patch((r) => ({ ...r, content: e.text, citations: e.citations, topicIdx: e.topicIdx, check: e.check, finishes: e.finishes, pending: false, preparingCheck: false }));
     } else throw makeApiError(0, e.code);
   }, ctl.signal).then(settle, (e: unknown) => {
     const cur = mine();
-    if (!cur) return;
+    if (!cur) {
+      pendingText = "";
+      cancelFrame();
+      return;
+    }
     if (ctl.signal.aborted) return settle();
+    pendingText = "";
+    cancelFrame();
     cur.streaming = false;
     cur.error = e;
     cur.rows = cur.rows.filter((r) => r.id !== aid && r.id !== uid);
@@ -139,7 +187,7 @@ function sendTurn(lessonId: string, turn: ChatTurn, base: ChatRow[]): boolean {
 // INV: ready is true once this lesson's saved messages have loaded, so an empty transcript means the lesson has not started
 export type LessonChat = { rows: ChatRow[]; streaming: boolean; error: unknown; retry: ChatTurn | null; ready: boolean; send: (turn: ChatTurn) => boolean; stop: () => void };
 
-// O(n) in messages on mount; O(m) per streamed delta
+// O(n) in messages on mount; O(rows) once per animation frame while a turn streams
 // INV: history loads once per lesson and merges with any job still streaming from an earlier visit
 export function useLessonChat(lessonId: string): LessonChat {
   const [snap, setSnap] = useState<ChatSnap>(() => {
