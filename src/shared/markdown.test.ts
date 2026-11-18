@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MdBody } from "../web/components/MdBody.tsx";
-import { normalizeMarkdown } from "./markdown.ts";
+import { normalizeMarkdown, splitMarkdownBlocks } from "./markdown.ts";
 
 const html = (text: string): string => renderToStaticMarkup(createElement(MdBody, { text }));
 
@@ -55,4 +55,37 @@ test("a single tilde stays literal and links stay safe", () => {
   expect(out).not.toContain("<del>");
   expect(out).toContain('href="https://example.com"');
   expect(out).not.toContain("javascript:");
+});
+
+test("splitMarkdownBlocks joins back to the original text", () => {
+  const samples = [
+    "",
+    "One paragraph.",
+    "Para 1\n\nPara 2\n\nPara 3",
+    STEP,
+    "- a\n\n- b\n\nPara",
+    "1. a\n\n2. b",
+    "> a\n\n> b\n\nPara",
+    "Para\n\n    code\n    more\n\nPara",
+    "See [foo].\n\n[foo]: https://example.com",
+    "Para\n\n```\n| a |\n```\n\nPara",
+    "Para\n\n$$\nx\n$$\n\nPara",
+    "Para\n\n```\nstill open",
+    "| a | b |\n|---|---|\n| 1 | 2 |",
+    "Look:\n| a | b |\n|---|---|\n| 1 | 2 |\nThen this.",
+  ];
+  for (const s of samples) expect(splitMarkdownBlocks(s).join("")).toBe(s);
+});
+
+test("splitMarkdownBlocks keeps lists, quotes, fences and tables together", () => {
+  expect(splitMarkdownBlocks("Para 1\n\nPara 2")).toEqual(["Para 1\n\n", "Para 2"]);
+  expect(splitMarkdownBlocks("- a\n\n- b")).toEqual(["- a\n\n- b"]);
+  expect(splitMarkdownBlocks("1. a\n\n2. b")).toEqual(["1. a\n\n2. b"]);
+  expect(splitMarkdownBlocks("> a\n\n> b")).toEqual(["> a\n\n> b"]);
+  expect(splitMarkdownBlocks("Para\n\n    code\n\n    more")).toEqual(["Para\n\n", "    code\n\n    more"]);
+  expect(splitMarkdownBlocks("See [foo].\n\n[foo]: https://example.com")).toEqual(["See [foo].\n\n[foo]: https://example.com"]);
+  const table = "| a | b |\n|---|---|\n| 1 | 2 |";
+  expect(splitMarkdownBlocks(`Before\n\n${table}\n\nAfter`)).toEqual(["Before\n\n", `${table}\n\n`, "After"]);
+  expect(splitMarkdownBlocks("Para\n\n```\nstill\n\nopen")).toEqual(["Para\n\n", "```\nstill\n\nopen"]);
+  expect(splitMarkdownBlocks("Para\n\n$$\nx =\n")).toEqual(["Para\n\n", "$$\nx =\n"]);
 });
