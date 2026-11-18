@@ -24,13 +24,15 @@ export function artAttribute(hidden: boolean, focused: boolean, reduceEffects: b
   return null;
 }
 
+// INV: focus is tracked from window blur/focus events only, starting as focused. document.hasFocus() is not trusted: WebKitGTK reports false at load in a window that already has focus, and no focus event follows, so the art stayed paused in a focused window. The worst case here is art that runs until the first blur, which is the old behaviour
+let windowFocused = true;
+
 // O(1)
 function applyArtAttribute(): void {
   const doc = globalThis.document;
   const html = doc?.documentElement;
   if (!html) return;
-  const focused = typeof doc.hasFocus === "function" ? doc.hasFocus() : true;
-  const next = artAttribute(Boolean(doc.hidden), focused, readReduceEffects());
+  const next = artAttribute(Boolean(doc.hidden), windowFocused, readReduceEffects());
   if (next === null) html.removeAttribute("data-art");
   else html.setAttribute("data-art", next);
 }
@@ -49,14 +51,25 @@ export function setReduceEffects(on: boolean): void {
 let installed = false;
 
 // O(1)
-// INV: listeners are installed once; visibilitychange, blur and focus all recompute the same attribute
+// INV: listeners are installed once; visibilitychange, blur and focus (DOM or forwarded from the shell) all recompute the same attribute
 export function installArtEffects(): void {
   if (installed || typeof document === "undefined" || typeof window === "undefined") return;
   installed = true;
   applyArtAttribute();
   document.addEventListener("visibilitychange", applyArtAttribute);
-  window.addEventListener("blur", applyArtAttribute);
-  window.addEventListener("focus", applyArtAttribute);
+  const blur = (): void => {
+    windowFocused = false;
+    applyArtAttribute();
+  };
+  const focus = (): void => {
+    windowFocused = true;
+    applyArtAttribute();
+  };
+  // INV: btg:window-blur/focus come from the desktop shell's native window events (desktop/main.ts), because WebKitGTK does not fire window blur/focus when the toplevel's focus changes; the DOM events still cover the other engines and a browser tab
+  window.addEventListener("blur", blur);
+  window.addEventListener("focus", focus);
+  window.addEventListener("btg:window-blur", blur);
+  window.addEventListener("btg:window-focus", focus);
 }
 
 // O(1)

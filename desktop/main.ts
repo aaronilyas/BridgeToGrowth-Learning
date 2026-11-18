@@ -71,6 +71,10 @@ const state = { stopping: false };
 console.log(`BTG_URL=${server.url}`);
 console.log("window created");
 appWindow.on("close", () => void stopDesktopServer(server.stop, state));
+// INV: WebKitGTK does not fire the page's window blur/focus when the toplevel loses or gains focus, so the shell forwards its native window focus to the page (src/web/effects.ts), which pauses the season art while unfocused
+// SEC: the scripts are fixed literals that only dispatch a named event; no data from the system or the page is interpolated
+appWindow.on("blur", () => appWindow.webview?.executeJavascript('globalThis.dispatchEvent(new Event("btg:window-blur"))'));
+appWindow.on("focus", () => appWindow.webview?.executeJavascript('globalThis.dispatchEvent(new Event("btg:window-focus"))'));
 Electrobun.events.on("before-quit", () => void stopDesktopServer(server.stop, state));
 const shutdown = (): void => void stopDesktopServer(server.stop, state).finally(() => process.exit(0));
 process.on("SIGINT", shutdown);
