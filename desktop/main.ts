@@ -51,7 +51,8 @@ function initialFrame(work: { width: number; height: number }): { width: number;
 }
 
 // INV: the shell always runs the prebuilt production bundle, so its server runs in production mode: immutable caching of hashed assets, direct serving of the bundle's files (listener.ts) and Bun.serve's production defaults. env.ts reads NODE_ENV at runtime, which the bundle's define does not reach, so without this the app ran as development
-process.env.NODE_ENV ??= "production";
+// INV: set unconditionally, because `electrobun dev` launches the shell with NODE_ENV=development; a dev run then serves what a packaged run serves. Immutable caching stays safe across dev rebuilds because every rebuild changes the hashes
+process.env.NODE_ENV = "production";
 const channel = await readReleaseChannel();
 const { startServer } = await loadBoot();
 const token = randomBytes(32).toString("hex");
