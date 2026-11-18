@@ -1,10 +1,15 @@
 import { afterEach, expect, test } from "bun:test";
 import { gateOf, readKnownConnected } from "./connections.tsx";
 
-const g = globalThis as { localStorage?: Storage | undefined };
-const saved = g.localStorage;
+// Another test file may have installed localStorage with Object.defineProperty
+// (read-only), so plain assignment throws when it runs first. Define instead.
+const saved = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+function setStorage(value: Storage): void {
+  Object.defineProperty(globalThis, "localStorage", { value, configurable: true, writable: true });
+}
 afterEach(() => {
-  g.localStorage = saved;
+  if (saved) Object.defineProperty(globalThis, "localStorage", saved);
+  else delete (globalThis as { localStorage?: Storage }).localStorage;
 });
 
 // O(1)
@@ -28,12 +33,12 @@ test("a failed check keeps a known-connected device in the app and shows first r
 });
 
 test("only a stored 1 counts as known-connected; missing, other values and storage errors do not", () => {
-  g.localStorage = storage({ "btg:connected": "1" });
+  setStorage(storage({ "btg:connected": "1" }));
   expect(readKnownConnected()).toBe(true);
-  g.localStorage = storage({ "btg:connected": "0" });
+  setStorage(storage({ "btg:connected": "0" }));
   expect(readKnownConnected()).toBe(false);
-  g.localStorage = storage({});
+  setStorage(storage({}));
   expect(readKnownConnected()).toBe(false);
-  g.localStorage = storage({ "btg:connected": "1" }, true);
+  setStorage(storage({ "btg:connected": "1" }, true));
   expect(readKnownConnected()).toBe(false);
 });
