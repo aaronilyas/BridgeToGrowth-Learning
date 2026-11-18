@@ -9,13 +9,17 @@ import { tutorFollowUp, type SentAttempt } from "./transcript.ts";
 export type OnCheckResult = (questionId: string, r: AttemptResponse, sent: SentAttempt) => void;
 export type OnFollowUpReply = (sent: SentAttempt) => void;
 
+export const DEFER_TAIL = 3;
+
 // O(n) in message length
 // INV: learner turns sit in a subtle right-aligned bubble; tutor turns are plain prose, with any check below them, and a settled turn's closing question sits in the same card as a check
 // INV: memoised, so a streaming turn does not re-render or re-typeset earlier messages; pass a stable onResult and onReply
-export const MessageRow = memo(function MessageRow({ row, anchor, answered, onResult, open, onReply }: { row: ChatRow; anchor: string | undefined; answered: CheckAttempt | null; onResult: OnCheckResult; open: boolean; onReply: OnFollowUpReply }): JSX.Element {
+// INV: defer is true only for settled rows above the last DEFER_TAIL; the streaming row and the live tail keep real layout (see .msg-deferred in theme.css)
+export const MessageRow = memo(function MessageRow({ row, anchor, answered, onResult, open, onReply, defer }: { row: ChatRow; anchor: string | undefined; answered: CheckAttempt | null; onResult: OnCheckResult; open: boolean; onReply: OnFollowUpReply; defer: boolean }): JSX.Element {
+  const deferred = defer ? " msg-deferred" : "";
   if (row.role === "user") {
     return (
-      <li className="flex justify-end">
+      <li className={`flex justify-end${deferred}`}>
         <div className="max-w-[85%] rounded-2xl bg-panel-2 px-4 py-2.5 text-sm">
           <span className="sr-only">You: </span>
           <Md text={row.content} className="[&_p]:my-0.5" />
@@ -27,9 +31,9 @@ export const MessageRow = memo(function MessageRow({ row, anchor, answered, onRe
   const followUp = tutorFollowUp(row);
   const prose = followUp ? followUp.lead : row.content;
   return (
-    <li id={anchor} className="flex scroll-mt-6 flex-col gap-4">
+    <li id={anchor} className={`flex scroll-mt-6 flex-col gap-4${deferred}`}>
       <span className="sr-only">Tutor: </span>
-      {row.pending && row.content === "" ? <span className="animate-pulse font-mono text-xs text-muted motion-reduce:animate-none">Thinking…</span> : prose !== "" && <Md text={prose} className="reading [&_p:first-child]:mt-0" />}
+      {row.pending && row.content === "" ? <span className="animate-pulse font-mono text-xs text-muted motion-reduce:animate-none">Thinking…</span> : prose !== "" && <Md text={prose} streaming={row.pending} className="reading [&_p:first-child]:mt-0" />}
       {row.preparingCheck && <span className="animate-pulse font-mono text-xs text-muted motion-reduce:animate-none">Writing a question…</span>}
       {question && <QuestionCard key={question.id} question={question} label="Check" answered={answered} onResult={(r, sent) => onResult(question.id, r, sent)} />}
       {followUp && <QuestionCard question={{ id: row.id, kind: "free", category: null, stem: followUp.question, choices: null, code: null, codeTests: null }} caption="Follow-up" label="Tutor's follow-up question" closed={!open} onReply={onReply} />}
@@ -45,8 +49,8 @@ export function Messages({ rows, anchors, answered, onResult, openId, onReply }:
   const anchorOf = new Map([...anchors].map(([topic, id]) => [id, `topic-${topic}`]));
   return (
     <ul className="flex flex-col gap-8">
-      {rows.map((r) => (
-        <MessageRow key={r.id} row={r} anchor={anchorOf.get(r.id)} answered={(r.check && answered[r.check.question.id]) ?? r.check?.lastAttempt ?? null} onResult={onResult} open={r.id === openId} onReply={onReply} />
+      {rows.map((r, i) => (
+        <MessageRow key={r.id} row={r} anchor={anchorOf.get(r.id)} answered={(r.check && answered[r.check.question.id]) ?? r.check?.lastAttempt ?? null} onResult={onResult} open={r.id === openId} onReply={onReply} defer={!r.pending && i < rows.length - DEFER_TAIL} />
       ))}
     </ul>
   );

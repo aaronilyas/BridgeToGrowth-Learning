@@ -50,7 +50,7 @@ function tableEnd(lines: readonly string[], i: number): number {
 }
 
 // O(n) in line count
-// INV: returns the index of the last line of the fence or $$ display block that starts at i, or -1 if line i opens neither
+// INV: returns the index of the last line of the fence, $$ / \[ display block that starts at i, or -1 if line i opens none of them
 function atomicEnd(lines: Line[], i: number): number {
   const line = lines[i]?.text ?? "";
   const fence = FENCE_RE.exec(line);
@@ -60,10 +60,110 @@ function atomicEnd(lines: Line[], i: number): number {
     return lines.length - 1;
   }
   const t = line.trim();
-  if (!t.startsWith("$$")) return -1;
-  if (t.length > 2 && t.indexOf("$$", 2) >= 0) return i;
-  for (let j = i + 1; j < lines.length; j++) if ((lines[j]?.text ?? "").includes("$$")) return j;
-  return lines.length - 1;
+  if (t.startsWith("$$")) {
+    if (t.length > 2 && t.indexOf("$$", 2) >= 0) return i;
+    for (let j = i + 1; j < lines.length; j++) if ((lines[j]?.text ?? "").includes("$$")) return j;
+    return lines.length - 1;
+  }
+  if (t.startsWith("\\[")) {
+    if (t.includes("\\]")) return i;
+    for (let j = i + 1; j < lines.length; j++) if ((lines[j]?.text ?? "").includes("\\]")) return j;
+    return lines.length - 1;
+  }
+  return -1;
+}
+
+type Kind = "blank" | "atomic" | "list" | "quote" | "indent" | "ref" | "other";
+
+// O(1)
+function classify(s: string): { kind: Kind; list: string | null } {
+  if (isBlank(s)) return { kind: "blank", list: null };
+  if (/^(?: {4}|\t)/.test(s)) return { kind: "indent", list: null };
+  if (/^ {0,3}\[[^\]]*\]:/.test(s)) return { kind: "ref", list: null };
+  if (/^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})[ \t]*$/.test(s)) return { kind: "other", list: null };
+  const bullet = /^ {0,3}([-+*])(?:[ \t]|$)/.exec(s);
+  if (bullet) return { kind: "list", list: bullet[1] ?? null };
+  const ordered = /^ {0,3}\d{1,9}([.)])(?:[ \t]|$)/.exec(s);
+  if (ordered) return { kind: "list", list: ordered[1] ?? null };
+  if (/^ {0,3}>/.test(s)) return { kind: "quote", list: null };
+  return { kind: "other", list: null };
+}
+
+// O(1)
+// INV: true only when the next construct can continue the previous one across a blank line (loose lists, blockquotes, indented code)
+function continues(prev: Kind, prevList: string | null, next: Kind, nextList: string | null): boolean {
+  if (prev === "list") return (next === "list" && prevList === nextList) || next === "indent" || next === "quote";
+  if (prev === "quote") return next === "quote";
+  if (prev === "indent") return next === "indent";
+  return false;
+}
+
+// O(1)
+function sliceLines(text: string, lines: readonly Line[], from: number, to: number): string {
+  const start = lines[from]?.start ?? 0;
+  const end = to + 1 < lines.length ? (lines[to + 1]?.start ?? text.length) : text.length;
+  return text.slice(start, end);
+}
+
+// O(n) in line count
+// INV: splitMarkdownBlocks(text).join("") === text
+// INV: a table, fence or $$ / \[ display is one atomic range and is never split, including while it is still open
+// INV: a split is only at a blank line whose next non-blank line cannot continue the previous construct; link/footnote definitions keep the whole text as one block
+export function splitMarkdownBlocks(text: string): string[] {
+  if (text === "") return [""];
+  const lines = splitLines(text);
+  const texts = lines.map((l) => l.text);
+  const units: Block[] = [];
+  for (let i = 0; i < lines.length; ) {
+    const table = tableEnd(texts, i);
+    const end = table >= 0 ? table : atomicEnd(lines, i);
+    if (end >= 0) {
+      units.push({ start: i, end, atomic: true });
+      i = end + 1;
+    } else {
+      units.push({ start: i, end: i, atomic: false });
+      i++;
+    }
+  }
+  const kindOf = (u: Block): { kind: Kind; list: string | null } => (u.atomic ? { kind: "atomic", list: null } : classify(texts[u.start] ?? ""));
+  if (units.some((u) => kindOf(u).kind === "ref")) return [text];
+  const out: string[] = [];
+  let i = 0;
+  while (i < units.length) {
+    const first = units[i];
+    if (!first) break;
+    let end = i;
+    let { kind, list } = kindOf(first);
+    for (let j = i + 1; j < units.length; ) {
+      const u = units[j];
+      if (!u) break;
+      const k = kindOf(u);
+      if (k.kind === "blank") {
+        let next = j;
+        while (next < units.length && kindOf(units[next] ?? first).kind === "blank") next++;
+        if (next >= units.length) {
+          end = next - 1;
+          break;
+        }
+        const peek = kindOf(units[next] ?? first);
+        end = next - 1;
+        if (kind === "blank" || continues(kind, list, peek.kind, peek.list)) {
+          j = next;
+          continue;
+        }
+        break;
+      }
+      end = j;
+      if (kind === "blank") {
+        kind = k.kind;
+        list = k.list;
+      }
+      j++;
+    }
+    out.push(sliceLines(text, lines, first.start, units[end]?.end ?? first.end));
+    i = end + 1;
+  }
+  return out.length > 0 ? out : [text];
 }
 
 // O(n) in line length
