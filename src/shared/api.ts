@@ -37,6 +37,10 @@ export const PRACTICE_SET_SIZE = 4;
 export const QuestionPublic = z.strictObject({ id: z.uuid(), topicId: z.uuid(), kind: QuestionKind, category: QuestionCategory.nullable(), stem: z.string(), choices: z.array(z.string()).nullable(), code: CodeSpec.nullable(), codeTests: z.array(CodeTest).max(CODE_MAX_TESTS).nullable(), lessonId: z.uuid().nullable() });
 export type QuestionPublic = z.infer<typeof QuestionPublic>;
 
+// INV: a Practice queue item; setId names the practice set the question belongs to, null for a lesson check
+export const QueueItem = QuestionPublic.extend({ setId: z.uuid().nullable() });
+export type QueueItem = z.infer<typeof QueueItem>;
+
 // INV: lastAttempt is the learner's most recent attempt on this check, so a reloaded transcript shows answered checks as answered
 export const CheckAttempt = z.strictObject({ score: z.number().min(0).max(1), correct: z.boolean(), confidence: z.int().min(0).max(100).nullable(), dontKnow: z.boolean() });
 export type CheckAttempt = z.infer<typeof CheckAttempt>;

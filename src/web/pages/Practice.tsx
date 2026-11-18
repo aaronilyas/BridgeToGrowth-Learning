@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState, type JSX } from "react";
 import { z } from "zod";
-import { GenerateResponse, PRACTICE_SET_SIZE, PracticeSetSummary, QuestionPublic, StatsResponse, StyleSummary } from "../../shared/api.ts";
+import { GenerateResponse, PRACTICE_SET_SIZE, PracticeSetSummary, QueueItem, StatsResponse, StyleSummary } from "../../shared/api.ts";
 import { api } from "../api.ts";
 import { Button } from "../components/Button.tsx";
 import { ErrorBanner } from "../components/ErrorBanner.tsx";
 import { Panel } from "../components/Panel.tsx";
-import { PracticeSets } from "../components/PracticeSets.tsx";
+import { CurrentSet, PracticeSets } from "../components/PracticeSets.tsx";
 import { QuestionCard } from "../components/QuestionCard.tsx";
 import { Spinner } from "../components/Spinner.tsx";
 import { UploadDrop } from "../components/UploadDrop.tsx";
@@ -89,8 +89,9 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }): JSX.Elemen
 // INV: the card stays on screen with its result until "Next"; only then does it leave the local queue
 // INV: the daily goal comes from personal stats
 // INV: deleting or regenerating a set reloads the queue, so a removed question never stays on screen
+// INV: the question on screen shows the set it came from, with that set's Delete and Regenerate, when it belongs to one
 export function PracticePage(): JSX.Element {
-  const [queue, setQueue] = useState<QuestionPublic[] | null>(null);
+  const [queue, setQueue] = useState<QueueItem[] | null>(null);
   const [sets, setSets] = useState<PracticeSetSummary[] | null>(null);
   const [answered, setAnswered] = useState(false);
   const [goal, setGoal] = useState<Goal | null>(null);
@@ -99,7 +100,7 @@ export function PracticePage(): JSX.Element {
   const load = useCallback(async (): Promise<void> => {
     setError(null);
     try {
-      const [q, s, list] = await Promise.all([api("/api/practice/queue?limit=20", z.array(QuestionPublic)), api("/api/stats?days=7", StatsResponse), api("/api/practice/sets", z.array(PracticeSetSummary))]);
+      const [q, s, list] = await Promise.all([api("/api/practice/queue?limit=20", z.array(QueueItem)), api("/api/stats?days=7", StatsResponse), api("/api/practice/sets", z.array(PracticeSetSummary))]);
       setQueue(q);
       setSets(list);
       setAnswered(false);
@@ -115,6 +116,7 @@ export function PracticePage(): JSX.Element {
   }, [load]);
 
   const card = queue?.[0];
+  const cardSet = card?.setId ? (sets?.find((s) => s.id === card.setId) ?? null) : null;
   const pct = goal ? Math.min(100, Math.round((goal.done / goal.target) * 100)) : 0;
 
   return (
@@ -146,6 +148,7 @@ export function PracticePage(): JSX.Element {
         )}
         {card && (
           <>
+            {cardSet && <CurrentSet key={cardSet.id} set={cardSet} onChanged={() => void load()} />}
             <QuestionCard
               key={card.id}
               question={card}
@@ -153,6 +156,7 @@ export function PracticePage(): JSX.Element {
               onResult={() => {
                 setAnswered(true);
                 api("/api/stats?days=7", StatsResponse).then((s) => setGoal(s.totals.goalToday), () => undefined);
+                api("/api/practice/sets", z.array(PracticeSetSummary)).then(setSets, () => undefined);
               }}
             />
             {answered && (

@@ -2,7 +2,7 @@ import { beforeAll, expect, mock, test } from "bun:test";
 import { bootTestServer, callRoute, createTestUser, insertFixtureUser, type Handler, type TestServer } from "../testkit.ts";
 
 let t: TestServer;
-let h: { generate: Handler; list: Handler; del: Handler; regen: Handler };
+let h: { generate: Handler; list: Handler; del: Handler; regen: Handler; queue: Handler };
 let runSync: () => Promise<void>;
 let topicName = "Hadamard product";
 let genCalls = 0;
@@ -32,12 +32,14 @@ beforeAll(async () => {
     },
   }));
   const { genRoutes } = await import("./routes.ts");
+  const { learnRoutes } = await import("../learn/routes.ts");
   const withId = (fn: Handler): Handler => (req) => fn(Object.assign(req, { params: { id: new URL(req.url).searchParams.get("id") ?? "" } }));
   h = {
     generate: genRoutes["/api/questions/generate"].POST,
     list: genRoutes["/api/practice/sets"].GET,
     del: withId(genRoutes["/api/practice/sets/:id"].DELETE),
     regen: withId(genRoutes["/api/practice/sets/:id/regenerate"].POST),
+    queue: learnRoutes["/api/practice/queue"].GET,
   };
   const { default: syncPracticeSets } = await import("../../../db/sync_practice_sets.sql", { with: { type: "text" } });
   runSync = async () => {
@@ -154,4 +156,20 @@ test("practice questions written without a set (before 0009, or by an older buil
   const listed = await sets();
   expect(listed.map((s) => [s.topic, s.request, s.questions])).toEqual([["Hadamard product", "Hadamard product", 4], ["Hadamard product", "Hadamard product", 4]]);
   expect(await t.sql`SELECT question_id FROM practice_set_questions`).toHaveLength(8);
+});
+
+test("the practice queue names the set each question came from, and a deleted set leaves the queue", async () => {
+  await t.reset();
+  topicName = "Hadamard product";
+  const drop = await generate("hadamard");
+  topicName = "Kronecker product";
+  const keep = await generate("kronecker");
+  const queue = async (): Promise<{ id: string; setId: string | null }[]> => await (await callRoute(h.queue, "GET", "/api/practice/queue?limit=20")).json() as { id: string; setId: string | null }[];
+  const before = await queue();
+  expect(before).toHaveLength(8);
+  const setOf = new Map([...drop.questions.map((q) => [q.id, drop.setId] as const), ...keep.questions.map((q) => [q.id, keep.setId] as const)]);
+  for (const item of before) expect(item.setId).toBe(setOf.get(item.id) ?? "missing");
+  expect((await callRoute(h.del, "DELETE", `/x?id=${drop.setId}`)).status).toBe(204);
+  const after = await queue();
+  expect(after.map((q) => q.setId)).toEqual(Array(4).fill(keep.setId));
 });

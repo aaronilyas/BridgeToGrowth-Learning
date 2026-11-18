@@ -1,4 +1,4 @@
-import { useState, type JSX } from "react";
+import { useState, type JSX, type ReactNode } from "react";
 import { z } from "zod";
 import { GenerateResponse, type PracticeSetSummary } from "../../shared/api.ts";
 import { api } from "../api.ts";
@@ -21,8 +21,14 @@ export async function regeneratePracticeSet(id: string): Promise<GenerateRespons
 }
 
 // O(1)
+export function setLabel(set: PracticeSetSummary): string {
+  return set.request.trim() !== "" ? set.request : set.topic;
+}
+
+// O(1)
 // INV: both actions ask for confirmation first, because each removes the set's questions and the progress that came from them
-function SetRow({ set, onChanged }: { set: PracticeSetSummary; onChanged: () => void }): JSX.Element {
+// INV: `children` is the set's description; the Regenerate and Delete buttons sit beside it until one is chosen
+function SetControls({ set, onChanged, children }: { set: PracticeSetSummary; onChanged: () => void; children: ReactNode }): JSX.Element {
   const [confirming, setConfirming] = useState<Pending | null>(null);
   const [busy, setBusy] = useState<Pending | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -42,16 +48,11 @@ function SetRow({ set, onChanged }: { set: PracticeSetSummary; onChanged: () => 
     }
   }
 
-  const label = set.request.trim() !== "" ? set.request : set.topic;
+  const label = setLabel(set);
   return (
-    <li className="flex flex-col gap-2 border-b border-border py-2.5 last:border-b-0">
+    <div className="flex flex-col gap-2">
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium" title={label}>{label}</p>
-          <p className="text-xs text-muted">
-            {set.answered} / {set.questions} answered · {relativeTime(set.createdAt)}
-          </p>
-        </div>
+        {children}
         {confirming === null && (
           <div className="flex shrink-0 gap-1">
             <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => setConfirming("regenerate")} aria-label={`Regenerate ${label}`}>Regenerate</Button>
@@ -75,7 +76,39 @@ function SetRow({ set, onChanged }: { set: PracticeSetSummary; onChanged: () => 
         </div>
       )}
       <ErrorBanner error={error} />
+    </div>
+  );
+}
+
+// O(1)
+function SetRow({ set, onChanged }: { set: PracticeSetSummary; onChanged: () => void }): JSX.Element {
+  const label = setLabel(set);
+  return (
+    <li className="border-b border-border py-2.5 last:border-b-0">
+      <SetControls set={set} onChanged={onChanged}>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium" title={label}>{label}</p>
+          <p className="text-xs text-muted">
+            {set.answered} / {set.questions} answered · {relativeTime(set.createdAt)}
+          </p>
+        </div>
+      </SetControls>
     </li>
+  );
+}
+
+// O(1)
+// INV: names the set the question on screen came from, so it can be deleted or regenerated without finding it in the list
+export function CurrentSet({ set, onChanged }: { set: PracticeSetSummary; onChanged: () => void }): JSX.Element {
+  const label = setLabel(set);
+  return (
+    <Panel className="py-3">
+      <SetControls set={set} onChanged={onChanged}>
+        <p className="min-w-0 truncate text-sm text-muted" title={label}>
+          From set <span className="font-medium text-text">{label}</span> · {set.answered} / {set.questions} answered
+        </p>
+      </SetControls>
+    </Panel>
   );
 }
 
