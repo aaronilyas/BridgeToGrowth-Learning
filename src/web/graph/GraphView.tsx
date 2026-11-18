@@ -1,6 +1,8 @@
-import { memo, useEffect, useMemo, useRef, type JSX, type PointerEvent as ReactPointerEvent } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent } from "react";
 import { Domain, type GraphResponse } from "../../shared/api.ts";
-import { layoutGraph, listHubDomains, radiusOf, type Point } from "./layout.ts";
+import { Spinner } from "../components/Spinner.tsx";
+import { cachedLayout, requestLayout } from "./layoutClient.ts";
+import { layoutKey, listHubDomains, radiusOf, type Point } from "./layout.ts";
 
 export type GNode = GraphResponse["nodes"][number];
 type VB = { x: number; y: number; w: number; h: number };
@@ -23,6 +25,7 @@ export function hueOf(domain: string): string {
   return `var(--d-${d.success ? d.data : "other"})`;
 }
 
+// O(1)
 function glyphOf(domain: string): string {
   const d = Domain.safeParse(domain);
   return GLYPHS[d.success ? d.data : "other"];
@@ -30,6 +33,7 @@ function glyphOf(domain: string): string {
 
 type LayerProps = { nodes: GNode[]; edges: GraphResponse["edges"]; pos: Point[]; hubs: string[]; matches: Set<string> | null; selectedId: string | null; onSelect: (id: string) => void; moved: { current: boolean } };
 
+// O(V + E)
 const Layer = memo(function Layer({ nodes, edges, pos, hubs, matches, selectedId, onSelect, moved }: LayerProps): JSX.Element {
   const index = useMemo(() => new Map(nodes.map((n, i) => [n.id, i])), [nodes]);
   const hubIdx = (d: string): number => nodes.length + hubs.indexOf(d);
@@ -89,11 +93,16 @@ const Layer = memo(function Layer({ nodes, edges, pos, hubs, matches, selectedId
 });
 
 // O(V + E) per render of the static layer; pan and zoom touch only the viewBox attribute
-// INV: positions are computed once per data hash; no React state changes while panning
+// INV: positions are computed once per data hash (cache or worker); no React state changes while panning
+// INV: pos is null only while a layout is in flight, and that is when the spinner is shown
 export function GraphView({ graph, query, selectedId, onSelect }: { graph: GraphResponse; query: string; selectedId: string | null; onSelect: (id: string) => void }): JSX.Element {
-  const key = useMemo(() => JSON.stringify([graph.nodes.map((n) => [n.id, n.domain, n.attempts]), graph.edges.map((e) => [e.src, e.dst])]), [graph]);
+  const key = useMemo(() => layoutKey(graph.nodes, graph.edges), [graph]);
   const hubs = useMemo(() => listHubDomains(graph.nodes), [key]); // eslint-disable-line react-hooks/exhaustive-deps
-  const pos = useMemo(() => layoutGraph(graph.nodes, graph.edges), [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [laid, setLaid] = useState<{ key: string; pos: Point[] } | null>(() => {
+    const hit = cachedLayout(key);
+    return hit ? { key, pos: hit } : null;
+  });
+  const pos = laid?.key === key ? laid.pos : (cachedLayout(key) ?? null);
   const q = query.trim().toLowerCase();
   const matches = useMemo(() => (q === "" ? null : new Set(graph.nodes.filter((n) => n.name.toLowerCase().includes(q) || n.domain.includes(q)).map((n) => n.id))), [graph.nodes, q]);
   const svg = useRef<SVGSVGElement>(null);
@@ -101,9 +110,20 @@ export function GraphView({ graph, query, selectedId, onSelect }: { graph: Graph
   const moved = useRef(false);
   const drag = useRef<{ x: number; y: number; sx: number; sy: number } | null>(null);
 
+  useEffect(() => {
+    const hit = cachedLayout(key);
+    if (hit) {
+      setLaid({ key, pos: hit });
+      return;
+    }
+    return requestLayout(graph.nodes, graph.edges, (next) => setLaid({ key, pos: next }));
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // O(1)
   const apply = (): void => svg.current?.setAttribute("viewBox", `${vb.current.x} ${vb.current.y} ${vb.current.w} ${vb.current.h}`);
 
   useEffect(() => {
+    if (!pos) return;
     const el = svg.current;
     if (!el) return;
     const fit = (): void => {
@@ -168,10 +188,19 @@ export function GraphView({ graph, query, selectedId, onSelect }: { graph: Graph
     };
   }, []);
 
+  // O(1)
   const down = (e: ReactPointerEvent<SVGSVGElement>): void => {
     moved.current = false;
     drag.current = { x: vb.current.x, y: vb.current.y, sx: e.clientX, sy: e.clientY };
   };
+
+  if (!pos) {
+    return (
+      <div className="flex h-full w-full items-center justify-center">
+        <Spinner label="Laying out graph" />
+      </div>
+    );
+  }
 
   return (
     <svg ref={svg} role="img" aria-label={`Knowledge graph with ${graph.nodes.length} topics in ${hubs.length} domains and ${graph.edges.length} connections`} className="h-full w-full cursor-grab touch-none select-none active:cursor-grabbing" viewBox="-300 -200 600 400" onPointerDown={down}>

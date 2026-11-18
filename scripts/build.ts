@@ -11,6 +11,8 @@ const CHUNK_IMPORT = /(\bfrom\s*"|\bimport\s*"|\bimport\(\s*")\/(chunk-[a-z0-9]+
 const KATEX_CSS = /^katex\/dist\/katex\.min\.css$/;
 const FONT_FACE = /@font-face\{[^}]*\}/g;
 const INLINED_FONT = "url(data:font";
+const LAYOUT_WORKER = /layoutWorker\.ts$/;
+const LAYOUT_WORKER_FILE = /layoutWorker-[a-z0-9]+\.js$/;
 
 // INV: Bun inlines every CSS url() asset under 128 KiB as a data: URL, and neither `loader` nor any other Bun.build option changes that, so the KaTeX @font-face rules are dropped here and src/web/katexFonts.ts registers the same faces from hashed font files
 // INV: the stripped stylesheet loads in its own namespace, so the Tailwind plugin's .css onLoad never sees it
@@ -49,6 +51,32 @@ async function relinkServerChunks(): Promise<number> {
 }
 
 // O(bundle size)
+// INV: Bun 1.4 leaves `new Worker(new URL("./file.ts", import.meta.url))` as a source path, so the worker is compiled to browser JS and attached as a file asset the HTML bundle serves
+async function layoutWorkerSource(): Promise<string | null> {
+  const out = await Bun.build({ entrypoints: ["src/web/graph/layoutWorker.ts"], target: "browser", minify: true, splitting: false, define: { "process.env.NODE_ENV": JSON.stringify("production") } });
+  for (const log of out.logs) console.error(log.message);
+  if (!out.success) return null;
+  const js = out.outputs.find((o) => o.path.endsWith(".js"));
+  return js ? js.text() : null;
+}
+
+// O(1)
+function layoutWorkerAsFile(contents: string): BunPlugin {
+  return {
+    name: "layout-worker-as-file",
+    setup(build) {
+      build.onResolve({ filter: LAYOUT_WORKER }, () => ({ path: "layoutWorker.js", namespace: "layout-worker" }));
+      build.onLoad({ filter: /.*/, namespace: "layout-worker" }, () => ({ contents, loader: "file" }));
+    },
+  };
+}
+
+// O(n) in output paths
+function emittedLayoutWorker(paths: string[]): string | undefined {
+  return paths.map((p) => p.replace(/\\/g, "/").split("/").pop() ?? "").find((name) => LAYOUT_WORKER_FILE.test(name));
+}
+
+// O(bundle size)
 // INV: the Claude ACP agent runs as its own Bun process (src/server/llm/providers/claude.ts), so it is one unsplit file beside the server bundle; nothing from node_modules ships
 async function buildClaudeAgent(): Promise<number> {
   const out = await Bun.build({ entrypoints: ["src/server/llm/providers/claudeAcpEntry.ts"], outdir: OUT_DIR, naming: "claude-acp.js", target: "bun", minify: true, define: { "process.env.NODE_ENV": JSON.stringify("production") } });
@@ -63,9 +91,16 @@ async function buildClaudeAgent(): Promise<number> {
 // INV: dist/ is emptied first and its source maps are external (no sourceMappingURL comment for the runtime to chase) and end in dist-maps/, so the folder Electrobun copies into the app holds only this build's runtime files
 async function buildApp(): Promise<number> {
   await resetBuildDirs(OUT_DIR, MAPS_DIR);
-  const out = await Bun.build({ entrypoints: ["src/server/index.ts", "src/server/boot.ts"], outdir: OUT_DIR, target: "bun", splitting: true, minify: true, publicPath: "/", sourcemap: "external", plugins: [katexFontsAsFiles, tailwind], define: { "process.env.NODE_ENV": JSON.stringify("production") } });
+  const workerJs = await layoutWorkerSource();
+  if (workerJs === null) return 1;
+  const out = await Bun.build({ entrypoints: ["src/server/index.ts", "src/server/boot.ts"], outdir: OUT_DIR, target: "bun", splitting: true, minify: true, publicPath: "/", sourcemap: "external", plugins: [katexFontsAsFiles, layoutWorkerAsFile(workerJs), tailwind], define: { "process.env.NODE_ENV": JSON.stringify("production") } });
   for (const log of out.logs) console.error(log.message);
   if (!out.success) return 1;
+  const workerFile = emittedLayoutWorker(out.outputs.map((o) => o.path));
+  if (!workerFile) {
+    console.error("layout worker was not emitted as its own file in dist/");
+    return 1;
+  }
   const inlined = await findInlinedFonts(out.outputs.map((o) => o.path));
   if (inlined.length > 0) {
     console.error(`inlined fonts remain in ${inlined.join(", ")}`);
