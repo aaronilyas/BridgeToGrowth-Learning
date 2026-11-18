@@ -1,6 +1,6 @@
 import type { BunPlugin } from "bun";
 import tailwind from "bun-plugin-tailwind";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { moveSourceMaps, resetBuildDirs } from "./buildOutput.ts";
 import { copyPyodideAssets } from "./fetch-pyodide.ts";
 
@@ -23,6 +23,14 @@ const katexFontsAsFiles: BunPlugin = {
     build.onLoad({ filter: /.*/, namespace: "katex-css" }, async (args) => ({ contents: (await Bun.file(args.path).text()).replace(FONT_FACE, ""), loader: "css" }));
   },
 };
+
+// O(1)
+// INV: math is typeset by rehype-katex but styled by katex/dist/katex.min.css and the fonts in katexFonts.ts; two KaTeX versions disagree on class names (0.19 renamed .sizing to .katex-sizing), which drops subscript sizing and positioning, so the build fails unless both resolve to one copy (package.json "overrides"; an old install keeps a stale nested copy until node_modules is reinstalled)
+function katexMismatch(): string | null {
+  const app = Bun.resolveSync("katex/package.json", "src/web/components");
+  const renderer = Bun.resolveSync("katex/package.json", dirname(Bun.resolveSync("rehype-katex", "src/web/components")));
+  return app === renderer ? null : `rehype-katex uses ${renderer} but the app's KaTeX stylesheet comes from ${app}; reinstall node_modules`;
+}
 
 // O(total CSS size)
 // INV: the build fails rather than ship the ~1.4 MB of data: fonts in the entry stylesheet again
@@ -90,6 +98,11 @@ async function buildClaudeAgent(): Promise<number> {
 // INV: splitting is required for the lazy page and markdown imports in src/web to become separate chunks; without it Bun inlines them into the entry
 // INV: dist/ is emptied first and its source maps are external (no sourceMappingURL comment for the runtime to chase) and end in dist-maps/, so the folder Electrobun copies into the app holds only this build's runtime files
 async function buildApp(): Promise<number> {
+  const katex = katexMismatch();
+  if (katex !== null) {
+    console.error(katex);
+    return 1;
+  }
   await resetBuildDirs(OUT_DIR, MAPS_DIR);
   const workerJs = await layoutWorkerSource();
   if (workerJs === null) return 1;

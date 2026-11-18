@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -117,4 +119,46 @@ test("the math cache drops the least recently used expression past its cap", () 
   expect(mathHastMisses()).toBe(MATH_HAST_CAP + 2);
   newHtml(`$${tex(MATH_HAST_CAP)}$`);
   expect(mathHastMisses()).toBe(MATH_HAST_CAP + 2);
+});
+
+// KaTeX's atom-type tags: it emits them on every atom but never styles them on their own
+const KATEX_ATOM_TAGS = new Set(["mord", "mbin", "mrel", "mopen", "mclose", "mpunct", "minner", "mop", "mtight", "text"]);
+
+const MATH_STRESS = [
+  "Inline $c_{ij}=a_{ij}b_{ij}$ and $x^{2}_{k}$.",
+  "$$c_{ij}=a_{ij}b_{ij}$$",
+  "$$\\frac{\\sqrt{x_1^2+x_2^2}}{\\sum_{i=1}^{n} y_i} \\le \\int_0^\\infty e^{-t}\\,dt$$",
+  "$$\\begin{pmatrix} a_{11} & a_{12} \\\\ a_{21} & a_{22} \\end{pmatrix} \\overline{z} \\hat{v} \\vec{u} \\binom{n}{k}$$",
+  "$$\\lim_{h \\to 0} \\frac{f(x+h)-f(x)}{h} = \\left\\lvert \\nabla f \\right\\rvert \\quad \\text{and } \\mathbb{R}^n$$",
+].join("\n\n");
+
+// INV: the stylesheet Md.tsx loads is the one this test reads
+function katexCss(): string {
+  return readFileSync(Bun.resolveSync("katex/dist/katex.min.css", import.meta.dir), "utf8");
+}
+
+test("rehype-katex typesets with the same KaTeX whose stylesheet and fonts the app ships", () => {
+  const appKatex = Bun.resolveSync("katex/package.json", import.meta.dir);
+  const rendererKatex = Bun.resolveSync("katex/package.json", dirname(Bun.resolveSync("rehype-katex", import.meta.dir)));
+  expect(rendererKatex).toBe(appKatex);
+});
+
+test("every class the math renderer emits is styled by the shipped KaTeX stylesheet", () => {
+  resetMathHastCache();
+  const html = newHtml(MATH_STRESS);
+  const css = katexCss();
+  const classes = new Set([...html.matchAll(/class="([^"]+)"/g)].flatMap((m) => (m[1] ?? "").split(/\s+/)));
+  const unstyled = [...classes].filter((c) => c !== "" && !KATEX_ATOM_TAGS.has(c) && !new RegExp(`\\.${c.replace(/[-]/g, "\\-")}(?![\\w-])`).test(css));
+  expect(classes.size).toBeGreaterThan(10);
+  expect(unstyled).toEqual([]);
+});
+
+test("a subscript is typeset smaller than its base and raised off the baseline", () => {
+  resetMathHastCache();
+  const html = newHtml("$$c_{ij}=a_{ij}b_{ij}$$");
+  expect(html).toContain("msupsub");
+  const sizing = /class="([^"]*\bsize3\b[^"]*)"/.exec(html)?.[1] ?? "";
+  const sizingRule = sizing.split(/\s+/).find((c) => /sizing$/.test(c)) ?? "";
+  expect(sizingRule).not.toBe("");
+  expect(katexCss()).toMatch(new RegExp(`\\.${sizingRule}\\.reset-size6\\.size3\\{font-size:\\.7em\\}`));
 });
