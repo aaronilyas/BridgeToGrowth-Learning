@@ -1,4 +1,7 @@
 import type { JSX } from "react";
+import { installArtEffects } from "../effects.ts";
+
+installArtEffects();
 
 const LEAF = "M0 0C6-7 18-7 26 0C18 7 6 7 0 0Z";
 
@@ -64,6 +67,7 @@ const spin = { transformBox: "fill-box", transformOrigin: "center" } as const;
 // O(1)
 // INV: all four seasons are mounted; CSS keyed on <html data-season> shows one, so switching is a single attribute change
 // INV: mounted inside <main> behind its content; theme.css keeps each piece inside the empty side gutter, so art never sits under text or controls
+// INV: html[data-art] pauses or turns off the CSS animations; installArtEffects runs at module load so the first paint already matches the stored preference
 // SEC: inline SVG only, no external assets
 export function SeasonArt(): JSX.Element {
   return (

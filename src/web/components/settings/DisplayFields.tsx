@@ -1,4 +1,5 @@
 import type { JSX } from "react";
+import { setReduceEffects, useReduceEffects } from "../../effects.ts";
 import { setAutoFit, setZoom, useDisplayState } from "../../zoom.ts";
 import { SettingsSection, SettingsToggle } from "./controls.tsx";
 
@@ -6,11 +7,13 @@ import { SettingsSection, SettingsToggle } from "./controls.tsx";
 // INV: display choices are per device (localStorage) and apply at once, so they are not part of the saved settings draft
 export function DisplayFields(): JSX.Element {
   const { autoFit, zoom, calibration, display, rootPx, narrow } = useDisplayState();
+  const reduceEffects = useReduceEffects();
   const fitted = Math.round(calibration.scale * 100);
   const limitedByWindow = calibration.byWindow < calibration.byScreen;
   return (
     <SettingsSection title="Display" hint="Applies right away on this device only.">
       <SettingsToggle label="Fit the interface to this display" checked={autoFit} onChange={setAutoFit} />
+      <SettingsToggle label="Reduce effects" checked={reduceEffects} onChange={setReduceEffects} />
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
         <dt className="text-muted">Display</dt>
         <dd>

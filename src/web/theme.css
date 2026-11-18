@@ -189,6 +189,20 @@ input[type="range"] {
   .art-drift {
     animation: art-drift 9s ease-in-out infinite alternate;
   }
+
+  /* INV: paused freezes the running timeline (hide/blur) so refocusing resumes the same pose.
+     off uses animation:none so the groups sit at identity — the rest pose. Pausing at t=0
+     would freeze sway/drift on their from-keyframes (−3° / −8°), which is an odd angle. */
+  html[data-art="paused"] .art-sway,
+  html[data-art="paused"] .art-spin,
+  html[data-art="paused"] .art-drift {
+    animation-play-state: paused;
+  }
+  html[data-art="off"] .art-sway,
+  html[data-art="off"] .art-spin,
+  html[data-art="off"] .art-drift {
+    animation: none;
+  }
 }
 
 @keyframes art-sway {
