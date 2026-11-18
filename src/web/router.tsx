@@ -23,17 +23,17 @@ function PageLoading(): JSX.Element {
 }
 
 // O(1)
-// INV: the gate replaces every route, so a deep link cannot open the app before a provider is connected
+// INV: the gate replaces every route, so a deep link cannot open the app on a device that has never had a provider connected. A device that was connected at its last check opens the app at once (connections.tsx gateOf), and drops to first run if this launch's check finds nothing connected; the server still refuses model calls without a connected provider
 export function AppRouter(): JSX.Element {
-  const { ready, connected } = useConnections();
-  if (!ready) {
+  const { gate } = useConnections();
+  if (gate === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Spinner size={28} label="Loading…" />
       </div>
     );
   }
-  if (!connected) return <FirstRunPage />;
+  if (gate === "first-run") return <FirstRunPage />;
   return (
     <AppShell>
       <Suspense fallback={<PageLoading />}>

@@ -12,6 +12,7 @@ import { genRoutes } from "./gen/routes.ts";
 import { learnRoutes } from "./learn/routes.ts";
 import { SERVER_IDLE_TIMEOUT_S } from "./llm/timeouts.ts";
 import { llmRoutes } from "./llm/routes.ts";
+import { warmProviderStatus } from "./llm/providers/registry.ts";
 import { seasonRoutes } from "./season/routes.ts";
 import { statsRoutes } from "./stats/routes.ts";
 import { styleRoutes } from "./styles/routes.ts";
@@ -38,11 +39,13 @@ const apiRoutes: ApiRoutes = {
 // SEC: the mutation origin is the bound loopback origin; an omitted port lets the kernel choose one, unless stablePort asks for the port saved in the app-data dir
 // SEC: a stable port does not make the origin a credential. The launch token is still fresh per launch and required on every /api request, and localGuard still checks the exact Host and the Origin against the port actually bound. A port another process holds fails to bind, so this launch takes a fresh port (see bindStable) and the window never loads the other process
 // INV: the desktop shell loads this module from the prebuilt bundle, so its native opener and app shell (release channel, quit, open, reveal) are handed in here rather than set on a second copy of external.ts or updates/install.ts
-export async function startServer(opts: { token: string; port?: number; stablePort?: boolean; openExternal?: (url: string) => boolean; shell?: AppShell }): Promise<{ url: string; origin: string; stop: () => Promise<void> }> {
+// INV: warmProviders starts every provider status check without awaiting it, so the window's first /api/providers joins checks already in flight (statusCache shares them); smoke and tests leave it off so no CLI probe outlives them
+export async function startServer(opts: { token: string; port?: number; stablePort?: boolean; warmProviders?: boolean; openExternal?: (url: string) => boolean; shell?: AppShell }): Promise<{ url: string; origin: string; stop: () => Promise<void> }> {
   if (opts.openExternal) setExternalOpener(opts.openExternal);
   if (opts.shell) setAppShell(opts.shell);
   const dataDir = appDataDir();
   await activateDatabase();
+  if (opts.warmProviders) warmProviderStatus();
   // SEC: API is served on the public loopback socket; the upstream handles documents and assets only, on its own random port
   const upstream = Bun.serve({ id: "btg-upstream", hostname: "127.0.0.1", port: 0, maxRequestBodySize: MAX_REQUEST_BYTES, idleTimeout: SERVER_IDLE_TIMEOUT_S, routes: { "/*": index } });
   const listen = (port: number) => servePublic({ port, api: apiRoutes, upstream: upstream.url, token: opts.token });

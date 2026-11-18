@@ -42,6 +42,12 @@ export function forgetProviderStatus(id: ProviderId): void {
   adapters[id].forgetStatus?.();
 }
 
+// O(p) in providers; returns at once
+// INV: starts each provider's status check and drops the result; a connected answer lands in that adapter's status cache, a not-connected one is not kept (statusCache INV), and a failure is swallowed here because the route asks again
+export function warmProviderStatus(): void {
+  for (const adapter of Object.values(adapters)) void adapter.status().catch(() => undefined);
+}
+
 // O(1)
 // INV: one lookup asks each provider at most once, so even a not-connected answer, which no cache keeps, is learned once per model call
 export function statusLookup(): StatusLookup {
