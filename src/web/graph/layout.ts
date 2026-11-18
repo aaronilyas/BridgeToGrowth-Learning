@@ -16,6 +16,15 @@ export function listHubDomains(nodes: readonly LayoutNode[]): string[] {
   return [...new Set(nodes.map((n) => n.domain))].sort();
 }
 
+// O(V + E)
+// INV: the key covers every field layoutGraph reads, in input order, so a cache hit is the same layout
+export function layoutKey(nodes: readonly LayoutNode[], edges: readonly LayoutEdge[]): string {
+  let out = `${nodes.length}:${edges.length}`;
+  for (const n of nodes) out += `\n${n.id}\t${n.domain}\t${n.attempts}`;
+  for (const e of edges) out += `\n${e.src}\t${e.dst}`;
+  return out;
+}
+
 type Sim = SimulationNodeDatum & { r: number; hub: boolean };
 
 // O(ticks·(V+E) log V)
