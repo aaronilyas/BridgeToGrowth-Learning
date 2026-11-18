@@ -50,6 +50,8 @@ function initialFrame(work: { width: number; height: number }): { width: number;
   return { width: fit(0.8, work.width, 1024), height: fit(0.88, work.height, 700) };
 }
 
+// INV: the shell always runs the prebuilt production bundle, so its server runs in production mode: immutable caching of hashed assets, direct serving of the bundle's files (listener.ts) and Bun.serve's production defaults. env.ts reads NODE_ENV at runtime, which the bundle's define does not reach, so without this the app ran as development
+process.env.NODE_ENV ??= "production";
 const channel = await readReleaseChannel();
 const { startServer } = await loadBoot();
 const token = randomBytes(32).toString("hex");
