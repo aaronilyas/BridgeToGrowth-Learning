@@ -1,5 +1,4 @@
 import type { Server } from "bun";
-import { join } from "node:path";
 import { env } from "./env.ts";
 import { json, secureResponse } from "./http.ts";
 import { SERVER_IDLE_TIMEOUT_S } from "./llm/timeouts.ts";
@@ -42,26 +41,25 @@ function cacheHashedAsset(path: string, res: Response): Response {
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }
 
-// O(1)
-// INV: hashed assets sit beside this module after Bun.build (dist/; desktop loadBoot chdirs there). A bundled HTML import's files[] paths are "./chunk-*.js" relative to that directory, so import.meta.dir is the folder, never a hard-coded path.
-function hashedAssetDir(): string {
-  return import.meta.dir;
-}
+export type BundleAsset = { file: string; headers: Readonly<Record<string, string>> };
+// INV: keyed by URL pathname ("/chunk-x.js"); holds only the files of the built HTML bundle (boot.ts reads them from HTMLBundle.files), so server code chunks that share the chunk-* naming in dist/ are never served
+export type BundleAssets = ReadonlyMap<string, BundleAsset>;
 
 // O(1) plus a disk existence check
-// SEC: only a single path segment that matches HASHED_CHUNK or HASHED_FONT is read from hashedAssetDir; never ".." or a nested path. A missing file returns null so the caller falls through to the upstream (no 500).
-async function readHashedAsset(pathname: string, method: string): Promise<Response | null> {
-  if (env.NODE_ENV !== "production") return null;
+// SEC: only an exact pathname listed in the HTML bundle's own files, which also matches HASHED_CHUNK or HASHED_FONT, is read from disk; the file path comes from the bundle manifest, never from the request. Anything else returns null and falls through to the upstream, as before
+// INV: the response carries the bundle's own headers (content-type with charset, ETag) plus the immutable cache header, the same as cacheHashedAsset gives the proxied response; a missing file falls through rather than failing
+async function readHashedAsset(pathname: string, method: string, assets: BundleAssets | undefined): Promise<Response | null> {
+  if (assets === undefined || env.NODE_ENV !== "production") return null;
   if (method !== "GET" && method !== "HEAD") return null;
   const types = HASHED_CHUNK.test(pathname) ? CHUNK_TYPES : HASHED_FONT.test(pathname) ? FONT_TYPES : null;
-  if (types === null) return null;
-  const name = pathname.slice(1);
-  if (!name || name.includes("/") || name.includes("\\") || name.includes("..") || name.startsWith(".")) return null;
-  const file = Bun.file(join(hashedAssetDir(), name));
-  if (!(await file.exists())) return null;
-  const type = (file.type ?? "").toLowerCase();
+  const entry = types === null ? undefined : assets.get(pathname);
+  if (types === null || entry === undefined) return null;
+  const type = (entry.headers["content-type"] ?? "").toLowerCase();
   if (!types.some((t) => type.startsWith(t))) return null;
-  const headers = { "content-type": file.type, "cache-control": IMMUTABLE };
+  const file = Bun.file(entry.file);
+  if (!(await file.exists())) return null;
+  const headers = new Headers(entry.headers);
+  headers.set("cache-control", IMMUTABLE);
   if (method === "HEAD") return new Response(null, { status: 200, headers });
   return new Response(file, { status: 200, headers });
 }
@@ -118,7 +116,7 @@ function guardRoutes(api: ApiRoutes, token: string, portOf: () => number): ApiRo
 // INV: maxRequestBodySize caps every body at the socket; route maxBody still caps each route below that
 // INV: idleTimeout covers documents and rejected requests; guardRoutes lifts it for authenticated API requests so a quiet model call is not reset. Bun's default of 10s would reset the socket before a tutor reply is written.
 // SEC: binds 127.0.0.1 only. The launch token makes localGuard reject any other Host, a missing API token, and a foreign mutation Origin.
-export function servePublic(o: { port: number; api: ApiRoutes; upstream: URL; token: string }): Server<UpstreamSocket> {
+export function servePublic(o: { port: number; api: ApiRoutes; upstream: URL; token: string; assets?: BundleAssets }): Server<UpstreamSocket> {
   if ("/*" in o.api) throw new Error("the document route belongs on the upstream");
   const bound = { port: 0 };
   const guardedApi = guardRoutes(o.api, o.token, () => bound.port);
@@ -169,7 +167,7 @@ export function servePublic(o: { port: number; api: ApiRoutes; upstream: URL; to
         return secureResponse(new Response(null, { status: 400 }));
       }
       const url = new URL(req.url);
-      const hashed = await readHashedAsset(url.pathname, req.method);
+      const hashed = await readHashedAsset(url.pathname, req.method, o.assets);
       if (hashed) return secureResponse(hashed);
       const asset = await readPyodideAsset(url.pathname, req.method);
       if (asset) return secureResponse(asset);

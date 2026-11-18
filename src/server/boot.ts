@@ -1,10 +1,10 @@
 import index from "../web/index.html";
 import { json, route } from "./http.ts";
-import { MAX_REQUEST_BYTES, servePublic, type ApiRoutes } from "./listener.ts";
+import { MAX_REQUEST_BYTES, servePublic, type ApiRoutes, type BundleAssets } from "./listener.ts";
 import { setRuntimeOrigin } from "./localGuard.ts";
 import { setExternalOpener } from "./external.ts";
 import { activateDatabase } from "./db.ts";
-import { join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { appDataDir } from "./paths.ts";
 import { bindStable, readSavedPort, savePort } from "./stablePort.ts";
 import { dataRoutes } from "./data/routes.ts";
@@ -34,6 +34,14 @@ const apiRoutes: ApiRoutes = {
   "/api/*": route({ csrf: false }, async () => json({ error: "not_found" }, 404)),
 };
 
+// O(f) in bundle files
+// INV: HTMLBundle.files exists only in a build made ahead of time (scripts/build.ts); a source run has none and every asset stays on the upstream. Paths are resolved against the cwd, as Bun resolves them for the upstream (desktop loadBoot chdirs into the bundle first)
+function bundleAssets(): BundleAssets | undefined {
+  const files = (index as unknown as Bun.HTMLBundle).files;
+  if (files === undefined) return undefined;
+  return new Map(files.map((f) => [`/${basename(f.path)}`, { file: resolve(f.path), headers: f.headers }]));
+}
+
 // O(1)
 // INV: one loopback listener per call
 // SEC: the mutation origin is the bound loopback origin; an omitted port lets the kernel choose one, unless stablePort asks for the port saved in the app-data dir
@@ -48,7 +56,8 @@ export async function startServer(opts: { token: string; port?: number; stablePo
   if (opts.warmProviders) warmProviderStatus();
   // SEC: API is served on the public loopback socket; the upstream handles documents and assets only, on its own random port
   const upstream = Bun.serve({ id: "btg-upstream", hostname: "127.0.0.1", port: 0, maxRequestBodySize: MAX_REQUEST_BYTES, idleTimeout: SERVER_IDLE_TIMEOUT_S, routes: { "/*": index } });
-  const listen = (port: number) => servePublic({ port, api: apiRoutes, upstream: upstream.url, token: opts.token });
+  const assets = bundleAssets();
+  const listen = (port: number) => servePublic({ port, api: apiRoutes, upstream: upstream.url, token: opts.token, ...(assets ? { assets } : {}) });
   let server: ReturnType<typeof servePublic>;
   if (opts.port === undefined && opts.stablePort) {
     const portFile = join(dataDir, "listen-port");
