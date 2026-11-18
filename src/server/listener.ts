@@ -16,6 +16,7 @@ const CHUNK_TYPES = ["text/javascript", "application/javascript", "text/css"];
 const HASHED_FONT = /^\/[A-Za-z0-9_]+(?:-[A-Za-z0-9]+)*-[a-z0-9]{8}\.(?:woff2|woff|ttf)$/;
 const FONT_TYPES = ["font/woff2", "font/woff", "font/ttf"];
 const IMMUTABLE = "public, max-age=31536000, immutable";
+const REVALIDATE = "no-cache";
 const SKIP_REQUEST_HEADERS = new Set(["connection", "keep-alive", "proxy-connection", "transfer-encoding", "upgrade", "te", "trailer", "accept-encoding"]);
 
 // O(n) in header count
@@ -38,6 +39,15 @@ function cacheHashedAsset(path: string, res: Response): Response {
   if (types === null || !types.some((t) => type.startsWith(t))) return res;
   const headers = new Headers(res.headers);
   headers.set("cache-control", IMMUTABLE);
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
+// O(n) in header count
+// INV: an HTML document is always revalidated (its ETag makes that a 304). Without a cache-control header WebKit caches it heuristically for 10% of its Last-Modified age, and the desktop app keeps one origin across versions (stable port), so a freshly installed version could render the previous version's page against its own API
+function revalidateDocument(res: Response): Response {
+  if (!(res.headers.get("content-type") ?? "").toLowerCase().startsWith("text/html")) return res;
+  const headers = new Headers(res.headers);
+  headers.set("cache-control", REVALIDATE);
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }
 
@@ -76,7 +86,7 @@ async function proxyDocument(req: Request, upstream: URL): Promise<Response> {
       init.duplex = "half";
     }
     const res = await fetch(new URL(url.pathname + url.search, upstream), init);
-    return secureResponse(cacheHashedAsset(url.pathname, res));
+    return secureResponse(revalidateDocument(cacheHashedAsset(url.pathname, res)));
   } catch {
     return secureResponse(json({ error: "internal" }, 500));
   }

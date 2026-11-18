@@ -105,3 +105,19 @@ test("dev mode proxies every asset even when a manifest is given", async () => {
     expect(hits()).toBe(1);
   });
 });
+
+test("an HTML document is always revalidated, so a webview never renders a previous version's cached page", async () => {
+  for (const mode of ["production", "development"]) {
+    await withPub(mode, async (base) => {
+      for (const path of ["/", "/practice", MISSING]) {
+        const res = await fetch(new URL(path, base));
+        expect(res.headers.get("content-type")).toStartWith("text/html");
+        expect(res.headers.get("cache-control")).toBe("no-cache");
+        expect(await res.text()).toBe("html-fallback");
+      }
+    });
+  }
+  await withPub("production", async (base) => {
+    expect((await fetch(new URL(CHUNK, base))).headers.get("cache-control")).toBe(IMMUTABLE);
+  });
+});

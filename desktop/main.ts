@@ -2,6 +2,7 @@ import "./linuxWebkit.ts";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import Electrobun, { BrowserWindow, Screen, Utils } from "electrobun/main";
+import { APP_VERSION } from "../src/shared/version.ts";
 
 type Boot = typeof import("../src/server/boot.ts");
 
@@ -63,9 +64,10 @@ const server = await startServer({
   openExternal: (url) => Utils.openExternal(url),
   shell: { channel, quit: () => void Utils.quit(), openPath: (path) => Utils.openPath(path), revealPath: (path) => void Utils.showItemInFolder(path) },
 });
+// INV: the first document URL names the app version, so a newly installed version never renders a page an older version left in the webview cache (same origin, because the port is stable); the router then replaces "/" with /teach, dropping the query
 const appWindow = new BrowserWindow({
   title: "BridgeToGrowth Learning",
-  url: server.url,
+  url: `${server.url}/?v=${encodeURIComponent(APP_VERSION)}`,
   preload: desktopPreload(token),
   renderer: "native",
   frame: initialFrame(Screen.getPrimaryDisplay().workArea),
