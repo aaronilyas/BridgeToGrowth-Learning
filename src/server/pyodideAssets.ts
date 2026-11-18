@@ -11,13 +11,17 @@ const MIME: Record<string, string> = {
   whl: "application/octet-stream",
 };
 
+let resolvedDir: string | undefined;
+
 // O(1)
+// INV: the directory is fixed for the process lifetime (packaged copy beside this module, .cache/pyodide, or node_modules/pyodide)
 function assetDir(): string {
+  if (resolvedDir !== undefined) return resolvedDir;
   const beside = join(import.meta.dir, "pyodide");
-  if (existsSync(join(beside, "pyodide.asm.wasm"))) return beside;
+  if (existsSync(join(beside, "pyodide.asm.wasm"))) return (resolvedDir = beside);
   const cache = join(process.cwd(), ".cache", "pyodide");
-  if (existsSync(join(cache, "pyodide.asm.wasm"))) return cache;
-  return join(process.cwd(), "node_modules", "pyodide");
+  if (existsSync(join(cache, "pyodide.asm.wasm"))) return (resolvedDir = cache);
+  return (resolvedDir = join(process.cwd(), "node_modules", "pyodide"));
 }
 
 // O(1)

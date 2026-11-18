@@ -26,8 +26,12 @@ export const MIGRATIONS: ReadonlyArray<readonly [name: string, source: string, r
 ];
 
 // O(1)
+// INV: WAL + synchronous=NORMAL is durable to the last checkpoint and does not corrupt; a commit can be lost on power loss or an OS crash. temp_store=MEMORY keeps scratch files off a slow disk.
+// INV: Bun's sqlite SQL adapter is one connection (reserve() is unsupported; options have no pool max), so these PRAGMAs apply to the same connection the sql proxy uses after activateDatabase
 export async function configureSqlite(db: SQL): Promise<void> {
   await db`PRAGMA journal_mode=WAL`;
+  await db`PRAGMA synchronous=NORMAL`;
+  await db`PRAGMA temp_store=MEMORY`;
   await db`PRAGMA foreign_keys=ON`;
   await db`PRAGMA busy_timeout=5000`;
 }
