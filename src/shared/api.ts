@@ -153,8 +153,12 @@ export type LessonDetail = z.infer<typeof LessonDetail>;
 export const MessageResponse = z.strictObject({ id: z.string(), role: z.enum(["user", "assistant"]), content: z.string(), citations: z.array(Citation), createdAt: z.iso.datetime(), topicIdx: z.int().min(0).nullable(), check: LessonCheck.nullable(), finishes: z.boolean() });
 export type MessageResponse = z.infer<typeof MessageResponse>;
 
-export const GenerateResponse = z.strictObject({ topicId: z.uuid(), grounded: z.boolean(), questions: z.array(QuestionPublic) });
+export const GenerateResponse = z.strictObject({ setId: z.uuid(), topicId: z.uuid(), grounded: z.boolean(), questions: z.array(QuestionPublic) });
 export type GenerateResponse = z.infer<typeof GenerateResponse>;
+
+// INV: one generated practice set; request is the topic text it was generated from, and answered counts its questions with at least one attempt
+export const PracticeSetSummary = z.strictObject({ id: z.uuid(), topicId: z.uuid(), topic: z.string(), request: z.string(), styleId: z.uuid().nullable(), createdAt: z.iso.datetime(), questions: z.int().min(0), answered: z.int().min(0) });
+export type PracticeSetSummary = z.infer<typeof PracticeSetSummary>;
 
 export const StyleSummary = z.strictObject({ id: z.uuid(), subject: z.string(), mime: z.string(), createdAt: z.iso.datetime() });
 export type StyleSummary = z.infer<typeof StyleSummary>;

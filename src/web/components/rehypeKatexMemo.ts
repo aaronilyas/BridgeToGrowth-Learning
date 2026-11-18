@@ -100,7 +100,7 @@ function replace(parent: Parents, scope: Element, nodes: readonly RootContent[])
 
 // O(1) on a hit; on a miss, one KaTeX render plus one HTML-to-hast parse
 // SEC: misses go through rehype-katex 7.0.1 with its default options, so trust stays off and the only inserted markup is KaTeX's
-// INV: the direct katex 0.19 dependency emits different class names than rehype-katex's nested KaTeX 0.16, so a miss is rendered by rehype-katex itself
+// INV: a miss is rendered by rehype-katex itself; package.json "overrides" pins its KaTeX to the app's own, so the markup matches the shipped katex.min.css (MdBody.test.ts checks every emitted class)
 function nodesFor(scope: Scope, file: VFile): RootContent[] {
   const key = keyOf(scope.value, scope.display);
   const hit = recall(key);

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState, type JSX } from "react";
 import { z } from "zod";
-import { GenerateResponse, PRACTICE_SET_SIZE, QuestionPublic, StatsResponse, StyleSummary } from "../../shared/api.ts";
+import { GenerateResponse, PRACTICE_SET_SIZE, PracticeSetSummary, QuestionPublic, StatsResponse, StyleSummary } from "../../shared/api.ts";
 import { api } from "../api.ts";
 import { Button } from "../components/Button.tsx";
 import { ErrorBanner } from "../components/ErrorBanner.tsx";
 import { Panel } from "../components/Panel.tsx";
+import { PracticeSets } from "../components/PracticeSets.tsx";
 import { QuestionCard } from "../components/QuestionCard.tsx";
 import { Spinner } from "../components/Spinner.tsx";
 import { UploadDrop } from "../components/UploadDrop.tsx";
@@ -87,8 +88,10 @@ function GeneratePanel({ onGenerated }: { onGenerated: () => void }): JSX.Elemen
 // O(n) in queue
 // INV: the card stays on screen with its result until "Next"; only then does it leave the local queue
 // INV: the daily goal comes from personal stats
+// INV: deleting or regenerating a set reloads the queue, so a removed question never stays on screen
 export function PracticePage(): JSX.Element {
   const [queue, setQueue] = useState<QuestionPublic[] | null>(null);
+  const [sets, setSets] = useState<PracticeSetSummary[] | null>(null);
   const [answered, setAnswered] = useState(false);
   const [goal, setGoal] = useState<Goal | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -96,8 +99,9 @@ export function PracticePage(): JSX.Element {
   const load = useCallback(async (): Promise<void> => {
     setError(null);
     try {
-      const [q, s] = await Promise.all([api("/api/practice/queue?limit=20", z.array(QuestionPublic)), api("/api/stats?days=7", StatsResponse)]);
+      const [q, s, list] = await Promise.all([api("/api/practice/queue?limit=20", z.array(QuestionPublic)), api("/api/stats?days=7", StatsResponse), api("/api/practice/sets", z.array(PracticeSetSummary))]);
       setQueue(q);
+      setSets(list);
       setAnswered(false);
       setGoal(s.totals.goalToday);
     } catch (e) {
@@ -166,7 +170,10 @@ export function PracticePage(): JSX.Element {
           </>
         )}
       </div>
-      <GeneratePanel onGenerated={() => void load()} />
+      <div className="flex flex-col gap-3">
+        <GeneratePanel onGenerated={() => void load()} />
+        <PracticeSets sets={sets} onChanged={() => void load()} />
+      </div>
     </div>
   );
 }

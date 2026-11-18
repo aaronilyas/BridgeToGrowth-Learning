@@ -10,7 +10,9 @@ import m0004 from "../db/migrations/0004_drop_legacy.sql" with { type: "text" };
 import m0005 from "../db/migrations/0005_chat_steps.sql" with { type: "text" };
 import m0007 from "../db/migrations/0007_lesson_turns.sql" with { type: "text" };
 import m0008 from "../db/migrations/0008_restore_v011_tables.sql" with { type: "text" };
+import m0009 from "../db/migrations/0009_practice_sets.sql" with { type: "text" };
 import syncLegacyLessons from "../db/sync_legacy_lessons.sql" with { type: "text" };
+import syncPracticeSets from "../db/sync_practice_sets.sql" with { type: "text" };
 
 // INV: embedded so a packaged app needs no db/ directory; migrations.test.ts checks this list equals db/migrations/*.sql in order
 // INV: the third element names a ledger row the migration requires; without that row it is skipped and not recorded
@@ -23,6 +25,7 @@ export const MIGRATIONS: ReadonlyArray<readonly [name: string, source: string, r
   ["0005_chat_steps.sql", m0005],
   ["0007_lesson_turns.sql", m0007],
   ["0008_restore_v011_tables.sql", m0008, "0006_lesson_topics.sql"],
+  ["0009_practice_sets.sql", m0009],
 ];
 
 // O(1)
@@ -38,7 +41,7 @@ export async function configureSqlite(db: SQL): Promise<void> {
 
 // O(F + total migration size)
 // INV: an applied migration whose SHA-256 changes aborts without applying later files
-// INV: the legacy import runs on every call, so lessons changed under v0.1.1 are picked up on each upgrade
+// INV: the legacy import and the practice-set backfill run on every call, so rows an older build wrote are picked up on each upgrade
 export async function runMigrations(db: SQL): Promise<void> {
   await configureSqlite(db);
   await db`CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, sha256 TEXT NOT NULL, applied_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000))`;
@@ -59,6 +62,7 @@ export async function runMigrations(db: SQL): Promise<void> {
   }
   await db.begin(async (tx) => {
     await tx.unsafe(syncLegacyLessons);
+    await tx.unsafe(syncPracticeSets);
   });
 }
 

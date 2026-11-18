@@ -11,6 +11,8 @@ export async function deleteAppRows(tx: SQL): Promise<void> {
   await tx`DELETE FROM conversations`;
   await tx`DELETE FROM attempts`;
   await tx`DELETE FROM cards`;
+  await tx`DELETE FROM practice_set_questions`;
+  await tx`DELETE FROM practice_sets`;
   await tx`DELETE FROM questions`;
   await tx`DELETE FROM lessons`;
   await tx`DELETE FROM topic_edges`;
