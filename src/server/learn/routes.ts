@@ -1,4 +1,4 @@
-import { AttemptRequest, QueueQuery, type AttemptResponse } from "../../shared/api.ts";
+import { AttemptRequest, QueueQuery, type AttemptResponse, type QueueItem } from "../../shared/api.ts";
 import type { CodeTestResult } from "../../shared/code.ts";
 import { codeFeedback, sameTestNames, scoreTests } from "../../shared/codeGrade.ts";
 import { Settings, SettingsPatch, mergeSettings } from "../../shared/settings.ts";
@@ -8,7 +8,7 @@ import { chatJson } from "../llm/gateway.ts";
 import { localProfile } from "../profile.ts";
 import { localDayOf } from "../sqlmap.ts";
 import { GradeOutput, CORRECT_AT, StoredAnswer, StoredCitations, buildGradePrompt, loadSettings, newCardRoom, queueLimit, toAttemptAnswer, toQuestionPublic } from "./core.ts";
-import { countNewCardsAnswered, countReviewsToday, findQuestion, listDueReviews, listNewQuestions, markNewCardsServed, recordAttempt, updateSettings } from "./sql.ts";
+import { countNewCardsAnswered, countReviewsToday, findQuestion, findSetIds, listDueReviews, listNewQuestions, markNewCardsServed, recordAttempt, updateSettings } from "./sql.ts";
 
 const getSettings = route({}, async () => {
   const connected = await connectedProviderIds();
@@ -28,6 +28,7 @@ const putSettings = route({ body: SettingsPatch }, async (c) => {
 
 // INV: reviews come first and fill the limit before any new card, so the new-card cap can never hold a review back
 // INV: serving records which questions Practice introduced; the attempt route cannot tell Practice from a lesson on its own
+// INV: each item carries its practice set, so the page can offer to delete or regenerate the set it came from
 const queue = route({}, async (c) => {
   const user = await localProfile();
   const q = QueueQuery.safeParse(Object.fromEntries(new URL(c.req.url).searchParams));
@@ -42,7 +43,10 @@ const queue = route({}, async (c) => {
   const room = Math.min(limit - reviews.length, newCardRoom(settings, await countNewCardsAnswered(user.id, day)));
   const fresh = room > 0 ? await listNewQuestions(user.id, room, now) : [];
   await markNewCardsServed(user.id, day, fresh.map((q) => q.id));
-  return json([...reviews, ...fresh].map(toQuestionPublic));
+  const rows = [...reviews, ...fresh];
+  const sets = await findSetIds(user.id, rows.map((r) => r.id));
+  const body: QueueItem[] = rows.map((r) => ({ ...toQuestionPublic(r), setId: sets.get(r.id) ?? null }));
+  return json(body);
 });
 
 const attempt = route({ body: AttemptRequest, rate: { key: "attempt", cap: 60, perMin: 60 } }, async (c) => {

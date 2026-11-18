@@ -66,6 +66,16 @@ export async function markNewCardsServed(uid: string, day: string, questionIds: 
 }
 
 // O(k) in one statement
+// INV: maps each question in a practice set to that set; lesson checks and other users' questions are absent
+export async function findSetIds(uid: string, questionIds: string[]): Promise<Map<string, string>> {
+  if (questionIds.length === 0) return new Map();
+  const rows: { question_id: string; set_id: string }[] = await sql`
+    SELECT m.question_id, m.set_id FROM practice_set_questions m JOIN practice_sets s ON s.id = m.set_id
+    WHERE s.user_id = ${uid} AND m.question_id IN (SELECT j.value FROM json_each(${jsonText(questionIds)}) AS j)`;
+  return new Map(rows.map((r) => [r.question_id, r.set_id]));
+}
+
+// O(k) in one statement
 // INV: new cards are due immediately; idempotent per question
 // INV: WHERE true stops SQLite from parsing ON CONFLICT as a join
 export async function insertCards(tx: SQL, uid: string, questionIds: string[]): Promise<void> {
