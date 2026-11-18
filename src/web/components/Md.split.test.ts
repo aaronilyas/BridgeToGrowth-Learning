@@ -37,6 +37,14 @@ const EXTRA = [
   "Prose\n\n$$\n\\int_0^1 x^2 \\, dx\n$$\n\nMore",
   "Prose\n\n\\[\nx^2\n\\]\n\nMore",
   "Bare dy/dx = e^{x} in a sentence.\n\nThen another sentence with $x^2$.",
+  "1. **Step one**\n\n   Explanation indented under the item.\n\n2. **Step two**\n\n   More detail.",
+  "- item\n\n  continued paragraph in the item\n\nAfter.",
+  "1. item\n\n   ```python\n   x = 1\n   ```\n\n2. next",
+  "1. item\n\n   $$\n   x^2\n   $$\n\nAfter.",
+  "Steps:\n1. a\n2. b\n\n3. c",
+  "Intro:\n- a\n- b\n\n- c\n\nAfter.",
+  "- a\n\n    code-ish under the item\n\n- b",
+  "1) paren list\n\n2) second",
   CORPUS,
   tutorReply(1200),
 ];
@@ -60,5 +68,18 @@ test("block-split MdBody HTML equals whole-text MdBody HTML", () => {
   for (let n = 1; n <= stream.length; n += 17) {
     const prefix = stream.slice(0, n);
     expect(splitHtml(prefix), `prefix ${n}`).toBe(wholeHtml(prefix));
+  }
+});
+
+test("every prefix of list-heavy replies splits to the same HTML as the whole prefix", () => {
+  const replies = [
+    "Steps:\n1. **Set up** the integral $\\int_0^1 x\\,dx$.\n\n   Write the bounds first.\n\n2. **Evaluate**\n\n   - nested point\n   - another\n\n3. Done.\n\nNow a closing paragraph.",
+    "- a\n\n  ```python\n  print(1)\n  ```\n\n- b\n\n> quote\n\n> more\n\nEnd.",
+  ];
+  for (const reply of replies) {
+    for (let n = 1; n <= reply.length; n++) {
+      const prefix = reply.slice(0, n);
+      expect(splitHtml(prefix), JSON.stringify(prefix)).toBe(wholeHtml(prefix));
+    }
   }
 });

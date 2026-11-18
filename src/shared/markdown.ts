@@ -89,12 +89,15 @@ function classify(s: string): { kind: Kind; list: string | null } {
   return { kind: "other", list: null };
 }
 
+type Group = { last: Kind | null; listMarker: string | null };
+
 // O(1)
-// INV: true only when the next construct can continue the previous one across a blank line (loose lists, blockquotes, indented code)
-function continues(prev: Kind, prevList: string | null, next: Kind, nextList: string | null): boolean {
-  if (prev === "list") return (next === "list" && prevList === nextList) || next === "indent" || next === "quote";
-  if (prev === "quote") return next === "quote";
-  if (prev === "indent") return next === "indent";
+// INV: true only when the next line can continue the group across a blank line. Merging is always safe, so this errs toward continuing:
+// a group holding a list continues on an item with the same marker or on any line with leading whitespace (item content, a nested list, an indented fence or display), since such a line may belong to the item; a blockquote continues on a quote; indented code on indented code
+function continues(group: Group, next: { kind: Kind; list: string | null }, nextLine: string): boolean {
+  if (group.listMarker !== null && ((next.kind === "list" && next.list === group.listMarker) || /^[ \t]/.test(nextLine))) return true;
+  if (group.last === "quote") return next.kind === "quote";
+  if (group.last === "indent") return next.kind === "indent";
   return false;
 }
 
@@ -108,7 +111,7 @@ function sliceLines(text: string, lines: readonly Line[], from: number, to: numb
 // O(n) in line count
 // INV: splitMarkdownBlocks(text).join("") === text
 // INV: a table, fence or $$ / \[ display is one atomic range and is never split, including while it is still open
-// INV: a split is only at a blank line whose next non-blank line cannot continue the previous construct; link/footnote definitions keep the whole text as one block
+// INV: a split is only at a blank line whose next non-blank line cannot continue the group before it (see continues); link/footnote definitions keep the whole text as one block
 export function splitMarkdownBlocks(text: string): string[] {
   if (text === "") return [""];
   const lines = splitLines(text);
@@ -133,31 +136,27 @@ export function splitMarkdownBlocks(text: string): string[] {
     const first = units[i];
     if (!first) break;
     let end = i;
-    let { kind, list } = kindOf(first);
-    for (let j = i + 1; j < units.length; ) {
+    // INV: last is the kind of the group's latest non-blank line; listMarker is the marker of its top-level list, kept through nested and indented content (a list line with leading whitespace only sets it when the group has none)
+    const group: Group = { last: null, listMarker: null };
+    for (let j = i; j < units.length; ) {
       const u = units[j];
       if (!u) break;
       const k = kindOf(u);
       if (k.kind === "blank") {
         let next = j;
         while (next < units.length && kindOf(units[next] ?? first).kind === "blank") next++;
-        if (next >= units.length) {
-          end = next - 1;
-          break;
-        }
-        const peek = kindOf(units[next] ?? first);
         end = next - 1;
-        if (kind === "blank" || continues(kind, list, peek.kind, peek.list)) {
+        if (next >= units.length) break;
+        const nextUnit = units[next] ?? first;
+        if (group.last === null || continues(group, kindOf(nextUnit), texts[nextUnit.start] ?? "")) {
           j = next;
           continue;
         }
         break;
       }
       end = j;
-      if (kind === "blank") {
-        kind = k.kind;
-        list = k.list;
-      }
+      group.last = k.kind;
+      if (k.kind === "list" && (group.listMarker === null || !/^[ \t]/.test(texts[u.start] ?? ""))) group.listMarker = k.list;
       j++;
     }
     out.push(sliceLines(text, lines, first.start, units[end]?.end ?? first.end));
