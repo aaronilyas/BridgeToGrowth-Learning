@@ -189,6 +189,20 @@ input[type="range"] {
   .art-drift {
     animation: art-drift 9s ease-in-out infinite alternate;
   }
+
+  /* INV: paused freezes the running timeline (hide/blur) so refocusing resumes the same pose.
+     off uses animation:none so the groups sit at identity — the rest pose. Pausing at t=0
+     would freeze sway/drift on their from-keyframes (−3° / −8°), which is an odd angle. */
+  html[data-art="paused"] .art-sway,
+  html[data-art="paused"] .art-spin,
+  html[data-art="paused"] .art-drift {
+    animation-play-state: paused;
+  }
+  html[data-art="off"] .art-sway,
+  html[data-art="off"] .art-spin,
+  html[data-art="off"] .art-drift {
+    animation: none;
+  }
 }
 
 @keyframes art-sway {
@@ -235,6 +249,21 @@ input[type="range"] {
 .md .md-table table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .md .md-table :where(th, td) { border: 1px solid var(--border); padding: 0.3em 0.75em; text-align: left; vertical-align: top; }
 .md .md-table :where(th) { background: var(--panel-2); font-weight: 600; }
+
+/* Off-screen settled transcript rows skip layout and paint until they are near the viewport.
+   INV: .msg-deferred is applied only to settled rows with index < rows.length - DEFER_TAIL (Messages.tsx).
+   The streaming row and the last DEFER_TAIL rows stay fully laid out. Stick-to-bottom uses a
+   ResizeObserver on the transcript inner box (Lesson.tsx); deferred rows hold a placeholder
+   height so they do not resize while off-screen, and growth at the live edge still resizes
+   that box so the observer can keep the view pinned. Topic jumps call scrollIntoView on
+   #topic-N: a first jump to a deferred older row may land a few pixels off until the row is
+   laid out; contain-intrinsic-size: auto then remembers the real height. Engines that do not
+   implement these properties ignore them. The 8rem fallback applies if `auto` is unknown. */
+.msg-deferred {
+  content-visibility: auto;
+  contain-intrinsic-size: 8rem;
+  contain-intrinsic-size: auto 8rem;
+}
 
 /* Small uppercase monospace label, as in section captions ("PREDICTION", "SESSIONS"). */
 .label {

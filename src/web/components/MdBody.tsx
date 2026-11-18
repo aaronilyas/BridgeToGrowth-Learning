@@ -1,4 +1,4 @@
-import type { JSX } from "react";
+import { memo, type JSX } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -31,10 +31,10 @@ const rehypePlugins: NonNullable<Parameters<typeof ReactMarkdown>[0]["rehypePlug
 
 // O(n) in text length
 // INV: the same text renders the same way for every subject: tables are repaired before math is wrapped and the Markdown is parsed
-export function MdBody({ text }: { text: string }): JSX.Element {
+export const MdBody = memo(function MdBody({ text }: { text: string }): JSX.Element {
   return (
     <ReactMarkdown skipHtml remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>
       {normalizeMarkdown(wrapBareMath(text))}
     </ReactMarkdown>
   );
-}
+});

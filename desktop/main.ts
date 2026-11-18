@@ -50,11 +50,16 @@ function initialFrame(work: { width: number; height: number }): { width: number;
   return { width: fit(0.8, work.width, 1024), height: fit(0.88, work.height, 700) };
 }
 
+// INV: the shell always runs the prebuilt production bundle, so its server runs in production mode: immutable caching of hashed assets, direct serving of the bundle's files (listener.ts) and Bun.serve's production defaults. env.ts reads NODE_ENV at runtime, which the bundle's define does not reach, so without this the app ran as development
+// INV: set unconditionally, because `electrobun dev` launches the shell with NODE_ENV=development; a dev run then serves what a packaged run serves. Immutable caching stays safe across dev rebuilds because every rebuild changes the hashes
+process.env.NODE_ENV = "production";
 const channel = await readReleaseChannel();
 const { startServer } = await loadBoot();
 const token = randomBytes(32).toString("hex");
 const server = await startServer({
   token,
+  stablePort: true,
+  warmProviders: true,
   openExternal: (url) => Utils.openExternal(url),
   shell: { channel, quit: () => void Utils.quit(), openPath: (path) => Utils.openPath(path), revealPath: (path) => void Utils.showItemInFolder(path) },
 });
@@ -69,6 +74,10 @@ const state = { stopping: false };
 console.log(`BTG_URL=${server.url}`);
 console.log("window created");
 appWindow.on("close", () => void stopDesktopServer(server.stop, state));
+// INV: WebKitGTK does not fire the page's window blur/focus when the toplevel loses or gains focus, so the shell forwards its native window focus to the page (src/web/effects.ts), which pauses the season art while unfocused
+// SEC: the scripts are fixed literals that only dispatch a named event; no data from the system or the page is interpolated
+appWindow.on("blur", () => appWindow.webview?.executeJavascript('globalThis.dispatchEvent(new Event("btg:window-blur"))'));
+appWindow.on("focus", () => appWindow.webview?.executeJavascript('globalThis.dispatchEvent(new Event("btg:window-focus"))'));
 Electrobun.events.on("before-quit", () => void stopDesktopServer(server.stop, state));
 const shutdown = (): void => void stopDesktopServer(server.stop, state).finally(() => process.exit(0));
 process.on("SIGINT", shutdown);

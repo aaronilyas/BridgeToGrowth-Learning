@@ -41,8 +41,31 @@ function cacheHashedAsset(path: string, res: Response): Response {
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }
 
+export type BundleAsset = { file: string; headers: Readonly<Record<string, string>> };
+// INV: keyed by URL pathname ("/chunk-x.js"); holds only the files of the built HTML bundle (boot.ts reads them from HTMLBundle.files), so server code chunks that share the chunk-* naming in dist/ are never served
+export type BundleAssets = ReadonlyMap<string, BundleAsset>;
+
+// O(1) plus a disk existence check
+// SEC: only an exact pathname listed in the HTML bundle's own files, which also matches HASHED_CHUNK or HASHED_FONT, is read from disk; the file path comes from the bundle manifest, never from the request. Anything else returns null and falls through to the upstream, as before
+// INV: the response carries the bundle's own headers (content-type with charset, ETag) plus the immutable cache header, the same as cacheHashedAsset gives the proxied response; a missing file falls through rather than failing
+async function readHashedAsset(pathname: string, method: string, assets: BundleAssets | undefined): Promise<Response | null> {
+  if (assets === undefined || env.NODE_ENV !== "production") return null;
+  if (method !== "GET" && method !== "HEAD") return null;
+  const types = HASHED_CHUNK.test(pathname) ? CHUNK_TYPES : HASHED_FONT.test(pathname) ? FONT_TYPES : null;
+  const entry = types === null ? undefined : assets.get(pathname);
+  if (types === null || entry === undefined) return null;
+  const type = (entry.headers["content-type"] ?? "").toLowerCase();
+  if (!types.some((t) => type.startsWith(t))) return null;
+  const file = Bun.file(entry.file);
+  if (!(await file.exists())) return null;
+  const headers = new Headers(entry.headers);
+  headers.set("cache-control", IMMUTABLE);
+  if (method === "HEAD") return new Response(null, { status: 200, headers });
+  return new Response(file, { status: 200, headers });
+}
+
 // O(1) plus the upstream round trip
-// INV: only paths outside `api` reach here (HTML bundle, hashed assets, dev HMR); every response leaves through secureResponse
+// INV: only paths outside `api` that were not served as a production hashed asset or a pyodide file reach here (HTML bundle, missing hashes, dev HMR); every response leaves through secureResponse
 async function proxyDocument(req: Request, upstream: URL): Promise<Response> {
   try {
     const url = new URL(req.url);
@@ -89,11 +112,11 @@ function guardRoutes(api: ApiRoutes, token: string, portOf: () => number): ApiRo
 
 // O(1) per request plus the handler
 // INV: `api` handlers are built with route(), which wraps every response (including errors) in secureResponse, so they are mounted directly with no loopback hop
-// INV: `api` must not contain "/*"; the HTML bundle stays on the upstream so its responses pass through secureResponse
+// INV: `api` must not contain "/*"; the HTML bundle and dev HMR stay on the upstream so their responses pass through secureResponse. Production hashed chunks/fonts may be served from disk through secureResponse.
 // INV: maxRequestBodySize caps every body at the socket; route maxBody still caps each route below that
 // INV: idleTimeout covers documents and rejected requests; guardRoutes lifts it for authenticated API requests so a quiet model call is not reset. Bun's default of 10s would reset the socket before a tutor reply is written.
 // SEC: binds 127.0.0.1 only. The launch token makes localGuard reject any other Host, a missing API token, and a foreign mutation Origin.
-export function servePublic(o: { port: number; api: ApiRoutes; upstream: URL; token: string }): Server<UpstreamSocket> {
+export function servePublic(o: { port: number; api: ApiRoutes; upstream: URL; token: string; assets?: BundleAssets }): Server<UpstreamSocket> {
   if ("/*" in o.api) throw new Error("the document route belongs on the upstream");
   const bound = { port: 0 };
   const guardedApi = guardRoutes(o.api, o.token, () => bound.port);
@@ -144,6 +167,8 @@ export function servePublic(o: { port: number; api: ApiRoutes; upstream: URL; to
         return secureResponse(new Response(null, { status: 400 }));
       }
       const url = new URL(req.url);
+      const hashed = await readHashedAsset(url.pathname, req.method, o.assets);
+      if (hashed) return secureResponse(hashed);
       const asset = await readPyodideAsset(url.pathname, req.method);
       if (asset) return secureResponse(asset);
       return proxyDocument(req, o.upstream);
