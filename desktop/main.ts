@@ -55,6 +55,7 @@ const { startServer } = await loadBoot();
 const token = randomBytes(32).toString("hex");
 const server = await startServer({
   token,
+  stablePort: true,
   openExternal: (url) => Utils.openExternal(url),
   shell: { channel, quit: () => void Utils.quit(), openPath: (path) => Utils.openPath(path), revealPath: (path) => void Utils.showItemInFolder(path) },
 });
