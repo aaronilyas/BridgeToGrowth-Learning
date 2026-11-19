@@ -1,4 +1,4 @@
-import { mkdir, readdir, rename, rm } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 
 // O(files in both folders)
@@ -23,4 +23,15 @@ export async function moveSourceMaps(outDir: string, mapsDir: string): Promise<s
     moved.push(to);
   }
   return moved;
+}
+
+// SEC/INV: a module URL built from a TypeScript source path, e.g. new URL("./worker.ts", import.meta.url). Bun copies it into the bundle verbatim, and the production server answers the path with the HTML document, so a worker or import built from it fails to load.
+const SOURCE_MODULE_URL = /new URL\(\s*(["'`])[^"'`]+\.(?:ts|tsx|mts)\1\s*,\s*import\.meta\.url\s*\)/;
+
+// O(total JS size)
+// INV: lists the emitted .js files that still construct a URL to a TypeScript source; a production build must list none
+export async function findSourceModuleUrls(paths: string[]): Promise<string[]> {
+  const js = paths.filter((p) => p.endsWith(".js"));
+  const texts = await Promise.all(js.map((p) => readFile(p, "utf8")));
+  return js.filter((_, i) => SOURCE_MODULE_URL.test(texts[i] ?? ""));
 }
