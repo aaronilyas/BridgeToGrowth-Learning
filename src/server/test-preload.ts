@@ -1,6 +1,8 @@
+import { beforeEach } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resetRateBuckets } from "./rate.ts";
 import { TEST_ENV } from "./testkit.ts";
 
 // O(1)
@@ -11,3 +13,6 @@ export function prepareTestProcess(): void {
 }
 
 prepareTestProcess();
+
+// INV: rate buckets are process-wide and every test file shares this process, so each test starts with full buckets
+beforeEach(() => resetRateBuckets());
