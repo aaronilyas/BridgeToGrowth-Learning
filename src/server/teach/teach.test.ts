@@ -241,6 +241,15 @@ test("the tutor's final line is parsed out of the prose and never streams", asyn
   expect(visibleLength("a matrix [[1,2]]", TURN_MARK, 0)).toBe(16);
 });
 
+test("a second visual in one tutor turn is dropped when the turn completes", async () => {
+  const { parseTutorTurn } = await import("./core.ts");
+  const raw = "The slope grows.\n\n```plot\nplt.plot([0, 1], [0, 2])\n```\n\nAs a flow:\n\n```diagram\nflowchart TD\n  A --> B\n```\n\nWhat sets the slope?\n[[lesson topic=1 action=continue]]";
+  const turn = parseTutorTurn(raw, 2);
+  expect(turn.prose).toBe("The slope grows.\n\n```plot\nplt.plot([0, 1], [0, 2])\n```\n\nAs a flow:\n\nWhat sets the slope?");
+  expect(turn.topicIdx).toBe(0);
+  expect(parseTutorTurn("See.\n\n```scene\n{}\n[[lesson topic=1 action=check]]", 2)).toEqual({ prose: "See.\n\n```scene\n{}\n```", topicIdx: 0, action: "check" });
+});
+
 test("a window that starts on a tutor message gets an opening turn for the provider", async () => {
   const { buildChatContext, OPENING_TURN } = await import("./core.ts");
   expect(buildChatContext([{ role: "user", content: "q" }, { role: "assistant", content: "teach" }])).toEqual([{ role: "user", content: OPENING_TURN }, { role: "assistant", content: "teach" }, { role: "user", content: "q" }]);

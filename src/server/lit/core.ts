@@ -1,4 +1,5 @@
 import type { Citation } from "../../shared/api.ts";
+import { mapOutsideFences } from "../../shared/visual.ts";
 
 export type Paper = { id: string; doi: string | null; title: string; year: number | null; venue: string | null; abstract: string };
 
@@ -34,14 +35,17 @@ export function buildSourcesBlock(papers: Paper[]): string {
 
 // O(n)
 // INV: only [n] with n in 1..k survive; every other bracketed integer is removed
+// INV: fenced code is never changed, so an index such as ax[0] in plot code survives
 export function filterCitations(text: string, k: number): { text: string; used: number[] } {
   const used = new Set<number>();
-  const out = text.replace(/\[(\d{1,9})\]/g, (_m, d: string) => {
-    const n = Number(d);
-    if (n < 1 || n > k) return "";
-    used.add(n);
-    return `[${n}]`;
-  });
+  const cite = (prose: string): string =>
+    prose.replace(/\[(\d{1,9})\]/g, (_m, d: string) => {
+      const n = Number(d);
+      if (n < 1 || n > k) return "";
+      used.add(n);
+      return `[${n}]`;
+    });
+  const out = mapOutsideFences(text, cite);
   return { text: out, used: [...used].sort((a, b) => a - b) };
 }
 

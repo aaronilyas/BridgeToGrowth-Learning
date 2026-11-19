@@ -266,7 +266,7 @@ function Result({ r, sent, choices }: { r: AttemptResponse; sent: SentAttempt; c
           <Md text={r.answer.model} />
         </div>
       )}
-      {r.explanation !== "" && <Md text={r.explanation} className="text-muted" />}
+      {r.explanation !== "" && <Md text={r.explanation} visuals className="text-muted" />}
       <Sources citations={r.citations} />
       {next && <p className="font-mono text-xs text-muted">{next}</p>}
     </div>

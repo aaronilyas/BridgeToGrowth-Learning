@@ -33,7 +33,7 @@ export const MessageRow = memo(function MessageRow({ row, anchor, answered, onRe
   return (
     <li id={anchor} className={`flex scroll-mt-6 flex-col gap-4${deferred}`}>
       <span className="sr-only">Tutor: </span>
-      {row.pending && row.content === "" ? <span className="animate-pulse font-mono text-xs text-muted motion-reduce:animate-none">Thinking…</span> : prose !== "" && <Md text={prose} streaming={row.pending} className="reading [&_p:first-child]:mt-0" />}
+      {row.pending && row.content === "" ? <span className="animate-pulse font-mono text-xs text-muted motion-reduce:animate-none">Thinking…</span> : prose !== "" && <Md text={prose} streaming={row.pending} visuals className="reading [&_p:first-child]:mt-0" />}
       {row.preparingCheck && <span className="animate-pulse font-mono text-xs text-muted motion-reduce:animate-none">Writing a question…</span>}
       {question && <QuestionCard key={question.id} question={question} label="Check" answered={answered} onResult={(r, sent) => onResult(question.id, r, sent)} />}
       {followUp && <QuestionCard question={{ id: row.id, kind: "free", category: null, stem: followUp.question, choices: null, code: null, codeTests: null }} caption="Follow-up" label="Tutor's follow-up question" closed={!open} onReply={onReply} />}

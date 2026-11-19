@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { LessonPlan, QUESTION_CATEGORIES, type Citation, type CheckAttempt, type LessonCheck, type LessonStatus, type QuestionCategory } from "../../shared/api.ts";
-import { MARKDOWN_RULE } from "../../shared/markdown.ts";
+import { MARKDOWN_RULE, VISUAL_RULE } from "../../shared/markdown.ts";
+import { settleVisuals } from "../../shared/visual.ts";
 import { MATH_DELIM_RULE } from "../../shared/math.ts";
 import { SETTINGS_LIMITS, type Settings } from "../../shared/settings.ts";
 import { HttpError } from "../http.ts";
@@ -205,12 +206,13 @@ export function buildCheckPrompt(settings: Settings, plan: StoredPlan, topicIdx:
 
 // O(n) in the reply
 // INV: everything from the first TURN_MARK on is removed from the prose; a missing or malformed line leaves the turn on its current topic with no action
+// INV: the prose holds at most one visual, and it is closed (settleVisuals)
 export function parseTutorTurn(raw: string, topics: number): TutorTurn {
   const at = raw.indexOf(TURN_MARK);
-  if (at === -1) return { prose: raw.trim(), topicIdx: null, action: "continue" };
+  if (at === -1) return { prose: settleVisuals(raw.trim()), topicIdx: null, action: "continue" };
   const m = TURN_LINE.exec(raw.slice(at));
   const n = m ? Number(m[1]) : 0;
-  return { prose: raw.slice(0, at).trim(), topicIdx: n >= 1 && n <= topics ? n - 1 : null, action: (m?.[2] as TurnAction | undefined) ?? "continue" };
+  return { prose: settleVisuals(raw.slice(0, at).trim()), topicIdx: n >= 1 && n <= topics ? n - 1 : null, action: (m?.[2] as TurnAction | undefined) ?? "continue" };
 }
 
 // O(n) in rows
@@ -304,7 +306,7 @@ export type TutorContext = { plan: StoredPlan; topicIdx: number; opening: boolea
 // INV: notes cover the current topic and the next one, because the tutor may go on within this reply
 export function buildTutorSystem(settings: Settings, ctx: TutorContext): string {
   const rules = fill(TUTOR_RULES, { level: settings.level, levelRule: LEVEL_RULES[settings.level], maxWords: String(settings.bite.maxWordsPerTurn) });
-  const parts = [rules, MARKDOWN_RULE, GROUNDING_RULES, describePlan(ctx.plan, ctx.topicIdx)];
+  const parts = [rules, MARKDOWN_RULE, VISUAL_RULE, GROUNDING_RULES, describePlan(ctx.plan, ctx.topicIdx)];
   if (ctx.opening) parts.push(OPENING_RULE);
   const notes = notesBlock(ctx.plan, [ctx.topicIdx, ctx.topicIdx + 1]);
   if (notes !== null) parts.push(notes);

@@ -1,5 +1,6 @@
 // SEC: runs inside the Pyodide worker. The import policy is a usability contract the learner can bypass, because the code runs on their machine. The worker still blocks network APIs and is terminated on time or memory.
 // INV: run_payload reads one JSON string and returns one result object. Hidden tests run in a shallow copy of the learner namespace. guardDefs false skips the dunder-definition ban so a reference solution can be checked.
+// INV: figure mode (plot visuals) imports numpy as np and matplotlib.pyplot as plt for the code, accepts only imports of the listed modules (or their submodules), bans the figure's I/O calls, and returns the current figure as an SVG string, or an error when there is none.
 export const HARNESS_PY: string = String.raw`
 import ast, builtins, io, json, sys
 
@@ -13,14 +14,25 @@ BANNED_ATTRS = frozenset({
     "tb_next", "gi_frame", "gi_code", "cr_frame", "cr_code", "ag_frame", "ag_code", "co_code", "js", "pyodide", "micropip", "ffi",
 })
 CAP = 16000
+SVG_CAP = 2000000
+FIGURE_BANNED = frozenset({"show", "savefig", "imsave", "imread", "switch_backend", "use", "pause", "ginput", "waitforbuttonpress", "get_current_fig_manager", "rc_file", "rcdefaults"})
 
 class PolicyError(Exception):
     pass
 
 def run_payload(raw):
     _p = json.loads(raw)
+    figure = bool(_p.get("figure", False))
+    modules = tuple(_p.get("modules", ()))
     allowed = frozenset(_p["libs"]) - DENY_ROOTS
-    available = ", ".join(sorted(allowed)) or "none"
+    available = ", ".join(sorted(modules or allowed)) or "none"
+    if figure:
+        import numpy as _np
+        import matplotlib.pyplot as _plt
+        _plt.close("all")
+
+    def _listed(name):
+        return not modules or any(name == m or name.startswith(m + ".") for m in modules)
 
     def _deny(line, what):
         raise PolicyError("line %d: %s is not allowed here. Available libraries: %s. Installing packages is disabled." % (line, what, available))
@@ -32,20 +44,20 @@ def run_payload(raw):
             if isinstance(n, ast.Import):
                 for a in n.names:
                     root = a.name.split(".")[0]
-                    if root in DENY_ROOTS or root not in allowed or any(p.startswith("_") or p in BANNED_ATTRS for p in a.name.split(".")[1:]):
+                    if root in DENY_ROOTS or root not in allowed or not _listed(a.name) or any(p.startswith("_") or p in BANNED_ATTRS for p in a.name.split(".")[1:]):
                         _deny(line, "importing '%s'" % a.name)
             elif isinstance(n, ast.ImportFrom):
                 mod = n.module or ""
-                if n.level or mod.split(".")[0] in DENY_ROOTS or mod.split(".")[0] not in allowed or any(p.startswith("_") or p in BANNED_ATTRS for p in mod.split(".")[1:]):
+                if n.level or mod.split(".")[0] in DENY_ROOTS or mod.split(".")[0] not in allowed or not (_listed(mod) or all(_listed(mod + "." + a.name) for a in n.names)) or any(p.startswith("_") or p in BANNED_ATTRS for p in mod.split(".")[1:]):
                     _deny(line, "importing from '%s'" % ("." * n.level + mod))
                 for a in n.names:
-                    if a.name == "*" or a.name.startswith("_") or a.name in BANNED_ATTRS:
+                    if a.name == "*" or a.name.startswith("_") or a.name in BANNED_ATTRS or (figure and a.name in FIGURE_BANNED):
                         _deny(line, "importing '%s' from '%s'" % (a.name, mod))
             elif isinstance(n, ast.Name):
-                if n.id in BANNED_NAMES or n.id.startswith("__"):
+                if n.id in BANNED_NAMES or n.id.startswith("__") or (figure and n.id in FIGURE_BANNED):
                     _deny(line, "'%s'" % n.id)
             elif isinstance(n, ast.Attribute):
-                if n.attr.startswith("_") or n.attr in BANNED_ATTRS:
+                if n.attr.startswith("_") or n.attr in BANNED_ATTRS or (figure and n.attr in FIGURE_BANNED):
                     _deny(line, "the attribute '.%s'" % n.attr)
             elif isinstance(n, ast.MatchClass):
                 for k in n.kwd_attrs:
@@ -121,8 +133,12 @@ def run_payload(raw):
         return ("line %d: %s" % (line, msg) if line else msg)[:2000]
 
     _ns = {"__name__": "__learner__", "__builtins__": _safe}
+    if figure:
+        _ns["np"] = _np
+        _ns["plt"] = _plt
     _so, _se = _Cap(), _Cap()
     _error = None
+    _svg = None
     _results = []
     _out, _err = sys.stdout, sys.stderr
     sys.stdout, sys.stderr = _so, _se
@@ -140,7 +156,21 @@ def run_payload(raw):
                 _results.append({"name": t["name"], "passed": True, "error": None})
             except BaseException as e:
                 _results.append({"name": t["name"], "passed": False, "error": _describe(e, "<test>")})
+        if figure and _error is None:
+            try:
+                _fig = _plt.gcf() if _plt.get_fignums() else None
+                if _fig is None or not _fig.get_axes():
+                    _error = "The code drew no figure."
+                else:
+                    _buf = io.StringIO()
+                    _fig.savefig(_buf, format="svg", bbox_inches="tight")
+                    _svg = _buf.getvalue()
+                    if len(_svg) > SVG_CAP:
+                        _svg, _error = None, "The figure is too large to show."
+            except BaseException as e:
+                _error = _describe(e, "<learner>")
+            _plt.close("all")
     finally:
         sys.stdout, sys.stderr = _out, _err
-    return {"stdout": _so.text(), "stderr": _se.text(), "error": _error, "tests": _results}
+    return {"stdout": _so.text(), "stderr": _se.text(), "error": _error, "tests": _results, "svg": _svg}
 `;
