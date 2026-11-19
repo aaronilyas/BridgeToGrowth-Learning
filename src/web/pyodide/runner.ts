@@ -103,7 +103,8 @@ function runJob(job: Job, opts: RunOptions): Promise<RunResult & { svg: string |
       finish({ ...parsed.data, svg: msg.svg, timedOut: false, durationMs: Math.round(performance.now() - startedAt), started: true });
     };
     worker.onerror = (ev: ErrorEvent): void => {
-      const detail = ev.message || "error";
+      // INV: a worker script that fails to load (404, or HTML served in its place) raises an ErrorEvent with no message
+      const detail = ev.message || "The Python worker script could not be loaded.";
       finish(stopped(phase === "run" ? "Your code was stopped: it used more than 512 MB of memory or crashed the interpreter." : `Python failed to start. ${detail}`.slice(0, 300), false, phase === "run"));
     };
     worker.postMessage({ type: "run", ...job, indexURL, memoryBytes });

@@ -1,5 +1,7 @@
 import type { CodeSpec } from "../../shared/code.ts";
 import { parseOut } from "./protocol.ts";
+// @ts-expect-error bun file URL; production replaces this with the bundled worker asset (scripts/build.ts BROWSER_WORKERS)
+import pythonWorkerAsset from "./worker.ts" with { type: "file" };
 
 const live = new Set<Worker>();
 
@@ -32,8 +34,16 @@ function warmKey(indexURL: string, libs: readonly string[]): string {
 }
 
 // O(1)
+// SEC: the worker URL is a same-origin module entry (CSP script-src 'self'); no blob: worker
+// INV: production loads the hashed file the HTML bundle serves (scripts/build.ts compiles it); bun --hot and tests load the TypeScript module. Bun leaves new URL("./worker.ts", import.meta.url) as a source path in a production bundle, and the server answers that path with the HTML document, so the worker never starts.
+function pythonWorkerSpec(): string | URL {
+  if (process.env.NODE_ENV === "production") return pythonWorkerAsset;
+  return new URL("./worker.ts", import.meta.url);
+}
+
+// O(1)
 export function createPythonWorker(): Worker {
-  const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
+  const worker = new Worker(pythonWorkerSpec(), { type: "module" });
   live.add(worker);
   return worker;
 }

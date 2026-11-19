@@ -1,7 +1,7 @@
 import type { BunPlugin } from "bun";
 import tailwind from "bun-plugin-tailwind";
-import { dirname, join } from "node:path";
-import { moveSourceMaps, resetBuildDirs } from "./buildOutput.ts";
+import { dirname, join, resolve } from "node:path";
+import { findSourceModuleUrls, moveSourceMaps, resetBuildDirs } from "./buildOutput.ts";
 import { copyPyodideAssets } from "./fetch-pyodide.ts";
 
 const OUT_DIR = "dist";
@@ -11,8 +11,14 @@ const CHUNK_IMPORT = /(\bfrom\s*"|\bimport\s*"|\bimport\(\s*")\/(chunk-[a-z0-9]+
 const KATEX_CSS = /^katex\/dist\/katex\.min\.css$/;
 const FONT_FACE = /@font-face\{[^}]*\}/g;
 const INLINED_FONT = "url(data:font";
-const LAYOUT_WORKER = /layoutWorker\.ts$/;
-const LAYOUT_WORKER_FILE = /layoutWorker-[a-z0-9]+\.js$/;
+
+type BrowserWorker = { entry: string; name: string };
+
+// INV: every module the renderer starts with new Worker(...) is listed here. Bun 1.4 leaves `new Worker(new URL("./file.ts", import.meta.url))` as a source path, which the production server answers with the HTML document, so each worker is compiled to browser JS and attached as a hashed file asset the HTML bundle serves. findSourceModuleUrls fails the build if one is missed.
+const BROWSER_WORKERS: readonly BrowserWorker[] = [
+  { entry: "src/web/graph/layoutWorker.ts", name: "layoutWorker" },
+  { entry: "src/web/pyodide/worker.ts", name: "pythonWorker" },
+];
 
 // INV: Bun inlines every CSS url() asset under 128 KiB as a data: URL, and neither `loader` nor any other Bun.build option changes that, so the KaTeX @font-face rules are dropped here and src/web/katexFonts.ts registers the same faces from hashed font files
 // INV: the stripped stylesheet loads in its own namespace, so the Tailwind plugin's .css onLoad never sees it
@@ -59,9 +65,8 @@ async function relinkServerChunks(): Promise<number> {
 }
 
 // O(bundle size)
-// INV: Bun 1.4 leaves `new Worker(new URL("./file.ts", import.meta.url))` as a source path, so the worker is compiled to browser JS and attached as a file asset the HTML bundle serves
-async function layoutWorkerSource(): Promise<string | null> {
-  const out = await Bun.build({ entrypoints: ["src/web/graph/layoutWorker.ts"], target: "browser", minify: true, splitting: false, define: { "process.env.NODE_ENV": JSON.stringify("production") } });
+async function workerSource(entry: string): Promise<string | null> {
+  const out = await Bun.build({ entrypoints: [entry], target: "browser", minify: true, splitting: false, define: { "process.env.NODE_ENV": JSON.stringify("production") } });
   for (const log of out.logs) console.error(log.message);
   if (!out.success) return null;
   const js = out.outputs.find((o) => o.path.endsWith(".js"));
@@ -69,19 +74,28 @@ async function layoutWorkerSource(): Promise<string | null> {
 }
 
 // O(1)
-function layoutWorkerAsFile(contents: string): BunPlugin {
+// INV: an import of a listed worker's source file (by resolved path, so two files both named worker.ts stay distinct) loads that worker's compiled JS as a file asset named <name>-<hash>.js
+function workersAsFiles(compiled: ReadonlyMap<string, { name: string; contents: string }>): BunPlugin {
   return {
-    name: "layout-worker-as-file",
+    name: "workers-as-files",
     setup(build) {
-      build.onResolve({ filter: LAYOUT_WORKER }, () => ({ path: "layoutWorker.js", namespace: "layout-worker" }));
-      build.onLoad({ filter: /.*/, namespace: "layout-worker" }, () => ({ contents, loader: "file" }));
+      build.onResolve({ filter: /^\.{1,2}\/.*\.ts$/ }, (args) => {
+        const full = resolve(args.resolveDir, args.path);
+        const hit = compiled.get(full);
+        return hit ? { path: `${hit.name}.js`, namespace: "browser-worker" } : undefined;
+      });
+      build.onLoad({ filter: /.*/, namespace: "browser-worker" }, (args) => {
+        const hit = [...compiled.values()].find((w) => `${w.name}.js` === args.path);
+        return { contents: hit?.contents ?? "", loader: "file" };
+      });
     },
   };
 }
 
 // O(n) in output paths
-function emittedLayoutWorker(paths: string[]): string | undefined {
-  return paths.map((p) => p.replace(/\\/g, "/").split("/").pop() ?? "").find((name) => LAYOUT_WORKER_FILE.test(name));
+function missingWorkers(paths: string[]): string[] {
+  const names = paths.map((p) => p.replace(/\\/g, "/").split("/").pop() ?? "");
+  return BROWSER_WORKERS.filter((w) => !names.some((n) => new RegExp(`^${w.name}-[a-z0-9]+\\.js$`).test(n))).map((w) => w.entry);
 }
 
 // O(bundle size)
@@ -104,14 +118,23 @@ async function buildApp(): Promise<number> {
     return 1;
   }
   await resetBuildDirs(OUT_DIR, MAPS_DIR);
-  const workerJs = await layoutWorkerSource();
-  if (workerJs === null) return 1;
-  const out = await Bun.build({ entrypoints: ["src/server/index.ts", "src/server/boot.ts"], outdir: OUT_DIR, target: "bun", splitting: true, minify: true, publicPath: "/", sourcemap: "external", plugins: [katexFontsAsFiles, layoutWorkerAsFile(workerJs), tailwind], define: { "process.env.NODE_ENV": JSON.stringify("production") } });
+  const compiled = new Map<string, { name: string; contents: string }>();
+  for (const w of BROWSER_WORKERS) {
+    const contents = await workerSource(w.entry);
+    if (contents === null) return 1;
+    compiled.set(resolve(w.entry), { name: w.name, contents });
+  }
+  const out = await Bun.build({ entrypoints: ["src/server/index.ts", "src/server/boot.ts"], outdir: OUT_DIR, target: "bun", splitting: true, minify: true, publicPath: "/", sourcemap: "external", plugins: [katexFontsAsFiles, workersAsFiles(compiled), tailwind], define: { "process.env.NODE_ENV": JSON.stringify("production") } });
   for (const log of out.logs) console.error(log.message);
   if (!out.success) return 1;
-  const workerFile = emittedLayoutWorker(out.outputs.map((o) => o.path));
-  if (!workerFile) {
-    console.error("layout worker was not emitted as its own file in dist/");
+  const missing = missingWorkers(out.outputs.map((o) => o.path));
+  if (missing.length > 0) {
+    console.error(`workers were not emitted as their own files in dist/: ${missing.join(", ")}`);
+    return 1;
+  }
+  const raw = await findSourceModuleUrls(out.outputs.map((o) => o.path));
+  if (raw.length > 0) {
+    console.error(`a TypeScript module URL survived into ${raw.join(", ")}; production cannot load it. Add the worker to BROWSER_WORKERS and import it with { type: "file" }`);
     return 1;
   }
   const inlined = await findInlinedFonts(out.outputs.map((o) => o.path));
