@@ -37,4 +37,10 @@ function sweepBuckets(now: number = Date.now()): number {
   return n;
 }
 
+// O(n)
+// INV: tests only; every bucket starts full again, so one test's requests never spend another's budget
+export function resetRateBuckets(): void {
+  buckets.clear();
+}
+
 setInterval(() => sweepBuckets(), 60_000).unref();
