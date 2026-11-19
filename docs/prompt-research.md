@@ -9,6 +9,7 @@ This file maps each rule in the learner-facing LLM prompts to the peer-reviewed 
 - free-response grading (`buildGradePrompt`)
 - dashboard insights (`INSIGHT_SYSTEM`)
 - grounding (`GROUNDING_RULES`)
+- visuals in tutor turns and practice questions (`VISUAL_RULE`)
 
 ## Rules and evidence
 
@@ -31,6 +32,7 @@ This file maps each rule in the learner-facing LLM prompts to the peer-reviewed 
 | The tutor ends with an explain, predict or apply question, never "Does that make sense?". | tutor | Prompted self-explanation reliably improves learning [18][19]. |
 | Insights use actual numbers, plain-language metric names, and one concrete action when a trend is unfavourable. | insights | Feedback should be specific and point to a next step [5]. Calibration feedback helps correct overconfidence, which undermines learning [20]. |
 | A citation only when the source states the claim. No "from general knowledge" boilerplate. | grounding | Extraneous text that adds no meaning increases load (coherence) [3]. The no-fabrication rule is unchanged. |
+| `VISUAL_RULE`: a plot, scene or diagram only inside an explanation, never in a question or check; drawn only when the learner asks for one or the model judges that the idea is spatial, changes over time or depends on a parameter; none for a definition or a single formula; at most one per turn, placed right after the sentence it illustrates; the prose still teaches the idea alone. Scene steps are short, each with a caption naming what to notice, and the learner plays, pauses and steps through them. | tutor, gen | People learn more deeply from words and pictures than from words alone (the multimedia principle) [21]. In a meta-analysis of 26 studies (76 comparisons), instructional animations had a medium-sized advantage over static pictures (d = 0.37), larger when the animation represents the content rather than decorates it (d = 0.40) [22]. Breaking a presentation into learner-paced segments (segmenting), cueing what to attend to (signaling), placing words near the graphic they describe (aligning) and leaving out extraneous material (coherence) each reduce cognitive load [3]. |
 
 ## References
 
@@ -54,3 +56,5 @@ This file maps each rule in the learner-facing LLM prompts to the peer-reviewed 
 18. Chi, M. T. H., de Leeuw, N., Chiu, M.-H., & LaVancher, C. (1994). Eliciting self-explanations improves understanding. *Cognitive Science, 18*(3), 439–477. https://doi.org/10.1207/s15516709cog1803_3
 19. Bisra, K., Liu, Q., Nesbit, J. C., Salimi, F., & Winne, P. H. (2018). Inducing self-explanation: A meta-analysis. *Educational Psychology Review, 30*(3), 703–725. https://doi.org/10.1007/s10648-018-9434-x
 20. Dunlosky, J., & Rawson, K. A. (2012). Overconfidence produces underachievement: Inaccurate self evaluations undermine students' learning and retention. *Learning and Instruction, 22*(4), 271–280. https://doi.org/10.1016/j.learninstruc.2011.08.003
+21. Mayer, R. E. (2009). *Multimedia learning* (2nd ed.). Cambridge University Press. https://doi.org/10.1017/CBO9780511811678
+22. Höffler, T. N., & Leutner, D. (2007). Instructional animation versus static pictures: A meta-analysis. *Learning and Instruction, 17*(6), 722–738. https://doi.org/10.1016/j.learninstruc.2007.09.013

@@ -51,5 +51,5 @@ export type CodeAttempt = z.infer<typeof CodeAttempt>;
 
 export const RUN_TIMEOUT_MS = 10_000;
 export const CODE_MEMORY_BYTES = 512 * 1024 * 1024;
-// INV: wheels Pyodide 314.0.7 publishes for the catalog. Standard-library names above are not wheels and are not loaded at runtime.
-export const PYODIDE_WHEELS = ["numpy", "sympy", "scipy", "mpmath"] as const;
+// INV: wheels Pyodide 314.0.7 publishes for the catalog, plus matplotlib for plot visuals (never a CODE_LIBRARY). Standard-library names above are not wheels and are not loaded at runtime.
+export const PYODIDE_WHEELS = ["numpy", "sympy", "scipy", "mpmath", "matplotlib"] as const;

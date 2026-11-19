@@ -6,6 +6,8 @@ export type RunMsg = {
   libs: string[];
   tests: TestMsg[];
   guardDefs: boolean;
+  figure: boolean;
+  modules: string[];
   indexURL: string;
   memoryBytes: number;
 };
@@ -20,7 +22,7 @@ export type OutMsg =
   | { type: "ready" }
   | { type: "booted" }
   | { type: "memory"; bytes: number }
-  | { type: "result"; stdout: string; stderr: string; error: string | null; tests: { name: string; passed: boolean; error: string | null }[]; bytes: number }
+  | { type: "result"; stdout: string; stderr: string; error: string | null; tests: { name: string; passed: boolean; error: string | null }[]; svg: string | null; bytes: number }
   | { type: "error"; message: string }
   | { type: "fetchprobe"; fetch: string; jsFetch: string; pyfetch: string };
 
@@ -37,14 +39,15 @@ export function parseIn(v: unknown): InMsg | null {
     if (libs.length !== v.libs.length) return null;
     return { type: "boot", indexURL: v.indexURL, libs };
   }
-  if (v.type !== "run" || typeof v.code !== "string" || typeof v.indexURL !== "string" || typeof v.memoryBytes !== "number" || typeof v.guardDefs !== "boolean" || !Array.isArray(v.libs) || !Array.isArray(v.tests)) return null;
-  if (!v.libs.every((l) => typeof l === "string")) return null;
+  if (v.type !== "run" || typeof v.code !== "string" || typeof v.indexURL !== "string" || typeof v.memoryBytes !== "number" || typeof v.guardDefs !== "boolean" || typeof v.figure !== "boolean" || !Array.isArray(v.libs) || !Array.isArray(v.tests) || !Array.isArray(v.modules)) return null;
+  if (!v.libs.every((l) => typeof l === "string") || !v.modules.every((m) => typeof m === "string")) return null;
   const tests: TestMsg[] = [];
   for (const t of v.tests) {
     if (!isRecord(t) || typeof t.name !== "string" || typeof t.code !== "string") return null;
     tests.push({ name: t.name, code: t.code });
   }
-  return { type: "run", code: v.code, libs: v.libs.filter((l): l is string => typeof l === "string"), tests, guardDefs: v.guardDefs, indexURL: v.indexURL, memoryBytes: v.memoryBytes };
+  const modules = v.modules.filter((m): m is string => typeof m === "string");
+  return { type: "run", code: v.code, libs: v.libs.filter((l): l is string => typeof l === "string"), tests, guardDefs: v.guardDefs, figure: v.figure, modules, indexURL: v.indexURL, memoryBytes: v.memoryBytes };
 }
 
 // O(1)
@@ -56,6 +59,7 @@ export function parseOut(v: unknown): OutMsg | null {
   if (v.type === "error" && typeof v.message === "string") return { type: "error", message: v.message };
   if (v.type === "fetchprobe" && typeof v.fetch === "string" && typeof v.jsFetch === "string" && typeof v.pyfetch === "string") return { type: "fetchprobe", fetch: v.fetch, jsFetch: v.jsFetch, pyfetch: v.pyfetch };
   if (v.type !== "result" || typeof v.stdout !== "string" || typeof v.stderr !== "string" || typeof v.bytes !== "number" || !Array.isArray(v.tests)) return null;
-  if (v.error !== null && typeof v.error !== "string") return null;
-  return { type: "result", stdout: v.stdout, stderr: v.stderr, error: v.error, tests: v.tests as { name: string; passed: boolean; error: string | null }[], bytes: v.bytes };
+  if ((v.error !== null && typeof v.error !== "string") || (v.svg !== undefined && v.svg !== null && typeof v.svg !== "string")) return null;
+  // INV: a code-exercise result carries no figure, so a missing svg reads as null
+  return { type: "result", stdout: v.stdout, stderr: v.stderr, error: v.error, tests: v.tests as { name: string; passed: boolean; error: string | null }[], svg: typeof v.svg === "string" ? v.svg : null, bytes: v.bytes };
 }

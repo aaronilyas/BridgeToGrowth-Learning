@@ -6,8 +6,42 @@ export const MARKDOWN_RULE: string = [
   "Use a table only for a small grid of values, such as a truth table or a side-by-side comparison, with at most 6 columns and 8 rows.",
   "Write a table as a header row, then a delimiter row such as |---|---|, then one row per line. Give every row the same number of cells, and put a blank line before and after the table.",
   "Never put a list, a line break or a | character inside a table cell. Inside a cell write an absolute value as $\\lvert x \\rvert$.",
-  "Never use HTML tags or images.",
+  "Never use HTML tags or image links.",
 ].join(" ");
+
+const SCENE_EXAMPLE = [
+  "```scene",
+  '{"width": 480, "height": 300,',
+  ' "axes": {"x": [-3, 3], "y": [-1, 5]},',
+  ' "params": [{"name": "a", "min": 0.5, "max": 2, "step": 0.1, "value": 1, "label": "a"}],',
+  ' "objects": [{"id": "ax", "type": "axes", "xLabel": "x", "yLabel": "y"},',
+  '  {"id": "f", "type": "graph", "fn": "a*x^2", "color": "accent"},',
+  '  {"id": "p", "type": "point", "at": [1, "a"], "label": "(1, a)"}],',
+  ' "steps": [{"action": "create", "id": "f", "duration": 1.5, "caption": "The parabola opens upward because a > 0."},',
+  '  {"action": "fadeIn", "id": "p", "duration": 1, "caption": "At x = 1 the height equals a."},',
+  '  {"action": "indicate", "id": "p", "duration": 1, "caption": "Watch this point as a changes."},',
+  '  {"action": "setParam", "param": "a", "value": 2, "duration": 2, "caption": "Doubling a doubles every height."}]}',
+  "```",
+].join("\n");
+
+// INV: the scene schema text matches Scene in src/shared/visual.ts
+export const VISUAL_RULE: string = [
+  "A visual is a fenced block the app renders: plot (matplotlib code), scene (JSON animation), or diagram (Mermaid).",
+  "A visual belongs only in an explanation. Never put one in a question, a check, a choice or a prompt you pose to the learner.",
+  "Draw a visual only when the learner asks for one, or when you judge that it makes your explanation clearer because the idea is spatial, changes over time, or depends on a parameter. Otherwise draw none. A definition or a single formula needs none.",
+  "One visual per turn at most, placed after the sentence it illustrates; the prose still teaches the idea without it.",
+  "plot code uses only numpy and matplotlib.pyplot, builds one labelled figure with titled axes, and never calls show, savefig or open.",
+  "scene JSON follows the schema below exactly; each step's caption names what the learner should notice.",
+  "diagram uses Mermaid flowchart, stateDiagram or sequenceDiagram syntax.",
+  "Never describe a visual you did not draw.",
+  "Open a visual with ```plot, ```scene or ```diagram on its own line and close it with ``` on its own line. plot code is at most 60 lines; a diagram is at most 40 lines and has no %%{ directives or click lines.",
+  "Scene schema: {width 200-960, height 120-720, axes?: {x: [min, max], y: [min, max]}, params?: up to 3 of {name, min, max, step, value?, label?}, objects: 1 to 20, steps: 0 to 12}.",
+  "Each object has an id and a type: axes {grid?, xLabel?, yLabel?}; graph {fn, domain?: [a, b]}; point {at: [x, y], label?}; vector {from?: [x, y], to: [x, y], label?}; line {from, to}; circle {center, r}; polygon {points: 3 to 12 [x, y]}; label {at, text}. Any object may set color to accent, accent-2, text, muted or danger.",
+  "A coordinate is a number or an expression in the params. fn is an expression in x and the params. Expressions use only numbers, + - * / ^, parentheses, sin cos tan exp log sqrt abs, pi and e; write every product with *. text, labels, xLabel and yLabel are KaTeX without $ delimiters.",
+  "Each step has an action, a duration in seconds of at most 3, and an optional caption: create, fadeIn, fadeOut or indicate {id}; transform {id, target} turns object id into object target; moveTo {id, to: [x, y]} moves a point, label, circle or vector; setParam {param, value} animates a slider.",
+  "An object named by a create or fadeIn step, or used as a transform target, starts hidden; every other object starts visible. Example:",
+  SCENE_EXAMPLE,
+].join("\n");
 
 type Line = { text: string; start: number; end: number };
 type Block = { start: number; end: number; atomic: boolean };

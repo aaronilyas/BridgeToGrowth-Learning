@@ -4,7 +4,7 @@ import { join } from "node:path";
 const RELEASE = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
 const CACHE = ".cache/pyodide";
 const PKG = "node_modules/pyodide";
-const ROOTS = ["numpy", "scipy", "sympy", "mpmath"] as const;
+const ROOTS = ["numpy", "scipy", "sympy", "mpmath", "matplotlib"] as const;
 
 const CORE: readonly (readonly [string, string])[] = [
   ["pyodide.asm.wasm", "cc36e3cab04fdfc9a63ff13eb52eae2b911bf46c025cc7b281f394bd3de1d5e6"],
@@ -13,11 +13,23 @@ const CORE: readonly (readonly [string, string])[] = [
   ["pyodide-lock.json", "5dc2fc119108bc148c7457dc86e7675b5c87e1cafd420b9c34c1eaef7b36c010"],
 ];
 
-const WHEEL_SHA: Record<(typeof ROOTS)[number], string> = {
+// INV: every wheel in the closure of ROOTS is pinned here, copied from the pinned 314.0.7 lock (CORE above)
+const WHEEL_SHA: Readonly<Record<string, string>> = {
   numpy: "a292c1f5d7d8a2208cd5e94fc467604c131cabcd2fc14fed6eefde121e7fabdf",
   scipy: "17ee329a957863516d1bb6a6aaa0c60576fac027e9cd3d43de27f58b5b599b50",
   sympy: "61ea8bb98049ba1c702ba3ad2607acb7ab94b9af0b6f97498741f50d3249f428",
   mpmath: "e5ebd537e74b9066341a5152e83b63ff2fc37a6388fa7351e766b6e4640f7eee",
+  matplotlib: "722857932f8f62eac64f8439af15c94d427f9fb945f9590cd242805c983d2d54",
+  contourpy: "0ac15ebf9f820d2d1c3526388aa2818b631cb6c4aae1682efd6b4cc12c1f302c",
+  cycler: "8ee450085f15b47f78b034d60059af6a3649e98fa5dde073363437742cc0b4ea",
+  six: "228c50f73aa7addf2c2ccf2979c256802a59ab69cad8152b31b9443cc8140f42",
+  fonttools: "0d1516e073fd0a8d8e6d9af46417b6a26209a42518024a18f7085e72d2599605",
+  kiwisolver: "47781998156721147c128a3c74547d5703e0e3cc454d8203e629339368308a93",
+  packaging: "565acbbea54da30348b6d68b6a54373e6f777987db9f1db6966b4b3a5060d303",
+  pillow: "e29838b7a756e4ee0f27a9cfa9a387ee0dfa2e9dd44be2dd595130b9f9d93ac3",
+  pyparsing: "f0dd8225b5f8e945980b400bd465b4b90cb0498a2eede0d9dbea98372f6110c5",
+  "python-dateutil": "9b13365edf9c188f570baf9c540bbb3029ada2a2dacb9694b3659941693ee9e5",
+  pytz: "b8249d6450146e0b61e6d710dc02ebb35a904796c4c2f97fe87d4ac5872db36a",
 };
 
 type Wheel = { file_name: string; sha256: string; depends: string[] };
@@ -48,9 +60,10 @@ function closure(packages: Record<string, unknown>): string[] {
   const walk = (name: string): void => {
     if (seen.has(name)) return;
     seen.add(name);
-    if (!(name in WHEEL_SHA)) throw new Error(`pyodide wheel ${name} has no pinned sha256`);
+    const pin = WHEEL_SHA[name];
+    if (pin === undefined) throw new Error(`pyodide wheel ${name} has no pinned sha256`);
     const wheel = readWheel(packages, name);
-    if (wheel.sha256 !== WHEEL_SHA[name as (typeof ROOTS)[number]]) throw new Error(`pyodide lock sha256 for ${name} does not match the pin`);
+    if (wheel.sha256 !== pin) throw new Error(`pyodide lock sha256 for ${name} does not match the pin`);
     for (const dep of wheel.depends) walk(dep);
     out.push(name);
   };

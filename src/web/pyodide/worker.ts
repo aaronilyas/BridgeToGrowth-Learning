@@ -7,6 +7,8 @@ import { parseIn, type RunMsg } from "./protocol.ts";
 
 const WHEELS: ReadonlySet<string> = new Set(PYODIDE_WHEELS);
 const HARNESS = `${HARNESS_PY}\nimport json\njson.dumps(run_payload(PAYLOAD_JSON))\n`;
+// INV: figure runs import matplotlib with the Agg backend before the run timer starts, so the font cache build is not charged to the code
+const FIGURE_PRELUDE = `import os\nos.environ["MPLBACKEND"] = "Agg"\nimport matplotlib\nmatplotlib.use("Agg")\nimport matplotlib.pyplot\nmatplotlib.pyplot.rcParams.update({"figure.figsize": (6.4, 4.0), "svg.fonttype": "path", "svg.hashsalt": "btg"})\n`;
 const DROP_NET_MODULES = `import sys\nfor _name in ("micropip", "pyodide.http", "pyodide.ffi"):\n    sys.modules.pop(_name, None)\n`;
 
 // O(1)
@@ -110,18 +112,20 @@ out
 async function runUser(py: PyodideAPI, msg: RunMsg): Promise<void> {
   const timer = setInterval(() => void usedBytes(py).then((bytes) => postMessage({ type: "memory", bytes })), 100);
   try {
+    if (msg.figure) py.runPython(FIGURE_PRELUDE);
     postMessage({ type: "ready" });
-    setGlobal(py, "PAYLOAD_JSON", JSON.stringify({ libs: msg.libs, code: msg.code, tests: msg.tests, guardDefs: msg.guardDefs }));
+    setGlobal(py, "PAYLOAD_JSON", JSON.stringify({ libs: msg.libs, code: msg.code, tests: msg.tests, guardDefs: msg.guardDefs, figure: msg.figure, modules: msg.modules }));
     const raw: unknown = py.runPython(HARNESS);
     const parsed: unknown = JSON.parse(typeof raw === "string" ? raw : "");
     const body = typeof parsed === "object" && parsed !== null ? parsed : {};
-    const rec = body as { stdout?: unknown; stderr?: unknown; error?: unknown; tests?: unknown };
+    const rec = body as { stdout?: unknown; stderr?: unknown; error?: unknown; tests?: unknown; svg?: unknown };
     postMessage({
       type: "result",
       stdout: typeof rec.stdout === "string" ? rec.stdout : "",
       stderr: typeof rec.stderr === "string" ? rec.stderr : "",
       error: typeof rec.error === "string" || rec.error === null ? rec.error : "Python failed to start.",
       tests: rec.tests,
+      svg: typeof rec.svg === "string" ? rec.svg : null,
       bytes: await usedBytes(py),
     });
   } finally {
